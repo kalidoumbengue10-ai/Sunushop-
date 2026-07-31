@@ -5,4 +5,9 @@ coverage/
 *.log
 .env*
 !.env.example
-
+supabase/.temp/
+supabase/.branches/
+supabase/.env
+reports/
+*.tsbuildinfo
+/Sunushop-/

@@ -1,9 +1,24 @@
-import type { Metadata } from 'next';
-import './globals.css';
+import type { Metadata } from "next";
+import "./globals.css";
+import "./mvp.css";
+import "./access-spaces.css";
 
 export const metadata: Metadata = {
-  title: 'Kër Ndar — Cuisine sénégalaise à Dakar',
-  description: 'Une table sénégalaise généreuse à Dakar. Consultez la carte et commandez vos plats préférés.',
+  metadataBase: new URL(
+    process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000",
+  ),
+  title: {
+    default: "SunuShop",
+    template: "%s | SunuShop",
+  },
+  description:
+    "La marketplace sénégalaise pour acheter, vendre et suivre ses commandes.",
+  applicationName: "SunuShop",
+  robots: {
+    index: false,
+    follow: false,
+    nocache: true,
+  },
 };
 
 export default function RootLayout({
@@ -13,9 +28,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="fr">
-      <body className="antialiased font-body bg-background text-foreground min-h-screen relative" suppressHydrationWarning>
-        {children}
-      </body>
+      <body suppressHydrationWarning>{children}</body>
     </html>
   );
 }

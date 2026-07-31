@@ -1,0 +1,53 @@
+import { readFileSync, readdirSync } from "node:fs";
+import { join } from "node:path";
+import { describe, expect, it } from "vitest";
+
+const migrationDirectory = join(__dirname, "migrations");
+const migrationFiles = readdirSync(migrationDirectory)
+  .filter((name) => name.endsWith(".sql"))
+  .sort();
+const sql = migrationFiles
+  .map((name) => readFileSync(join(migrationDirectory, name), "utf8"))
+  .join("\n");
+
+describe("contrat statique des migrations", () => {
+  it("garde les migrations versionnées et ordonnées", () => {
+    expect(migrationFiles.length).toBeGreaterThanOrEqual(6);
+    migrationFiles.forEach((name, index) => {
+      expect(name).toMatch(/^\d{12,14}_[a-z0-9_]+\.sql$/);
+      if (index > 0) {
+        expect(name > migrationFiles[index - 1]).toBe(true);
+      }
+    });
+    expect(
+      new Set(migrationFiles.map((name) => name.split("_", 1)[0])).size,
+    ).toBe(migrationFiles.length);
+  });
+
+  it("active RLS sur chaque table métier sensible", () => {
+    [
+      "merchant_accounts",
+      "verification_cases",
+      "verification_documents",
+      "products",
+      "orders",
+      "direct_payment_declarations",
+      "merchant_subscriptions",
+      "audit_events",
+    ].forEach((table) => {
+      expect(sql).toContain(
+        `alter table public.${table} enable row level security;`,
+      );
+    });
+  });
+
+  it("garde les fonctions atomiques et les buckets privés attendus", () => {
+    expect(sql).toContain("create function public.create_order_batch");
+    expect(sql).toContain("create function public.review_verification_case");
+    expect(sql).toContain("create function public.declare_direct_payment");
+    expect(sql).toContain("subscription_expires_j7");
+    expect(sql).toContain("subscription_expires_j2");
+    expect(sql).toContain("'merchant-verification',\n  false");
+    expect(sql).toContain("grant execute");
+  });
+});

@@ -1,0 +1,15 @@
+# SunuShop
+
+> Prototype fictif de marketplace et livraison conçu pour le Sénégal.
+> La démonstration présente un front-office client et un back-office marchand sans paiement ni données réelles.
+
+## Fonctions présentées
+- Catalogue : commerçants, prêt-à-porter, électronique et alimentation
+- Panier et choix d’un moyen de paiement en mode démonstration
+- Suivi visuel d’une livraison et notifications de statut
+- Messagerie client-vendeur, profil et historique de commandes
+- Tableau de bord marchand : produits, stock et chiffre d’affaires
+
+## Statut
+- Démonstration non indexable
+- Données, prix, avis et identités fictifs

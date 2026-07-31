@@ -1,0 +1,9 @@
+pratique,signal_observe,impact_sunushop,effort,decision,implementation,source,confiance
+checkout_guide,"parcours besoin prix confirmation suivi",eleve,moyen,adopter,"Panier > Livraison > Paiement",https://sengo.pro/commander,haute
+modes_livraison,"express standard planifié",eleve,moyen,adopter,"cartes comparant prix et ETA",https://sengo.pro/,haute
+eta_avant_confirmation,"tarif distance et durée avant réservation",eleve,faible,adopter,"aperçu arrivée estimée et total",https://sengo.pro/transport/book,haute
+suivi_sans_compte,"code public de suivi",eleve,faible,adopter,"recherche par code SM-2048",https://sengo.pro/track,haute
+reservation_planifiee,"maintenant ou plus tard",moyen,moyen,adopter,"champ datetime-local conditionnel",https://sengo.pro/transport/book,haute
+multi_services_large,"transport food fret moving BTP GP",faible,eleve,rejeter,"rester centré marketplace",https://sengo.pro/,haute
+preuves_marketing,"500+ chauffeurs 99% livré à temps 10000+ livraisons",risque,n/a,rejeter,"ne publier que des preuves auditables",https://sengo.pro/,moyenne
+identite_locale,"by Sénégal for Sénégal",moyen,faible,conserver,"copy et paiements adaptés au Sénégal",https://play.google.com/store/apps/details?id=com.sengo.app&hl=fr&gl=SN,haute
