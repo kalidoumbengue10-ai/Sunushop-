@@ -365,6 +365,13 @@
   gap: 22px;
 }
 
+.auth-captcha-status {
+  margin: -8px 0 0;
+  color: #5e6b64;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
 .auth-form .mvp-field {
   gap: 10px;
   font-size: 14px;

@@ -10,6 +10,8 @@ type AuthMode = "sign_in" | "sign_up" | "recover";
 declare global {
   interface Window {
     sunuShopTurnstile?: (token: string) => void;
+    sunuShopTurnstileError?: () => void;
+    sunuShopTurnstileExpired?: () => void;
     turnstile?: { reset: () => void };
   }
 }
@@ -48,15 +50,17 @@ export function AuthFlow({ turnstileSiteKey }: { turnstileSiteKey?: string }) {
         "Organisez les prises en charge et gardez chaque livraison à jour.",
     },
     admin: {
-      label: "l’espace de pilotage",
-      next: "/admin/securite",
+      label: "l’espace administrateur",
+      next: "/admin/crm",
       description:
         "Suivez les prospects, les commerçants et les opérations prioritaires.",
     },
   }[profile];
   const next =
     profile === "admin"
-      ? "/admin/securite"
+      ? requestedNext?.startsWith("/admin") && !requestedNext.startsWith("//")
+        ? requestedNext
+        : profileConfig.next
       : requestedNext?.startsWith("/") && !requestedNext.startsWith("//")
       ? requestedNext
       : profileConfig.next;
@@ -86,9 +90,24 @@ export function AuthFlow({ turnstileSiteKey }: { turnstileSiteKey?: string }) {
   );
 
   useEffect(() => {
-    window.sunuShopTurnstile = setCaptchaToken;
+    window.sunuShopTurnstile = (token) => {
+      setCaptchaToken(token);
+      setError("");
+    };
+    window.sunuShopTurnstileError = () => {
+      setCaptchaToken(undefined);
+      setError(
+        "La vérification de sécurité n’a pas pu se charger. Actualisez la page ou désactivez temporairement le bloqueur de contenu.",
+      );
+    };
+    window.sunuShopTurnstileExpired = () => {
+      setCaptchaToken(undefined);
+      setError("La vérification de sécurité a expiré. Validez-la de nouveau.");
+    };
     return () => {
       delete window.sunuShopTurnstile;
+      delete window.sunuShopTurnstileError;
+      delete window.sunuShopTurnstileExpired;
     };
   }, []);
 
@@ -209,10 +228,10 @@ export function AuthFlow({ turnstileSiteKey }: { turnstileSiteKey?: string }) {
             Livrer
           </Link>
           <Link
-            href="/connexion?profil=admin&next=/admin/securite"
+            href="/connexion?profil=admin&next=/admin/crm"
             className={profile === "admin" ? "is-active" : ""}
           >
-            Équipe
+            Admin
           </Link>
         </nav>
         <div className="auth-intro">
@@ -227,7 +246,7 @@ export function AuthFlow({ turnstileSiteKey }: { turnstileSiteKey?: string }) {
           </p>
           {profile === "admin" && mode !== "recover" && (
             <p className="auth-admin-note">
-              Accès réservé à l’équipe autorisée. Une seconde vérification
+              Accès réservé aux administrateurs autorisés. Une seconde vérification
               protège les décisions sensibles.
             </p>
           )}
@@ -316,7 +335,15 @@ export function AuthFlow({ turnstileSiteKey }: { turnstileSiteKey?: string }) {
               className="cf-turnstile"
               data-sitekey={turnstileSiteKey}
               data-callback="sunuShopTurnstile"
+              data-error-callback="sunuShopTurnstileError"
+              data-expired-callback="sunuShopTurnstileExpired"
             />
+          )}
+
+          {turnstileSiteKey && !captchaToken && !error && (
+            <p className="auth-captcha-status" role="status">
+              Validation de sécurité en cours…
+            </p>
           )}
 
           <button

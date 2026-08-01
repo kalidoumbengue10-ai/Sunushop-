@@ -85,7 +85,7 @@ export function AdminMfa() {
     setStatus("Accès sécurisé. Ouverture de votre espace de pilotage…");
     setQrCode("");
     setCode("");
-    window.location.assign("/admin");
+    window.location.assign("/admin/crm");
   };
 
   return (

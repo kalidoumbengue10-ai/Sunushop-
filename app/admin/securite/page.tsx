@@ -18,6 +18,11 @@ export default async function AdminSecurityPage() {
     if (!user) {
       redirect("/connexion?profil=admin&next=/admin/securite");
     }
+    const { data: assurance } =
+      await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+    if (assurance?.currentLevel === "aal2") {
+      redirect("/admin/crm");
+    }
   }
 
   return (
