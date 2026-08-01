@@ -13,7 +13,7 @@ export default function ConnexionPage() {
         {!configured && <SetupRequired />}
         <Suspense fallback={<p>Chargement…</p>}>
           <AuthFlow
-            turnstileSiteKey={process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY}
+            turnstileSiteKey={process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY?.trim()}
           />
         </Suspense>
       </main>

@@ -56,7 +56,7 @@ export async function verifyCaptcha(
   token: string | undefined,
   remoteIp: string,
 ) {
-  const secret = process.env.TURNSTILE_SECRET_KEY;
+  const secret = process.env.TURNSTILE_SECRET_KEY?.trim();
   if (!secret) {
     if (process.env.NODE_ENV === "production") {
       throw new ApiError(
