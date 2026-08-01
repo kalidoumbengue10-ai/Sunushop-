@@ -1,5 +1,5 @@
-import { ShopApp } from "./shop-app";
+import { redirect } from "next/navigation";
 
 export default function Home() {
-  return <ShopApp />;
+  redirect("/marche");
 }
