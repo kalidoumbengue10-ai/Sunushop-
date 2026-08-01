@@ -30,28 +30,28 @@ export function AuthFlow({ turnstileSiteKey }: { turnstileSiteKey?: string }) {
         : "client";
   const profileConfig = {
     client: {
-      label: "Espace client",
+      label: "votre espace client",
       next: "/client",
       description:
-        "Retrouvez vos commandes et poursuivez vos achats avec la même adresse email.",
+        "Retrouvez vos commandes, vos échanges et vos achats en cours.",
     },
     vendeur: {
-      label: "Espace vendeur",
+      label: "votre espace commerçant",
       next: "/marchand",
       description:
-        "Accédez à votre boutique, vos produits et vos commandes.",
+        "Pilotez votre boutique, vos produits et vos commandes au même endroit.",
     },
     partenaire: {
-      label: "Espace partenaire",
+      label: "votre espace livraison",
       next: "/partenaires",
       description:
-        "Rejoignez votre espace de coordination SunuShop.",
+        "Organisez les prises en charge et gardez chaque livraison à jour.",
     },
     admin: {
-      label: "Espace administrateur",
+      label: "l’espace de pilotage",
       next: "/admin/securite",
       description:
-        "Accédez aux opérations SunuShop après vérification de votre code MFA.",
+        "Suivez les prospects, les commerçants et les opérations prioritaires.",
     },
   }[profile];
   const next =
@@ -61,13 +61,14 @@ export function AuthFlow({ turnstileSiteKey }: { turnstileSiteKey?: string }) {
       ? requestedNext
       : profileConfig.next;
   const requestedMode = searchParams.get("mode");
-  const [mode, setMode] = useState<AuthMode>(
+  const [selectedMode, setMode] = useState<AuthMode>(
     requestedMode === "inscription"
       ? "sign_up"
       : requestedMode === "recuperation"
         ? "recover"
         : "sign_in",
   );
+  const mode = profile === "admin" && selectedMode === "sign_up" ? "sign_in" : selectedMode;
   const [email, setEmail] = useState(searchParams.get("email") ?? "");
   const [password, setPassword] = useState("");
   const [passwordConfirmation, setPasswordConfirmation] = useState("");
@@ -90,16 +91,6 @@ export function AuthFlow({ turnstileSiteKey }: { turnstileSiteKey?: string }) {
       delete window.sunuShopTurnstile;
     };
   }, []);
-
-  useEffect(() => {
-    if (profile === "admin" && mode === "sign_up") {
-      setMode("sign_in");
-      setPassword("");
-      setPasswordConfirmation("");
-      setMessage("");
-      setError("");
-    }
-  }, [mode, profile]);
 
   const resetCaptcha = () => {
     setCaptchaToken(undefined);
@@ -184,9 +175,9 @@ export function AuthFlow({ turnstileSiteKey }: { turnstileSiteKey?: string }) {
   };
 
   const title = {
-    sign_in: "Connectez-vous à SunuShop.",
-    sign_up: "Créez votre compte.",
-    recover: "Réinitialisez votre mot de passe.",
+    sign_in: "Heureux de vous revoir.",
+    sign_up: "Créez votre espace.",
+    recover: "Retrouvez l’accès à votre compte.",
   }[mode];
 
   return (
@@ -203,30 +194,30 @@ export function AuthFlow({ turnstileSiteKey }: { turnstileSiteKey?: string }) {
             href={`/connexion?profil=client&next=/client${mode === "sign_up" ? "&mode=inscription" : ""}`}
             className={profile === "client" ? "is-active" : ""}
           >
-            Client
+            Acheter
           </Link>
           <Link
             href={`/connexion?profil=vendeur&next=/marchand${mode === "sign_up" ? "&mode=inscription" : ""}`}
             className={profile === "vendeur" ? "is-active" : ""}
           >
-            Vendeur
+            Vendre
           </Link>
           <Link
             href={`/connexion?profil=partenaire&next=/partenaires${mode === "sign_up" ? "&mode=inscription" : ""}`}
             className={profile === "partenaire" ? "is-active" : ""}
           >
-            Partenaire
+            Livrer
           </Link>
           <Link
             href="/connexion?profil=admin&next=/admin/securite"
             className={profile === "admin" ? "is-active" : ""}
           >
-            Admin
+            Équipe
           </Link>
         </nav>
         <div className="auth-intro">
           <span className="mvp-eyebrow">
-            Connexion sécurisée · {profileConfig.label}
+            Accès à {profileConfig.label}
           </span>
           <h1 className="mvp-title">{title}</h1>
           <p className="mvp-lede">
@@ -236,8 +227,8 @@ export function AuthFlow({ turnstileSiteKey }: { turnstileSiteKey?: string }) {
           </p>
           {profile === "admin" && mode !== "recover" && (
             <p className="auth-admin-note">
-              Accès réservé aux administrateurs autorisés. Un code à six
-              chiffres sera demandé après le mot de passe.
+              Accès réservé à l’équipe autorisée. Une seconde vérification
+              protège les décisions sensibles.
             </p>
           )}
         </div>
@@ -252,7 +243,7 @@ export function AuthFlow({ turnstileSiteKey }: { turnstileSiteKey?: string }) {
               className={`mvp-button ${mode === "sign_in" ? "" : "mvp-button--secondary"}`}
               onClick={() => changeMode("sign_in")}
             >
-              Se connecter
+              J’ai déjà un compte
             </button>
             {profile !== "admin" && (
               <button
@@ -260,7 +251,7 @@ export function AuthFlow({ turnstileSiteKey }: { turnstileSiteKey?: string }) {
                 className={`mvp-button ${mode === "sign_up" ? "" : "mvp-button--secondary"}`}
                 onClick={() => changeMode("sign_up")}
               >
-                Créer un compte
+                Je crée mon compte
               </button>
             )}
           </div>
@@ -333,12 +324,12 @@ export function AuthFlow({ turnstileSiteKey }: { turnstileSiteKey?: string }) {
             disabled={busy || Boolean(turnstileSiteKey && !captchaToken)}
           >
             {busy
-              ? "Traitement…"
+              ? "Un instant…"
               : mode === "sign_in"
-                ? "Se connecter"
+                ? "Accéder à mon espace"
                 : mode === "sign_up"
-                  ? "Créer mon compte"
-                  : "Envoyer le lien"}
+                  ? "Créer mon espace"
+                  : "Recevoir le lien"}
           </button>
 
           {mode === "sign_in" && (
@@ -347,7 +338,7 @@ export function AuthFlow({ turnstileSiteKey }: { turnstileSiteKey?: string }) {
               className="mvp-button mvp-button--secondary"
               onClick={() => changeMode("recover")}
             >
-              Mot de passe oublié
+              J’ai oublié mon mot de passe
             </button>
           )}
           {mode === "recover" && (
@@ -359,11 +350,7 @@ export function AuthFlow({ turnstileSiteKey }: { turnstileSiteKey?: string }) {
               Retour à la connexion
             </button>
           )}
-          <small>
-            Les emails de confirmation et de récupération sont acheminés par
-            Resend. SunuShop ne vous demandera jamais votre mot de passe par
-            email.
-          </small>
+          <small>SunuShop ne vous demandera jamais votre mot de passe par email.</small>
         </form>
       </section>
     </>

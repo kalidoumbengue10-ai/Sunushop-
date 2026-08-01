@@ -567,8 +567,8 @@ function ProfileView({ goHome }: { goHome: () => void }) {
           </Link>
         </div>
         <small>
-          <LockKeyhole size={13} /> Les emails de sécurité sont envoyés via
-          Resend.
+          <LockKeyhole size={13} /> Vos commandes et vos informations restent
+          accessibles uniquement depuis votre espace.
         </small>
       </section>
     </main>

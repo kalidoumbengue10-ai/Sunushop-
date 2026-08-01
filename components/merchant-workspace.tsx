@@ -546,7 +546,7 @@ export function MerchantWorkspace(props: MerchantWorkspaceProps) {
               className="mvp-status"
               data-status={props.merchant.verification_status}
             >
-              KYC {props.merchant.verification_status}
+              Vérification {props.merchant.verification_status}
             </span>
             <span
               className="mvp-status"

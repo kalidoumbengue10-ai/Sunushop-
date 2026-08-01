@@ -42,7 +42,7 @@ export function AdminMfa() {
         );
         return;
       }
-      setStatus("La MFA TOTP est requise pour le back-office.");
+      setStatus("La vérification en deux étapes est requise pour protéger cet espace.");
     };
     void prepareMfa();
   }, []);
@@ -82,7 +82,7 @@ export function AdminMfa() {
       setError(verifyError.message);
       return;
     }
-    setStatus("Session renforcée active. Redirection vers le back-office…");
+    setStatus("Accès sécurisé. Ouverture de votre espace de pilotage…");
     setQrCode("");
     setCode("");
     window.location.assign("/admin");
@@ -90,13 +90,13 @@ export function AdminMfa() {
 
   return (
     <section className="mvp-card mvp-card--full">
-      <span className="mvp-eyebrow">Sécurité administrative</span>
-      <h1 className="mvp-title">Double authentification</h1>
+      <span className="mvp-eyebrow">Protection de votre accès</span>
+      <h1 className="mvp-title">Sécurisez les décisions sensibles.</h1>
       <p className="mvp-alert">{status}</p>
       {error && <p className="mvp-alert mvp-alert--error">{error}</p>}
       {!factorId && (
         <button className="mvp-button" onClick={enroll}>
-          Configurer une application TOTP
+          Configurer la vérification en deux étapes
         </button>
       )}
       {factorId && (
@@ -105,7 +105,7 @@ export function AdminMfa() {
             <>
               {/* Supabase fournit une data URL SVG produite par le serveur Auth. */}
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={qrCode} width="220" height="220" alt="QR code TOTP" />
+              <img src={qrCode} width="220" height="220" alt="QR code de configuration" />
             </>
           )}
           <label className="mvp-field">
@@ -120,7 +120,7 @@ export function AdminMfa() {
             />
           </label>
           <button className="mvp-button" disabled={code.length !== 6}>
-            {qrCode ? "Activer la MFA" : "Valider et ouvrir l’administration"}
+            {qrCode ? "Activer la protection" : "Continuer vers le pilotage"}
           </button>
         </form>
       )}

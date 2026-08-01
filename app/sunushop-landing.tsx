@@ -497,8 +497,8 @@ function AccessSpaces() {
       </div>
       <p className="ss-access__note">
         <ShieldCheck />
-        Email confirmé, mot de passe protégé et récupération sécurisée via
-        Resend.
+        E-mail confirmé, mot de passe protégé et récupération sécurisée de votre
+        accès.
       </p>
     </section>
   );

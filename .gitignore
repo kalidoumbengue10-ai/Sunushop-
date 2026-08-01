@@ -11,3 +11,4 @@ supabase/.env
 reports/
 *.tsbuildinfo
 /Sunushop-/
+.vercel

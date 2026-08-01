@@ -257,7 +257,7 @@ export function MarketplaceClient({
         ) : (
           <div className="mvp-empty">
             Aucun produit public pour le moment. Les boutiques apparaîtront
-            après validation KYC et activation de leur abonnement.
+            après validation de leur dossier et activation de leur abonnement.
           </div>
         )}
       </section>

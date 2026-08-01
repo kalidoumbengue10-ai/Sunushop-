@@ -4,18 +4,18 @@ import { SetupRequired } from "@/components/setup-required";
 import { isSupabaseConfigured } from "@/lib/config/env";
 import { getServerSupabase } from "@/lib/infrastructure/supabase/server";
 
-export default async function AdminPage() {
+export default async function AdminCrmPage() {
   const configured = isSupabaseConfigured();
   if (configured) {
     const supabase = await getServerSupabase();
     if (!supabase) {
-      redirect("/connexion?profil=admin&next=/admin/securite");
+      redirect("/connexion?profil=admin&next=/admin/crm");
     }
     const {
       data: { user },
     } = await supabase.auth.getUser();
     if (!user) {
-      redirect("/connexion?profil=admin&next=/admin/securite");
+      redirect("/connexion?profil=admin&next=/admin/crm");
     }
     const { data: assurance } =
       await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
@@ -26,7 +26,11 @@ export default async function AdminPage() {
 
   return (
     <main className="admin-page">
-      {configured ? <AdminWorkspace /> : <div className="admin-setup"><SetupRequired /></div>}
+      {configured ? (
+        <AdminWorkspace initialTab="crm" />
+      ) : (
+        <div className="admin-setup"><SetupRequired /></div>
+      )}
     </main>
   );
 }

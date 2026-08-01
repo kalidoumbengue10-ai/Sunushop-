@@ -12,7 +12,7 @@ export async function requireUser() {
     throw new ApiError(
       503,
       "SUPABASE_NOT_CONFIGURED",
-      "Supabase n’est pas encore configuré.",
+      "Ce service n’est pas encore disponible.",
     );
   }
 
@@ -34,7 +34,7 @@ export function requireAdminClient() {
     throw new ApiError(
       503,
       "SUPABASE_NOT_CONFIGURED",
-      "Supabase n’est pas encore configuré.",
+      "Ce service n’est pas encore disponible.",
     );
   }
   return admin;

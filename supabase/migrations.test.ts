@@ -8,7 +8,8 @@ const migrationFiles = readdirSync(migrationDirectory)
   .sort();
 const sql = migrationFiles
   .map((name) => readFileSync(join(migrationDirectory, name), "utf8"))
-  .join("\n");
+  .join("\n")
+  .replaceAll("\r\n", "\n");
 
 describe("contrat statique des migrations", () => {
   it("garde les migrations versionnées et ordonnées", () => {
@@ -34,6 +35,10 @@ describe("contrat statique des migrations", () => {
       "direct_payment_declarations",
       "merchant_subscriptions",
       "audit_events",
+      "crm_leads",
+      "crm_lead_notes",
+      "crm_tasks",
+      "crm_lead_events",
     ].forEach((table) => {
       expect(sql).toContain(
         `alter table public.${table} enable row level security;`,
@@ -49,5 +54,7 @@ describe("contrat statique des migrations", () => {
     expect(sql).toContain("subscription_expires_j2");
     expect(sql).toContain("'merchant-verification',\n  false");
     expect(sql).toContain("grant execute");
+    expect(sql).toContain("create type public.crm_lead_status");
+    expect(sql).toContain("create policy crm_leads_admin_access");
   });
 });

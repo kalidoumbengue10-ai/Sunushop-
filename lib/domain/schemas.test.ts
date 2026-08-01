@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   cartQuoteSchema,
+  crmLeadUpdateSchema,
   merchantApplicationSchema,
   orderBatchSchema,
+  prelaunchLeadIngestSchema,
   signUpWithPasswordSchema,
 } from "./schemas";
 
@@ -87,5 +89,20 @@ describe("validation des entrées métier", () => {
       ],
     });
     expect(result.success).toBe(false);
+  });
+
+  it("normalise une candidature issue du site", () => {
+    const result = prelaunchLeadIngestSchema.parse({
+      name: "Awa Ndiaye",
+      businessName: "Maison Awa",
+      email: "AWA@EXEMPLE.COM",
+      city: "Dakar",
+    });
+    expect(result.email).toBe("awa@exemple.com");
+    expect(result.phone).toBe("");
+  });
+
+  it("refuse une mise à jour CRM vide", () => {
+    expect(crmLeadUpdateSchema.safeParse({}).success).toBe(false);
   });
 });

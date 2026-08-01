@@ -34,9 +34,9 @@ file_size_limit = "50MiB"
 
 [auth]
 enabled = true
-site_url = "https://sunushop.fr"
+site_url = "https://app.sunushop.fr"
 additional_redirect_urls = [
-  "https://sunushop.fr/auth/callback",
+  "https://app.sunushop.fr/auth/callback",
   "http://127.0.0.1:3000/auth/callback",
   "http://127.0.0.1:3000/**",
   "http://localhost:3000/auth/callback",

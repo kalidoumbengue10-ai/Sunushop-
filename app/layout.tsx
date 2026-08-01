@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import "./mvp.css";
 import "./access-spaces.css";
+import "./admin.css";
 
 export const metadata: Metadata = {
   metadataBase: new URL(

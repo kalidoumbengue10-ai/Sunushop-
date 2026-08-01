@@ -51,8 +51,8 @@ export default async function PartnersPage() {
             <section className="mvp-card mvp-card--full">
               <h2>Accès contrôlé</h2>
               <p className="mvp-alert">
-                L’activation des outils partenaires intervient après validation
-                de votre organisation par SunuShop.
+                Votre espace devient accessible après validation de votre
+                organisation par SunuShop.
               </p>
               <div className="mvp-actions">
                 <a className="mvp-button" href="mailto:partenaires@sunushop.sn">

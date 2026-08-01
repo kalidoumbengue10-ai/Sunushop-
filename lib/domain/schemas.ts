@@ -258,3 +258,50 @@ export const merchantSettingsSchema = z.object({
   wavePaymentNumber: e164Phone.nullable(),
   orangeMoneyPaymentNumber: e164Phone.nullable(),
 });
+
+export const crmLeadStatusSchema = z.enum([
+  "new",
+  "contacted",
+  "qualified",
+  "onboarding",
+  "converted",
+  "rejected",
+  "archived",
+]);
+
+export const crmLeadPrioritySchema = z.enum(["low", "normal", "high"]);
+
+export const prelaunchLeadIngestSchema = z.object({
+  name: z.string().trim().min(2).max(80),
+  businessName: z.string().trim().min(2).max(120),
+  email: z.email().max(254).transform((value) => value.toLowerCase()),
+  phone: z.string().trim().max(30).optional().default(""),
+  city: z.string().trim().max(120).optional().default(""),
+  businessType: z.string().trim().max(120).optional().default(""),
+  salesChannel: z.string().trim().max(240).optional().default(""),
+  message: z.string().trim().max(2000).optional().default(""),
+  submittedAt: z.iso.datetime().optional(),
+});
+
+export const crmLeadUpdateSchema = z
+  .object({
+    status: crmLeadStatusSchema.optional(),
+    priority: crmLeadPrioritySchema.optional(),
+    nextFollowUpAt: z.iso.datetime().nullable().optional(),
+  })
+  .refine((value) => Object.keys(value).length > 0, {
+    message: "Aucune modification reçue.",
+  });
+
+export const crmLeadNoteSchema = z.object({
+  body: z.string().trim().min(2).max(3000),
+});
+
+export const crmTaskSchema = z.object({
+  title: z.string().trim().min(2).max(240),
+  dueAt: z.iso.datetime().nullable().optional(),
+});
+
+export const crmTaskUpdateSchema = z.object({
+  completed: z.boolean(),
+});

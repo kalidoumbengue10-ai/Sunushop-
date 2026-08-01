@@ -23,7 +23,7 @@ export async function POST(request: Request) {
       throw new ApiError(
         503,
         "SUPABASE_NOT_CONFIGURED",
-        "Supabase n’est pas encore configuré.",
+        "La création de compte est momentanément indisponible.",
       );
     }
 
