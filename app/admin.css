@@ -184,6 +184,10 @@
 .crm-drawer__body { display: grid; gap: 12px; padding: 14px 25px 30px; }
 .crm-detail-card { padding: 19px; border: 1px solid var(--admin-line); border-radius: 15px; background: white; }
 .crm-detail-card h3 { margin: 0 0 13px; font: 700 18px Georgia, serif; }
+.crm-onboarding-action { display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: center; gap: 18px; border-color: #d6c06d; background: linear-gradient(135deg,#fffdf5,#f7f1d8); }
+.crm-onboarding-action h3 { margin: 4px 0 6px; }
+.crm-onboarding-action p { max-width: 360px; margin: 0; color: var(--admin-muted); font-size: 11px; line-height: 1.55; }
+.crm-onboarding-action .admin-primary-button { white-space: nowrap; }
 .crm-detail-card dl { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 0; }
 .crm-detail-card dl div { display: grid; gap: 4px; }
 .crm-detail-card dt { color: var(--admin-muted); font-size: 8px; font-weight: 900; text-transform: uppercase; }
@@ -270,6 +274,8 @@
   .crm-drawer__header { padding-inline: 17px; }
   .crm-inline-form { grid-template-columns: 1fr; }
   .crm-inline-form button { min-height: 39px; }
+  .crm-onboarding-action { grid-template-columns: 1fr; }
+  .crm-onboarding-action .admin-primary-button { width: 100%; }
 }
 
 /* Overrides finaux : lisibilité et comportement responsive du CRM */

@@ -15,6 +15,7 @@ export function invitationUrl(request: Request, token: string, email: string) {
   const claimPath = `/invitations/claim?token=${encodeURIComponent(token)}`;
   const url = new URL("/connexion", origin);
   url.searchParams.set("profil", "vendeur");
+  url.searchParams.set("mode", "inscription");
   url.searchParams.set("email", email);
   url.searchParams.set("next", claimPath);
   return url.toString();

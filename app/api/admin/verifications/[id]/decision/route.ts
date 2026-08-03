@@ -1,4 +1,4 @@
-import { requireAdminRole } from "@/lib/api/auth";
+import { requireAdminClient, requireAdminRole } from "@/lib/api/auth";
 import { apiFailure, apiSuccess } from "@/lib/api/response";
 import { verificationDecisionSchema } from "@/lib/domain/schemas";
 
@@ -19,6 +19,13 @@ export async function POST(
       p_internal_note: input.internalNote ?? null,
     });
     if (error) throw error;
+    if (input.outcome === "approved" && data?.merchant_id) {
+      const { error: crmError } = await requireAdminClient().from("crm_leads").update({
+        status: "converted",
+        converted_at: new Date().toISOString(),
+      }).eq("merchant_id", data.merchant_id);
+      if (crmError) throw crmError;
+    }
     return apiSuccess(data, { requestId });
   } catch (error) {
     return apiFailure(error, requestId);

@@ -1,4 +1,5 @@
 import { requireUser } from "@/lib/api/auth";
+import { requireApprovedMerchantAccess } from "@/lib/api/merchant-access";
 import { apiFailure, apiSuccess } from "@/lib/api/response";
 import {
   productInputSchema,
@@ -30,7 +31,7 @@ export async function POST(request: Request) {
   const requestId = crypto.randomUUID();
   try {
     const input = productInputSchema.parse(await request.json());
-    const { supabase } = await requireUser();
+    const { supabase } = await requireApprovedMerchantAccess(input.merchantId, ["owner", "manager", "catalog"]);
     const { data, error } = await supabase.rpc("create_merchant_product", {
       p_merchant_id: input.merchantId,
       p_category_id: input.categoryId,
@@ -56,6 +57,14 @@ export async function PATCH(request: Request) {
   try {
     const input = productPublicationSchema.parse(await request.json());
     const { supabase } = await requireUser();
+    const { data: product, error: productError } = await supabase
+      .from("products")
+      .select("merchant_id")
+      .eq("id", input.productId)
+      .maybeSingle();
+    if (productError) throw productError;
+    if (!product) throw new Error("PRODUCT_NOT_FOUND");
+    await requireApprovedMerchantAccess(product.merchant_id, ["owner", "manager", "catalog"]);
     const { data, error } = await supabase.rpc(
       "set_merchant_product_publication",
       {

@@ -15,6 +15,16 @@ async function requireManager(merchantId: string) {
     .in("role", ["owner", "manager", "fulfillment"])
     .maybeSingle();
   if (!data) throw new ApiError(403, "FORBIDDEN", "Accès refusé.");
+  const admin = requireAdminClient();
+  const { data: merchant, error } = await admin
+    .from("merchant_accounts")
+    .select("verification_status")
+    .eq("id", merchantId)
+    .maybeSingle();
+  if (error) throw error;
+  if (merchant?.verification_status !== "approved") {
+    throw new ApiError(403, "KYC_APPROVAL_REQUIRED", "Votre dossier doit être validé avant de gérer des livreurs.");
+  }
   return user;
 }
 

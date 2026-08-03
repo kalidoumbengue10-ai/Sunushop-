@@ -2,6 +2,7 @@ import { requireAdminClient, requireUser } from "@/lib/api/auth";
 import { ApiError } from "@/lib/api/errors";
 import { apiFailure, apiSuccess } from "@/lib/api/response";
 import { validateProductMediaFile } from "@/lib/domain/product-media-file";
+import { requireApprovedMerchantAccess } from "@/lib/api/merchant-access";
 
 export const runtime = "nodejs";
 
@@ -22,6 +23,7 @@ export async function POST(
     if (!product) {
       throw new ApiError(404, "PRODUCT_NOT_FOUND", "Produit introuvable.");
     }
+    await requireApprovedMerchantAccess(product.merchant_id, ["owner", "manager", "catalog"]);
 
     const form = await request.formData();
     const file = form.get("file");

@@ -1,5 +1,4 @@
-import { requireAdminClient, requireUser } from "@/lib/api/auth";
-import { ApiError } from "@/lib/api/errors";
+import { requireApprovedMerchantAccess } from "@/lib/api/merchant-access";
 import { apiFailure, apiSuccess } from "@/lib/api/response";
 import { merchantSettingsSchema } from "@/lib/domain/schemas";
 
@@ -7,21 +6,7 @@ export async function PATCH(request: Request) {
   const requestId = crypto.randomUUID();
   try {
     const input = merchantSettingsSchema.parse(await request.json());
-    const { user, supabase } = await requireUser();
-    const { data: membership, error: membershipError } = await supabase
-      .from("merchant_members")
-      .select("role")
-      .eq("merchant_id", input.merchantId)
-      .eq("user_id", user.id)
-      .eq("active", true)
-      .in("role", ["owner", "manager"])
-      .maybeSingle();
-    if (membershipError) throw membershipError;
-    if (!membership) {
-      throw new ApiError(403, "FORBIDDEN", "Accès marchand requis.");
-    }
-
-    const admin = requireAdminClient();
+    const { user, admin } = await requireApprovedMerchantAccess(input.merchantId, ["owner", "manager"]);
     const { error } = await admin
       .from("merchant_accounts")
       .update({

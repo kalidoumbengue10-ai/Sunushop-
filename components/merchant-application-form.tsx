@@ -34,24 +34,24 @@ export function MerchantApplicationForm({ categories, turnstileSiteKey }: { cate
       method: "POST", headers: { "content-type": "application/json" },
       body: JSON.stringify({
         contactName: form.get("contactName"), shopName: form.get("shopName"), email: form.get("email"), phone: form.get("phone"),
-        city: form.get("city") || undefined, businessType: form.get("businessType"), salesChannel: form.get("salesChannel"),
+        city: form.get("city") || undefined, businessType: form.get("businessType"), legalName: form.get("legalName") || undefined, salesChannel: form.get("salesChannel"),
         categories: form.getAll("categories"), message: form.get("message") || undefined, consent: form.get("consent") === "on", captchaToken,
       }),
     });
     const payload = await response.json().catch(() => null); setBusy(false); setCaptchaToken(undefined); window.turnstile?.reset();
     if (!response.ok) return setError(payload?.error?.message ?? "La candidature n’a pas pu être envoyée.");
-    setMessage(payload.data.alreadyKnown ? "Votre dossier a été actualisé. Notre équipe reviendra vers vous par email." : "Votre candidature est bien arrivée dans notre CRM. Nous l’étudions avant de vous inviter à déposer les justificatifs.");
+    setMessage(payload.data.invitationEmailSent ? "Votre candidature est enregistrée. Consultez votre email pour créer votre mot de passe et déposer vos justificatifs." : "Votre candidature est enregistrée. Le mail d’accès aux documents est en cours d’envoi ; vérifiez aussi vos courriers indésirables.");
     formElement.reset();
   };
   return (
     <><>{turnstileSiteKey && <Script src="https://challenges.cloudflare.com/turnstile/v0/api.js" strategy="afterInteractive" />}</><section className="merchant-application-layout">
       <aside className="merchant-application-guide">
         <span className="mvp-eyebrow">Candidature commerçant</span><h1>Présentez votre commerce à SunuShop.</h1>
-        <p>Ce formulaire ouvre votre dossier. Il ne crée pas de compte automatiquement.</p>
+        <p>Ce formulaire ouvre votre dossier et vous envoie un accès sécurisé réservé aux justificatifs.</p>
         <ol>
-          <li><strong>1. Étude du commerce</strong><span>Notre équipe vérifie vos coordonnées et votre activité.</span></li>
-          <li><strong>2. Invitation sécurisée</strong><span>Si le dossier est retenu, vous recevez un lien personnel valable 7 jours.</span></li>
-          <li><strong>3. Justificatifs</strong><span>Depuis votre espace, vous déposez identité, lettre d’intention et preuves d’activité.</span></li>
+          <li><strong>1. Candidature</strong><span>Présentez votre commerce et recevez votre lien personnel.</span></li>
+          <li><strong>2. Justificatifs</strong><span>Créez votre mot de passe puis déposez identité, lettre d’intention et preuves d’activité.</span></li>
+          <li><strong>3. Validation</strong><span>Après contrôle du dossier, SunuShop débloque les outils de votre boutique.</span></li>
         </ol>
         <a className="mvp-button mvp-button--secondary" href="/documents/lettre-intention-sunushop.html" download="Lettre-intention-SunuShop.html">Télécharger la lettre d’intention</a>
         <small>Vous pourrez la remplir, la signer puis la joindre à votre dossier après acceptation initiale.</small>
@@ -67,6 +67,7 @@ export function MerchantApplicationForm({ categories, turnstileSiteKey }: { cate
             <label className="mvp-field">Téléphone<input name="phone" type="tel" inputMode="tel" placeholder="+221 77 000 00 00" required /></label>
             <label className="mvp-field">Ville<input name="city" autoComplete="address-level2" /></label>
             <label className="mvp-field">Statut de l’activité<select name="businessType" required><option value="">Choisir</option><option value="informal">Commerçant individuel / activité informelle</option><option value="formal">Entreprise enregistrée</option></select></label>
+            <label className="mvp-field">Raison sociale, si entreprise<input name="legalName" placeholder="Nom enregistré de l’entreprise" /></label>
           </div>
           <label className="mvp-field">Comment vendez-vous aujourd’hui ?<input name="salesChannel" placeholder="En boutique, WhatsApp, Instagram…" required /></label>
           <fieldset className="mvp-document"><legend>Catégories de produits</legend>{categories.length ? <div className="application-category-grid">{categories.map((category) => <label key={category.name}><input type="checkbox" name="categories" value={category.name} /> <span>{category.name}</span></label>)}</div> : <p className="application-category-empty">Les catégories sont momentanément indisponibles. Vous pouvez préciser vos produits dans la présentation ci-dessous.</p>}</fieldset>

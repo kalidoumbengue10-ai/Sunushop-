@@ -11,6 +11,7 @@ import {
   MessageCircle,
   Phone,
   Search,
+  Send,
   Sparkles,
   UserRoundCheck,
   X,
@@ -116,6 +117,7 @@ export function AdminCrm({
   const [selected, setSelected] = useState<CrmLeadDetail | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [actionMessage, setActionMessage] = useState("");
 
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -248,6 +250,40 @@ export function AdminCrm({
     }
   };
 
+  const inviteToDocuments = async () => {
+    if (!selected) return;
+    if (!selected.phone) {
+      setError("Ajoutez un numéro de téléphone avant d’envoyer l’accès documents.");
+      return;
+    }
+    const digits = selected.phone.replace(/\D/g, "");
+    const phone = digits.length === 9 ? `+221${digits}` : `+${digits}`;
+    setBusy(true); setError(""); setActionMessage("");
+    try {
+      const response = await fetch("/api/admin/merchant-invitations", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          leadId: selected.id,
+          kind: selected.business_type === "formal" ? "formal" : "informal",
+          publicName: selected.business_name,
+          legalName: selected.business_type === "formal" ? selected.business_name : undefined,
+          phone,
+          email: selected.email,
+          city: selected.city || undefined,
+          representativeIsLegalOwner: true,
+        }),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error?.message ?? "Invitation impossible.");
+      setActionMessage(payload.data.emailSent ? "L’accès documents a été envoyé par email." : "L’accès est créé. L’email est placé dans la file de reprise.");
+      await refreshSelected();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Invitation impossible.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const exportCsv = () => {
     const rows = [
       ["Commerce", "Contact", "Email", "Téléphone", "Ville", "Activité", "Étape", "Priorité", "Prochaine relance"],
@@ -347,6 +383,8 @@ export function AdminCrm({
             </div>
 
             <div className="crm-drawer__body">
+              {actionMessage && <p className="admin-feedback">{actionMessage}</p>}
+              {!['converted', 'rejected', 'archived'].includes(selected.status) && <section className="crm-detail-card crm-onboarding-action"><div><span className="admin-kicker">Accès sécurisé</span><h3>Espace de dépôt des documents</h3><p>Envoie ou renvoie le lien permettant de créer le mot de passe. Avant validation KYC, le commerçant ne verra que son dossier.</p></div><button type="button" className="admin-primary-button" onClick={inviteToDocuments} disabled={busy}><Send /> {selected.status === "onboarding" ? "Renvoyer l’accès documents" : "Envoyer l’accès documents"}</button></section>}
               <section className="crm-detail-card">
                 <h3>Informations</h3>
                 <dl>

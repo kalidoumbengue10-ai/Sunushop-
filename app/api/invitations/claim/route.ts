@@ -92,9 +92,9 @@ export async function POST(request: Request) {
       await admin
         .from("crm_leads")
         .update({
-          status: "converted",
+          status: invitation.kind === "merchant_owner" ? "onboarding" : "converted",
           merchant_id: merchantId,
-          converted_at: new Date().toISOString(),
+          converted_at: invitation.kind === "merchant_owner" ? null : new Date().toISOString(),
         })
         .eq("id", invitation.lead_id);
     }

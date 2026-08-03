@@ -33,7 +33,7 @@ test("la candidature réelle alimente le CRM et propose la lettre d’intention"
   await page.getByLabel(/Comment vendez-vous/).fill("Boutique et WhatsApp");
   await page.getByLabel(/J’accepte/).check();
   await page.getByRole("button", { name: "Envoyer ma candidature" }).click();
-  await expect(page.getByText(/candidature est bien arrivée dans notre CRM/i)).toBeVisible();
+  await expect(page.getByText(/Votre candidature est enregistrée/i)).toBeVisible();
   expect(submitted).toMatchObject({ shopName: "Atelier Test", businessType: "informal", salesChannel: "Boutique et WhatsApp", consent: true });
 });
 

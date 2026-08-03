@@ -322,7 +322,12 @@ export const prelaunchLeadSchema = z.object({
 
 export const merchantLeadApplicationSchema = prelaunchLeadSchema.extend({
   businessType: z.enum(["informal", "formal"]),
+  legalName: z.string().trim().min(2).max(180).optional(),
   salesChannel: z.string().trim().min(2).max(240),
+}).superRefine((value, context) => {
+  if (value.businessType === "formal" && !value.legalName) {
+    context.addIssue({ code: "custom", path: ["legalName"], message: "La raison sociale est obligatoire pour une entreprise enregistrée." });
+  }
 });
 
 export const merchantInvitationSchema = merchantApplicationSchema.safeExtend({

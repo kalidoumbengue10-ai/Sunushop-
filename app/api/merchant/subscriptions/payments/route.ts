@@ -1,4 +1,4 @@
-import { requireUser } from "@/lib/api/auth";
+import { requireApprovedMerchantAccess } from "@/lib/api/merchant-access";
 import { apiFailure, apiSuccess } from "@/lib/api/response";
 import { subscriptionPaymentSchema } from "@/lib/domain/schemas";
 
@@ -6,7 +6,7 @@ export async function POST(request: Request) {
   const requestId = crypto.randomUUID();
   try {
     const input = subscriptionPaymentSchema.parse(await request.json());
-    const { supabase } = await requireUser();
+    const { supabase } = await requireApprovedMerchantAccess(input.merchantId, ["owner", "manager"]);
     const { data, error } = await supabase.rpc(
       "submit_subscription_payment",
       {

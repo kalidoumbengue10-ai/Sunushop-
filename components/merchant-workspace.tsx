@@ -412,6 +412,7 @@ export function MerchantWorkspace(props: MerchantWorkspaceProps) {
   };
 
   if (!props.merchant) return null;
+  const verificationOnly = props.merchant.verification_status !== "approved";
 
   const latestDocuments = new Map<VerificationDocumentType, DocumentRow>();
   props.documents.forEach((document) => {
@@ -441,7 +442,7 @@ export function MerchantWorkspace(props: MerchantWorkspaceProps) {
   return (
     <div className="mvp-sidebar-layout">
       <aside className="mvp-sidebar">
-        {["dossier", "boutique", "catalogue", "livraison", "livreurs", "abonnement", "commandes"].map(
+        {(verificationOnly ? ["dossier"] : ["dossier", "boutique", "catalogue", "livraison", "livreurs", "abonnement", "commandes"]).map(
           (name) => (
             <button
               key={name}
@@ -455,8 +456,9 @@ export function MerchantWorkspace(props: MerchantWorkspaceProps) {
       </aside>
       <section>
         <div className="mvp-card mvp-card--full">
-          <span className="mvp-eyebrow">Espace marchand</span>
+          <span className="mvp-eyebrow">{verificationOnly ? "Espace sécurisé · vérification" : "Espace marchand"}</span>
           <h1 className="mvp-title">{props.merchant.public_name}</h1>
+          {verificationOnly && <p className="mvp-lede">Cet espace est réservé à votre dossier. Les outils boutique, produits, commandes et livreurs seront débloqués après validation par SunuShop.</p>}
           <div className="mvp-actions">
             <span
               className="mvp-status"
@@ -464,12 +466,12 @@ export function MerchantWorkspace(props: MerchantWorkspaceProps) {
             >
               Vérification {props.merchant.verification_status}
             </span>
-            <span
+            {!verificationOnly && <span
               className="mvp-status"
               data-status={props.merchant.subscription_status}
             >
               Abonnement {props.merchant.subscription_status}
-            </span>
+            </span>}
             {props.merchant.status === "active" && (
               <Link
                 className="mvp-button mvp-button--secondary"
@@ -491,7 +493,7 @@ export function MerchantWorkspace(props: MerchantWorkspaceProps) {
 
         {tab === "dossier" && props.verificationCase && (
           <div className="mvp-card mvp-card--full">
-            <h2>Dossier de vérification</h2>
+            <h2>{verificationOnly ? "Complétez votre dossier" : "Dossier de vérification"}</h2>
             <p>
               Statut :{" "}
               <span

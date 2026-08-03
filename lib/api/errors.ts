@@ -26,6 +26,10 @@ const databaseErrorMap: Record<string, { status: number; message: string }> = {
     message: "Connectez-vous pour continuer.",
   },
   FORBIDDEN: { status: 403, message: "Cette action n’est pas autorisée." },
+  KYC_APPROVAL_REQUIRED: {
+    status: 403,
+    message: "Votre dossier doit être validé avant d’accéder aux outils de la boutique.",
+  },
   REVIEWER_MFA_REQUIRED: {
     status: 403,
     message: "Une authentification renforcée est requise.",
