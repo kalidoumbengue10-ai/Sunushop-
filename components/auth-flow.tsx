@@ -21,10 +21,10 @@ export function AuthFlow({ turnstileSiteKey }: { turnstileSiteKey?: string }) {
   const searchParams = useSearchParams();
   const requestedProfile = searchParams.get("profil");
   const requestedNext = searchParams.get("next");
+  const invitationNext = requestedNext?.startsWith("/invitations/claim?token=") ?? false;
   const profile =
     requestedProfile === "client" ||
     requestedProfile === "vendeur" ||
-    requestedProfile === "partenaire" ||
     requestedProfile === "admin"
       ? requestedProfile
       : requestedNext?.startsWith("/admin")
@@ -43,12 +43,6 @@ export function AuthFlow({ turnstileSiteKey }: { turnstileSiteKey?: string }) {
       description:
         "Pilotez votre boutique, vos produits et vos commandes au même endroit.",
     },
-    partenaire: {
-      label: "votre espace livraison",
-      next: "/partenaires",
-      description:
-        "Organisez les prises en charge et gardez chaque livraison à jour.",
-    },
     admin: {
       label: "l’espace administrateur",
       next: "/admin/crm",
@@ -56,6 +50,7 @@ export function AuthFlow({ turnstileSiteKey }: { turnstileSiteKey?: string }) {
         "Suivez les prospects, les commerçants et les opérations prioritaires.",
     },
   }[profile];
+  const canSignUp = profile === "client" || (profile === "vendeur" && invitationNext);
   const next =
     profile === "admin"
       ? requestedNext?.startsWith("/admin") && !requestedNext.startsWith("//")
@@ -72,7 +67,7 @@ export function AuthFlow({ turnstileSiteKey }: { turnstileSiteKey?: string }) {
         ? "recover"
         : "sign_in",
   );
-  const mode = profile === "admin" && selectedMode === "sign_up" ? "sign_in" : selectedMode;
+  const mode = !canSignUp && selectedMode === "sign_up" ? "sign_in" : selectedMode;
   const [email, setEmail] = useState(searchParams.get("email") ?? "");
   const [password, setPassword] = useState("");
   const [passwordConfirmation, setPasswordConfirmation] = useState("");
@@ -112,7 +107,7 @@ export function AuthFlow({ turnstileSiteKey }: { turnstileSiteKey?: string }) {
   }, []);
 
   useEffect(() => {
-    if (profile === "admin" && mode === "sign_up") {
+    if (!canSignUp && selectedMode === "sign_up") {
       // Le changement de profil invalide immédiatement le mode inscription admin.
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setMode("sign_in");
@@ -121,7 +116,7 @@ export function AuthFlow({ turnstileSiteKey }: { turnstileSiteKey?: string }) {
       setMessage("");
       setError("");
     }
-  }, [mode, profile]);
+  }, [canSignUp, selectedMode]);
 
   const resetCaptcha = () => {
     setCaptchaToken(undefined);
@@ -234,12 +229,6 @@ export function AuthFlow({ turnstileSiteKey }: { turnstileSiteKey?: string }) {
             Vendre
           </Link>
           <Link
-            href={`/connexion?profil=partenaire&next=/partenaires${mode === "sign_up" ? "&mode=inscription" : ""}`}
-            className={profile === "partenaire" ? "is-active" : ""}
-          >
-            Livrer
-          </Link>
-          <Link
             href="/connexion?profil=admin&next=/admin/crm"
             className={profile === "admin" ? "is-active" : ""}
           >
@@ -262,6 +251,12 @@ export function AuthFlow({ turnstileSiteKey }: { turnstileSiteKey?: string }) {
               protège les décisions sensibles.
             </p>
           )}
+          {profile === "vendeur" && !invitationNext && mode !== "recover" && (
+            <p className="auth-admin-note">
+              Commerçants et livreurs se connectent ici après une invitation. Un livreur ne voit que les missions confiées par ses boutiques.
+              <br /><Link href="/devenir-marchand">Vous souhaitez vendre ? Déposer une candidature</Link>
+            </p>
+          )}
         </div>
 
         {mode !== "recover" && (
@@ -276,13 +271,13 @@ export function AuthFlow({ turnstileSiteKey }: { turnstileSiteKey?: string }) {
             >
               J’ai déjà un compte
             </button>
-            {profile !== "admin" && (
+            {canSignUp && (
               <button
                 type="button"
                 className={`mvp-button ${mode === "sign_up" ? "" : "mvp-button--secondary"}`}
                 onClick={() => changeMode("sign_up")}
               >
-                Je crée mon compte
+                {invitationNext ? "Je crée mon accès invité" : "Je crée mon compte"}
               </button>
             )}
           </div>

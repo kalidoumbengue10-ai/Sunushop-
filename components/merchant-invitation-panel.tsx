@@ -3,16 +3,6 @@
 import { FormEvent, useMemo, useState } from "react";
 import type { CrmLead } from "@/components/admin-crm";
 
-function slugify(value: string) {
-  return value
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "")
-    .slice(0, 80);
-}
-
 export function MerchantInvitationPanel({
   leads,
   reload,
@@ -44,7 +34,6 @@ export function MerchantInvitationPanel({
           kind: form.get("kind"),
           publicName: form.get("publicName"),
           legalName: form.get("legalName") || undefined,
-          slug: form.get("slug"),
           phone: form.get("phone"),
           email: form.get("email"),
           region: form.get("region") || undefined,
@@ -109,10 +98,6 @@ export function MerchantInvitationPanel({
         <label>
           Nom public
           <input name="publicName" defaultValue={selected?.business_name ?? ""} required />
-        </label>
-        <label>
-          Identifiant URL
-          <input name="slug" defaultValue={slugify(selected?.business_name ?? "")} required />
         </label>
         <label>
           Email

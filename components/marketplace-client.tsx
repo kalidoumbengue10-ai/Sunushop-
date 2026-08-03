@@ -60,6 +60,21 @@ export function MarketplaceClient({
   const [orders, setOrders] = useState<OrderResult[]>([]);
   const [savedAddresses, setSavedAddresses] = useState<SavedAddress[]>([]);
   const [selectedAddressId, setSelectedAddressId] = useState("");
+  const [categoryMenuOpen, setCategoryMenuOpen] = useState(false);
+  const [activeCategory, setActiveCategory] = useState("Toutes");
+  const [search, setSearch] = useState("");
+
+  const categories = useMemo(
+    () => ["Toutes", ...Array.from(new Set(initialProducts.map((product) => product.category.name))).sort()],
+    [initialProducts],
+  );
+  const filteredProducts = useMemo(() => {
+    const query = search.trim().toLocaleLowerCase("fr");
+    return initialProducts.filter((product) =>
+      (activeCategory === "Toutes" || product.category.name === activeCategory) &&
+      (!query || `${product.title} ${product.description} ${product.merchant.name}`.toLocaleLowerCase("fr").includes(query)),
+    );
+  }, [activeCategory, initialProducts, search]);
 
   useEffect(() => {
     try {
@@ -281,25 +296,25 @@ export function MarketplaceClient({
 
   return (
     <div className="mvp-grid">
-      <section className="mvp-card mvp-card--full">
-        <span className="mvp-eyebrow">Catalogue vérifié</span>
-        <h1 className="mvp-title">Le marché pilote</h1>
-        <p className="mvp-lede">
-          Les produits apparaissent ici uniquement si le marchand est approuvé,
-          abonné et disponible dans une zone configurée.
-        </p>
-        {initialProducts.length ? (
+      <section className="mvp-card mvp-card--full marketplace-catalog" id="catalogue">
+        <div className="marketplace-section-heading"><div><span className="mvp-eyebrow">Catalogue en direct</span><h2>Produits disponibles maintenant</h2><p>Commandez auprès de commerces vérifiés et suivez chaque étape depuis votre espace.</p></div><span>{filteredProducts.length} produit{filteredProducts.length > 1 ? "s" : ""}</span></div>
+        <div className="catalog-tools">
+          <div className="catalog-category-menu">
+            <button type="button" className="catalog-menu-button" aria-expanded={categoryMenuOpen} onClick={() => setCategoryMenuOpen((value) => !value)}><span className="catalog-menu-icon">☰</span>{activeCategory === "Toutes" ? "Toutes les catégories" : activeCategory}</button>
+            {categoryMenuOpen && <div className="catalog-category-drawer" role="menu">{categories.map((category) => <button type="button" role="menuitem" className={category === activeCategory ? "is-active" : ""} key={category} onClick={() => { setActiveCategory(category); setCategoryMenuOpen(false); }}>{category}<span>{category === "Toutes" ? initialProducts.length : initialProducts.filter((product) => product.category.name === category).length}</span></button>)}</div>}
+          </div>
+          <label className="catalog-search"><span>⌕</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Rechercher un produit ou une boutique" aria-label="Rechercher dans le catalogue" /></label>
+        </div>
+        {filteredProducts.length ? (
           <div className="mvp-product-grid">
-            {initialProducts.map((product) => (
+            {filteredProducts.map((product) => (
               <article className="mvp-product" key={product.variant.id}>
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img className="mvp-product__image" src={product.imageUrl ?? ""} alt={product.title} />
                 <div className="mvp-product__body">
-                  <small>
-                    {product.merchant.name} · {product.category.name}
-                  </small>
+                  <small>{product.category.name}</small>
                   <h2>{product.title}</h2>
-                  <p>{product.description}</p>
+                  <p>{product.description}</p><Link className="product-shop-link" href={`/boutiques/${product.merchant.slug}`}>Vendu par {product.merchant.name}</Link>
                   <span className="mvp-price">
                     {formatPrice(product.variant.priceXof)}
                   </span>
@@ -318,10 +333,7 @@ export function MarketplaceClient({
             ))}
           </div>
         ) : (
-          <div className="mvp-empty">
-            Aucun produit public pour le moment. Les boutiques apparaîtront
-            après validation de leur dossier et activation de leur abonnement.
-          </div>
+          <div className="mvp-empty">{initialProducts.length ? "Aucun produit ne correspond à cette recherche." : "Le catalogue s’ouvre progressivement. Revenez bientôt pour découvrir les premiers produits disponibles."}</div>
         )}
       </section>
 

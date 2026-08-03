@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import Link from "next/link";
 import { MerchantWorkspace } from "@/components/merchant-workspace";
 import { CourierWorkspace } from "@/components/courier-workspace";
 import { MvpShell } from "@/components/mvp-shell";
@@ -28,7 +29,7 @@ export default async function MarchandPage() {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) redirect("/connexion?next=/marchand");
+  if (!user) redirect("/connexion?profil=vendeur&next=/marchand");
 
   const { data: membership } = await supabase
     .from("merchant_members")
@@ -42,7 +43,6 @@ export default async function MarchandPage() {
     .from("courier_memberships")
     .select("id")
     .eq("courier_user_id", user.id)
-    .eq("status", "active")
     .limit(1)
     .maybeSingle();
 
@@ -78,31 +78,16 @@ export default async function MarchandPage() {
     .order("position");
 
   if (!merchant) {
-    const [{ data: categories }, { data: plans }] = await Promise.all([
-      categoriesPromise,
-      plansPromise,
-    ]);
     return (
       <MvpShell>
         <main className="mvp-main">
           <div className="mvp-shell">
-            <MerchantWorkspace
-              merchant={null}
-              verificationCase={null}
-              documents={[]}
-              categories={categories ?? []}
-              plans={plans ?? []}
-              products={[]}
-              zones={[]}
-              subscription={null}
-              payments={[]}
-              orders={[]}
-              notifications={[]}
-              subscriptionPaymentNumbers={{
-                wave: pilotConfig.waveMerchantNumber || null,
-                orangeMoney: pilotConfig.orangeMoneyMerchantNumber || null,
-              }}
-            />
+            <section className="mvp-card mvp-card--full access-required-card">
+              <span className="mvp-eyebrow">Accès sur invitation</span>
+              <h1 className="mvp-title">Aucun commerce ni mission ne vous est encore associé.</h1>
+              <p className="mvp-lede">Un compte commerçant est ouvert seulement après étude du dossier. Un accès livreur est créé par le commerçant qui vous confie ses livraisons.</p>
+              <div className="mvp-actions"><Link className="mvp-button" href="/devenir-marchand">Déposer une candidature</Link><Link className="mvp-button mvp-button--secondary" href="/">Retour à l’accueil</Link></div>
+            </section>
           </div>
         </main>
       </MvpShell>

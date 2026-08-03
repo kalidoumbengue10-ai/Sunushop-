@@ -2,6 +2,7 @@ import { requireAdminClient, requireAdminRole } from "@/lib/api/auth";
 import { apiFailure, apiSuccess } from "@/lib/api/response";
 import { createInvitationToken, invitationUrl } from "@/lib/domain/invitation-token";
 import { merchantInvitationSchema } from "@/lib/domain/schemas";
+import { createPublicSlug } from "@/lib/domain/public-slug";
 
 export async function POST(request: Request) {
   const requestId = crypto.randomUUID();
@@ -18,7 +19,7 @@ export async function POST(request: Request) {
         lead_id: input.leadId ?? null,
         email: input.email,
         token_hash: tokenHash,
-        payload: input,
+        payload: { ...input, slug: input.slug ?? createPublicSlug(input.publicName) },
         expires_at: expiresAt,
         invited_by: user.id,
       })

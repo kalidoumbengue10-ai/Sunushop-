@@ -4,6 +4,7 @@ import {
   productInputSchema,
   productPublicationSchema,
 } from "@/lib/domain/schemas";
+import { createPublicSlug } from "@/lib/domain/public-slug";
 
 export async function GET(request: Request) {
   const requestId = crypto.randomUUID();
@@ -34,7 +35,7 @@ export async function POST(request: Request) {
       p_merchant_id: input.merchantId,
       p_category_id: input.categoryId,
       p_title: input.title,
-      p_slug: input.slug,
+      p_slug: input.slug ?? createPublicSlug(input.title),
       p_description: input.description,
       p_sku: input.sku,
       p_variant_title: input.variantTitle ?? "",

@@ -1,83 +1,74 @@
+import Link from "next/link";
 import { MarketplaceClient } from "@/components/marketplace-client";
 import { MvpShell } from "@/components/mvp-shell";
-import { PrelaunchForm } from "@/components/prelaunch-form";
 import { SetupRequired } from "@/components/setup-required";
-import Link from "next/link";
 import { getAdminSupabase } from "@/lib/infrastructure/supabase/server";
 import { SupabaseCatalogRepository } from "@/lib/infrastructure/supabase/repositories";
 
-export const dynamic = "force-dynamic";
+/* eslint-disable @next/next/no-img-element */
+
+export const revalidate = 60;
 
 export default async function Home() {
   const admin = getAdminSupabase();
-  const [products, categories, branding] = admin
+  const [products, branding] = admin
     ? await Promise.all([
         new SupabaseCatalogRepository(admin).list({ limit: 60 }).catch(() => []),
-        admin.from("categories").select("name").eq("active", true).order("position").then(({ data }) => data ?? []),
         admin.from("merchant_media").select("merchant_id, kind, storage_bucket, storage_path").then(({ data }) => data ?? []),
       ])
-    : [[], [], []];
-  const shops = new Map<string, {
-    id: string; name: string; slug: string; city: string | null;
-    categories: Set<string>; coverUrl: string | null; logoUrl: string | null;
-  }>();
+    : [[], []];
+  const shops = new Map<string, { id: string; name: string; slug: string; city: string | null; categories: Set<string>; coverUrl: string | null; logoUrl: string | null }>();
   for (const product of products) {
-    const shop = shops.get(product.merchant.id) ?? {
-      id: product.merchant.id,
-      name: product.merchant.name,
-      slug: product.merchant.slug,
-      city: product.merchant.city,
-      categories: new Set<string>(),
-      coverUrl: null,
-      logoUrl: null,
-    };
-    shop.categories.add(product.category.name);
-    shops.set(shop.id, shop);
+    const shop = shops.get(product.merchant.id) ?? { id: product.merchant.id, name: product.merchant.name, slug: product.merchant.slug, city: product.merchant.city, categories: new Set<string>(), coverUrl: null, logoUrl: null };
+    shop.categories.add(product.category.name); shops.set(shop.id, shop);
   }
   for (const media of branding) {
-    const shop = shops.get(media.merchant_id);
-    if (!shop || !admin) continue;
+    const shop = shops.get(media.merchant_id); if (!shop || !admin) continue;
     const url = admin.storage.from(media.storage_bucket).getPublicUrl(media.storage_path).data.publicUrl;
     if (media.kind === "cover") shop.coverUrl = url;
     if (media.kind === "logo") shop.logoUrl = url;
   }
+  const shopList = [...shops.values()];
+
   return (
     <MvpShell>
-      <main className="mvp-main"><div className="mvp-shell">
-        {!admin && <SetupRequired />}
-        <section className="mvp-card mvp-card--full">
-          <span className="mvp-eyebrow">Marketplace sénégalaise</span>
-          <h1 className="mvp-title">Des boutiques réelles, un catalogue à jour.</h1>
-          <p className="mvp-lede">Seuls les commerçants approuvés et prêts à vendre apparaissent ici. Aucun produit fictif n’est affiché.</p>
-        </section>
-        <section className="mvp-card mvp-card--full">
-          <span className="mvp-eyebrow">Boutiques par catégories</span>
-          <h2>Façades digitales des commerçants acceptés</h2>
-          {[...shops.values()].length ? (
-            <div className="mvp-product-grid">
-              {[...shops.values()].map((shop) => (
-                <article className="mvp-product" key={shop.id}>
-                  {shop.coverUrl && (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img className="mvp-product__image" src={shop.coverUrl} alt={`Façade de ${shop.name}`} />
-                  )}
-                  <div className="mvp-product__body">
-                    {shop.logoUrl && (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img className="mvp-shop-directory-logo" src={shop.logoUrl} alt={`Logo ${shop.name}`} />
-                    )}
-                    <small>{[...shop.categories].join(" · ")}</small>
-                    <h2>{shop.name}</h2><p>{shop.city}</p>
-                    <Link className="mvp-button" href={`/boutiques/${shop.slug}`}>Voir la boutique</Link>
-                  </div>
-                </article>
-              ))}
+      <main className="mvp-main marketplace-home">
+        <div className="mvp-shell">
+          {!admin && <SetupRequired />}
+          <section className="marketplace-hero">
+            <div className="marketplace-hero__copy">
+              <span className="mvp-eyebrow">La marketplace des commerces d’ici</span>
+              <h1>Vos commerces de confiance, réunis au même endroit.</h1>
+              <p>Découvrez les produits disponibles autour de vous, commandez simplement et suivez votre livraison jusqu’à la remise en main propre.</p>
+              <div className="mvp-actions"><Link className="mvp-button" href="#catalogue">Explorer les produits</Link><Link className="mvp-button mvp-button--secondary" href="/connexion">Suivre mes commandes</Link></div>
+              <div className="marketplace-trust"><span><b>✓</b> Commerces vérifiés</span><span><b>✓</b> Stock affiché à jour</span><span><b>✓</b> Livraison suivie par codes</span></div>
             </div>
-          ) : <p className="mvp-empty">Les boutiques apparaîtront ici dès qu’elles seront prêtes à vendre.</p>}
-        </section>
-        <MarketplaceClient initialProducts={products} />
-        <PrelaunchForm categories={categories} />
-      </div></main>
+            <div className="marketplace-hero__panel" aria-label="Comment acheter">
+              <span className="hero-panel-tag">Simple et local</span>
+              <div><strong>1</strong><p><b>Choisissez</b><br />un produit et sa boutique.</p></div>
+              <div><strong>2</strong><p><b>Commandez</b><br />avec votre adresse et votre paiement.</p></div>
+              <div><strong>3</strong><p><b>Recevez</b><br />et confirmez avec votre code personnel.</p></div>
+            </div>
+          </section>
+
+          <MarketplaceClient initialProducts={products} />
+
+          <section className="marketplace-shops" id="boutiques">
+            <div className="marketplace-section-heading"><div><span className="mvp-eyebrow">Boutiques SunuShop</span><h2>Rencontrez les commerçants</h2><p>Chaque façade rassemble uniquement les produits réellement publiés et disponibles.</p></div></div>
+            {shopList.length ? <div className="shop-directory-grid">{shopList.map((shop) => (
+              <article className="shop-directory-card" key={shop.id}>
+                {shop.coverUrl ? <img className="shop-directory-cover" src={shop.coverUrl} alt={`Façade de ${shop.name}`} /> : <div className="shop-directory-cover shop-directory-placeholder" aria-hidden="true"><span>{shop.name.slice(0, 1)}</span></div>}
+                <div className="shop-directory-body">{shop.logoUrl && <img className="mvp-shop-directory-logo" src={shop.logoUrl} alt={`Logo ${shop.name}`} />}<span className="shop-category-line">{[...shop.categories].join(" · ")}</span><h3>{shop.name}</h3><p>{shop.city || "Sénégal"}</p><Link href={`/boutiques/${shop.slug}`}>Entrer dans la boutique <span>→</span></Link></div>
+              </article>
+            ))}</div> : <div className="marketplace-empty-state"><strong>Les premières boutiques arrivent.</strong><p>Seuls les commerces acceptés, configurés et prêts à vendre seront affichés ici.</p></div>}
+          </section>
+
+          <section className="merchant-bottom-cta">
+            <div><span className="mvp-eyebrow">Commerçants</span><h2>Vous aussi, vous souhaitez vendre sur SunuShop ?</h2><p>Présentez votre activité. Après étude, nous vous invitons à compléter votre dossier et à ouvrir votre boutique.</p></div>
+            <div><Link className="mvp-button" href="/devenir-marchand">Déposer ma candidature</Link><small>Aucun compte marchand n’est créé sans validation.</small></div>
+          </section>
+        </div>
+      </main>
     </MvpShell>
   );
 }

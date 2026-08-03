@@ -54,7 +54,7 @@ export const merchantApplicationSchema = z
   .object({
     kind: z.enum(["informal", "formal"]),
     publicName: z.string().trim().min(2).max(120),
-    slug,
+    slug: slug.optional(),
     phone: e164Phone,
     email: z.email().optional(),
     legalName: z.string().trim().min(2).max(180).optional(),
@@ -226,7 +226,7 @@ export const productInputSchema = z.object({
   merchantId: uuid,
   categoryId: uuid,
   title: z.string().trim().min(2).max(180),
-  slug,
+  slug: slug.optional(),
   description: z.string().trim().min(10).max(5000),
   sku: z.string().trim().min(1).max(80),
   variantTitle: z.string().trim().max(120).optional(),
@@ -320,6 +320,11 @@ export const prelaunchLeadSchema = z.object({
   captchaToken: z.string().min(10).optional(),
 });
 
+export const merchantLeadApplicationSchema = prelaunchLeadSchema.extend({
+  businessType: z.enum(["informal", "formal"]),
+  salesChannel: z.string().trim().min(2).max(240),
+});
+
 export const merchantInvitationSchema = merchantApplicationSchema.safeExtend({
   email: authEmail,
   leadId: uuid.optional(),
@@ -378,7 +383,7 @@ export const deliveryCodeSchema = z.object({
 export const categoryInputSchema = z.object({
   id: uuid.optional(),
   name: z.string().trim().min(2).max(120),
-  slug,
+  slug: slug.optional(),
   description: z.string().trim().max(500).optional(),
   position: z.int().min(0).max(10_000).default(100),
   active: z.boolean().default(true),

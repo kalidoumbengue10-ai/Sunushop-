@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { formatPrice } from "@/lib/marketplace";
+import { getBrowserSupabase } from "@/lib/infrastructure/supabase/browser";
 
 type Address = { id: string; label: string; recipient_name: string; phone: string; region: string; city: string; address_hint: string; is_default: boolean };
 type Order = { id: string; public_code: string; status: string; total_xof: number; created_at: string; merchant_accounts: { public_name: string } | Array<{ public_name: string }> };
@@ -20,9 +21,13 @@ export function ClientWorkspace() {
     setAddresses(addressPayload.data.items); setOrders(orderPayload.data.items);
   }, []);
   useEffect(() => {
-    // Chargement réseau initial uniquement.
+    // Chargement réseau initial, puis abonnement aux mises à jour.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     load().catch((caught: Error) => setError(caught.message));
+    const interval = window.setInterval(() => { if (document.visibilityState === "visible") load().catch(() => undefined); }, 30_000);
+    let channel: ReturnType<ReturnType<typeof getBrowserSupabase>["channel"]> | undefined;
+    try { const supabase = getBrowserSupabase(); channel = supabase.channel("client-orders").on("postgres_changes", { event: "*", schema: "public", table: "orders" }, () => { load().catch(() => undefined); }).subscribe(); } catch { /* Le rafraîchissement périodique reste actif. */ }
+    return () => { window.clearInterval(interval); if (channel) channel.unsubscribe(); };
   }, [load]);
   const saveAddress = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault(); setError(""); setMessage(""); const form = new FormData(event.currentTarget);

@@ -1,6 +1,7 @@
 import { requireAdminClient, requireAdminRole } from "@/lib/api/auth";
 import { apiFailure, apiSuccess } from "@/lib/api/response";
 import { categoryInputSchema } from "@/lib/domain/schemas";
+import { createPublicSlug } from "@/lib/domain/public-slug";
 
 export async function GET() {
   const requestId = crypto.randomUUID();
@@ -17,7 +18,7 @@ export async function POST(request: Request) {
     const { user } = await requireAdminRole(["admin"]);
     const input = categoryInputSchema.parse(await request.json());
     const admin = requireAdminClient();
-    const values = { name: input.name, slug: input.slug, description: input.description ?? null, position: input.position, active: input.active };
+    const values = { name: input.name, slug: input.slug ?? createPublicSlug(input.name), description: input.description ?? null, position: input.position, active: input.active };
     const result = input.id
       ? await admin.from("categories").update(values).eq("id", input.id).select("id, name, slug, active").single()
       : await admin.from("categories").insert(values).select("id, name, slug, active").single();

@@ -3,6 +3,7 @@ import { ApiError } from "@/lib/api/errors";
 import { apiFailure, apiSuccess } from "@/lib/api/response";
 import { hashInvitationToken } from "@/lib/domain/invitation-token";
 import { invitationClaimSchema, merchantApplicationSchema } from "@/lib/domain/schemas";
+import { createPublicSlug } from "@/lib/domain/public-slug";
 
 export async function POST(request: Request) {
   const requestId = crypto.randomUUID();
@@ -45,7 +46,7 @@ export async function POST(request: Request) {
           {
             p_kind: payload.kind,
             p_public_name: payload.publicName,
-            p_slug: payload.slug,
+            p_slug: payload.slug ?? createPublicSlug(payload.publicName),
             p_phone: payload.phone,
             p_email: payload.email ?? user.email,
             p_legal_name: payload.legalName ?? null,

@@ -319,10 +319,10 @@ export function AdminCrm({
           </div>
           {filtered.map((lead) => (
             <button key={lead.id} type="button" className="crm-table__row" onClick={() => openLead(lead.id)} disabled={busy} role="row">
-              <span><b>{lead.business_name}</b><small>{lead.business_type || "Activité à préciser"} · {lead.city || "Ville à préciser"}</small></span>
-              <span><b>{lead.full_name}</b><small>{lead.email}</small></span>
-              <span><i className="crm-status" data-status={lead.status}>{statusLabel(lead.status)}</i><small>{priorityLabels[lead.priority]}</small></span>
-              <span><b>{lead.next_follow_up_at ? formatDate(lead.next_follow_up_at) : "À planifier"}</b><small>Mis à jour {formatDate(lead.updated_at)}</small></span>
+              <span data-label="Commerce"><b>{lead.business_name}</b><small>{lead.business_type || "Activité à préciser"} · {lead.city || "Ville à préciser"}</small></span>
+              <span data-label="Contact"><b>{lead.full_name}</b><small>{lead.email}</small></span>
+              <span data-label="Étape"><i className="crm-status" data-status={lead.status}>{statusLabel(lead.status)}</i><small>{priorityLabels[lead.priority]}</small></span>
+              <span data-label="Relance"><b>{lead.next_follow_up_at ? formatDate(lead.next_follow_up_at) : "À planifier"}</b><small>Mis à jour {formatDate(lead.updated_at)}</small></span>
               <ChevronRight />
             </button>
           ))}

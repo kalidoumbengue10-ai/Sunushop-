@@ -12,6 +12,12 @@ function escapeHtml(value: unknown) {
 }
 
 function render(template: string, payload: Record<string, unknown>) {
+  if (template === "merchant_application_received") {
+    return {
+      subject: `Nouvelle candidature SunuShop — ${String(payload.shopName ?? "boutique")}`,
+      html: `<h1>Nouvelle candidature commerçant</h1><p><strong>${escapeHtml(payload.contactName)}</strong> souhaite référencer ${escapeHtml(payload.shopName)}.</p><p>Email : ${escapeHtml(payload.email)}<br>Téléphone : ${escapeHtml(payload.phone)}</p>`,
+    };
+  }
   if (template === "prelaunch_lead_received") {
     return {
       subject: `Nouveau contact SunuShop — ${String(payload.shopName ?? "boutique")}`,

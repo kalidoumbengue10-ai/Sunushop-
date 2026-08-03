@@ -9,9 +9,8 @@ export async function GET() {
     const admin = requireAdminClient();
     const { data: memberships, error: membershipError } = await admin
       .from("courier_memberships")
-      .select("id, merchant_id, display_name, phone, merchant_accounts!inner(public_name, slug)")
-      .eq("courier_user_id", user.id)
-      .eq("status", "active");
+      .select("id, merchant_id, display_name, phone, status, merchant_accounts!inner(public_name, slug)")
+      .eq("courier_user_id", user.id);
     if (membershipError) throw membershipError;
     const ids = (memberships ?? []).map((item) => item.id);
     if (!ids.length) return apiSuccess({ memberships: [], items: [], deliveredThisMonth: 0 }, { requestId });

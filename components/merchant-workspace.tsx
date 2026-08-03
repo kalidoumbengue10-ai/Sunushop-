@@ -284,28 +284,6 @@ export function MerchantWorkspace(props: MerchantWorkspaceProps) {
     return true;
   };
 
-  const createApplication = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    await submitJson(
-      "/api/merchant/applications",
-      {
-        kind: form.get("kind"),
-        publicName: form.get("publicName"),
-        legalName: form.get("legalName") || undefined,
-        slug: form.get("slug"),
-        phone: form.get("phone"),
-        email: form.get("email") || undefined,
-        region: form.get("region") || undefined,
-        city: form.get("city") || undefined,
-        addressHint: form.get("addressHint") || undefined,
-        representativeIsLegalOwner:
-          form.get("representativeIsLegalOwner") === "on",
-      },
-      "Votre dossier marchand a été créé.",
-    );
-  };
-
   const createProduct = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!props.merchant) return;
@@ -316,7 +294,6 @@ export function MerchantWorkspace(props: MerchantWorkspaceProps) {
         merchantId: props.merchant.id,
         categoryId: form.get("categoryId"),
         title: form.get("title"),
-        slug: form.get("slug"),
         description: form.get("description"),
         sku: form.get("sku"),
         variantTitle: form.get("variantTitle") || undefined,
@@ -434,70 +411,7 @@ export function MerchantWorkspace(props: MerchantWorkspaceProps) {
     router.refresh();
   };
 
-  if (!props.merchant) {
-    return (
-      <section className="mvp-card mvp-card--full">
-        <span className="mvp-eyebrow">Première étape</span>
-        <h1 className="mvp-title">Créer votre espace marchand</h1>
-        {message && <p className="mvp-alert">{message}</p>}
-        {error && <p className="mvp-alert mvp-alert--error">{error}</p>}
-        <form className="mvp-form" onSubmit={createApplication}>
-          <div className="mvp-form__grid">
-            <label className="mvp-field">
-              Type de commerçant
-              <select name="kind" required>
-                <option value="informal">Activité informelle</option>
-                <option value="formal">Entreprise enregistrée</option>
-              </select>
-            </label>
-            <label className="mvp-field">
-              Nom public
-              <input name="publicName" required />
-            </label>
-            <label className="mvp-field">
-              Raison sociale si formel
-              <input name="legalName" />
-            </label>
-            <label className="mvp-field">
-              Identifiant URL
-              <input name="slug" placeholder="ma-boutique" required />
-            </label>
-            <label className="mvp-field">
-              Téléphone
-              <input name="phone" placeholder="+221770000000" required />
-            </label>
-            <label className="mvp-field">
-              Email
-              <input name="email" type="email" />
-            </label>
-            <label className="mvp-field">
-              Région
-              <input name="region" />
-            </label>
-            <label className="mvp-field">
-              Ville
-              <input name="city" />
-            </label>
-          </div>
-          <label className="mvp-field">
-            Adresse ou repère
-            <textarea name="addressHint" />
-          </label>
-          <label>
-            <input
-              name="representativeIsLegalOwner"
-              type="checkbox"
-              defaultChecked
-            />{" "}
-            Je suis le responsable légal de l’activité
-          </label>
-          <button className="mvp-button" disabled={busy}>
-            {busy ? "Création…" : "Créer le dossier"}
-          </button>
-        </form>
-      </section>
-    );
-  }
+  if (!props.merchant) return null;
 
   const latestDocuments = new Map<VerificationDocumentType, DocumentRow>();
   props.documents.forEach((document) => {
@@ -599,7 +513,7 @@ export function MerchantWorkspace(props: MerchantWorkspaceProps) {
             <p>
               <Link
                 href="/documents/lettre-intention-sunushop.html"
-                target="_blank"
+                download="Lettre-intention-SunuShop.html"
               >
                 Télécharger le modèle de lettre d’intention
               </Link>
@@ -674,10 +588,6 @@ export function MerchantWorkspace(props: MerchantWorkspaceProps) {
                 <label className="mvp-field">
                   Nom du produit
                   <input name="title" required />
-                </label>
-                <label className="mvp-field">
-                  Identifiant URL
-                  <input name="slug" placeholder="nom-du-produit" required />
                 </label>
                 <label className="mvp-field">
                   SKU

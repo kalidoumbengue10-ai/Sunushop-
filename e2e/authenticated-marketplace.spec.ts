@@ -1,4 +1,5 @@
 import { expect, test, type APIResponse, type BrowserContext } from "@playwright/test";
+import { createHash } from "node:crypto";
 import { loadEnvConfig } from "@next/env";
 import { createClient } from "@supabase/supabase-js";
 
@@ -30,6 +31,9 @@ const created = {
   orderId: "",
   batchId: "",
   mediaPaths: [] as string[],
+  leadIds: [] as string[],
+  invitationIds: [] as string[],
+  verificationPaths: [] as string[],
 };
 
 type JsonObject = Record<string, unknown>;
@@ -61,6 +65,7 @@ async function createUser(email: string, displayName: string) {
 }
 
 async function cleanup() {
+  if (created.verificationPaths.length) await admin.storage.from("merchant-verification").remove(created.verificationPaths);
   if (created.mediaPaths.length) {
     await admin.storage.from("product-media").remove(created.mediaPaths);
   }
@@ -85,6 +90,14 @@ async function cleanup() {
     await admin.from("workspace_invitations").delete().eq("merchant_id", merchantId);
     await admin.from("merchant_accounts").delete().eq("id", merchantId);
   }
+  if (created.invitationIds.length) await admin.from("workspace_invitations").delete().in("id", created.invitationIds);
+  for (const leadId of created.leadIds) {
+    await admin.from("notification_outbox").delete().eq("dedupe_key", `merchant-application:${leadId}`);
+    await admin.from("crm_lead_events").delete().eq("lead_id", leadId);
+    await admin.from("crm_tasks").delete().eq("lead_id", leadId);
+    await admin.from("crm_lead_notes").delete().eq("lead_id", leadId);
+    await admin.from("crm_leads").delete().eq("id", leadId);
+  }
   if (created.categoryId) await admin.from("categories").delete().eq("id", created.categoryId);
   for (const userId of created.userIds.reverse()) {
     await admin.auth.admin.deleteUser(userId);
@@ -96,6 +109,15 @@ test.describe.serial("flux authentifiés marketplace", () => {
 
   test("marchand → client → livreur, avec isolation et codes uniques", async ({ browser }) => {
     test.setTimeout(120_000);
+
+    const intakeContext = await browser.newContext();
+    const intake = await responseData<{ id: string }>(await intakeContext.request.post("/api/candidatures/marchands", { data: {
+      contactName: "Marchand E2E", shopName: `Boutique E2E ${runId}`, email: emails.merchant,
+      phone: "+221770000001", city: "Dakar", businessType: "informal", salesChannel: "Boutique et WhatsApp",
+      categories: ["Test E2E"], message: "Candidature fictive Playwright supprimée après le test.", consent: true,
+    } }), 201);
+    created.leadIds.push(intake.id);
+    await intakeContext.close();
 
     const merchantUserId = await createUser(emails.merchant, "Marchand E2E");
     const clientUserId = await createUser(emails.client, "Client E2E");
@@ -130,6 +152,8 @@ test.describe.serial("flux authentifiés marketplace", () => {
       .single();
     if (merchantError) throw merchantError;
     created.merchantIds.push(merchant.id);
+    const { error: conversionError } = await admin.from("crm_leads").update({ status: "converted", merchant_id: merchant.id, converted_at: new Date().toISOString() }).eq("id", intake.id);
+    if (conversionError) throw conversionError;
 
     const { error: membershipError } = await admin.from("merchant_members").insert({
       merchant_id: merchant.id,
@@ -414,7 +438,7 @@ test.describe.serial("flux authentifiés marketplace", () => {
 
           const courierPage = await courierContext.newPage();
           await courierPage.goto("/marchand");
-          await expect(courierPage.getByRole("heading", { name: "Mes livraisons" })).toBeVisible();
+          await expect(courierPage.getByRole("heading", { name: "Mes missions de livraison" })).toBeVisible();
           await expect(courierPage.getByText("delivered")).toBeVisible();
 
           const finalOrder = await responseData<{
@@ -430,5 +454,53 @@ test.describe.serial("flux authentifiés marketplace", () => {
     }
 
     expect(clientUserId).toBeTruthy();
+  });
+
+  test("candidature → invitation → justificatifs KYC → envoi du dossier", async ({ browser }) => {
+    test.setTimeout(90_000);
+    const onboardingEmail = `e2e-onboarding-${runId}@example.test`;
+    const publicContext = await browser.newContext();
+    const lead = await responseData<{ id: string }>(await publicContext.request.post("/api/candidatures/marchands", { data: {
+      contactName: "Fatou Test", shopName: `Commerce dossier ${runId}`, email: onboardingEmail,
+      phone: "+221770000009", city: "Dakar", businessType: "informal", salesChannel: "Boutique physique",
+      categories: ["Mode"], message: "Dossier KYC fictif Playwright.", consent: true,
+    } }), 201);
+    created.leadIds.push(lead.id);
+
+    const arbitrarySignup = await publicContext.request.post("/api/auth/password/sign-up", { data: { email: `blocked-${runId}@example.test`, password, next: "/marchand" } });
+    expect(arbitrarySignup.status()).toBe(403);
+    await publicContext.close();
+
+    const ownerId = await createUser(onboardingEmail, "Fatou Test");
+    const token = crypto.randomUUID() + crypto.randomUUID();
+    const { data: invitation, error: invitationError } = await admin.from("workspace_invitations").insert({
+      kind: "merchant_owner", lead_id: lead.id, email: onboardingEmail,
+      token_hash: createHash("sha256").update(token).digest("hex"),
+      payload: { kind: "informal", publicName: `Commerce dossier ${runId}`, phone: "+221770000009", email: onboardingEmail, city: "Dakar", region: "Dakar", representativeIsLegalOwner: true },
+      expires_at: new Date(Date.now() + 86_400_000).toISOString(), invited_by: ownerId,
+    }).select("id").single();
+    if (invitationError) throw invitationError;
+    created.invitationIds.push(invitation.id);
+
+    const ownerContext = await browser.newContext();
+    await signIn(ownerContext, onboardingEmail);
+    const claim = await responseData<{ merchantId: string }>(await ownerContext.request.post("/api/invitations/claim", { data: { token } }), 200);
+    created.merchantIds.push(claim.merchantId);
+    const { data: verificationCase, error: caseError } = await admin.from("verification_cases").select("id").eq("merchant_id", claim.merchantId).single();
+    if (caseError) throw caseError;
+    const pdf = Buffer.from("%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\n%%EOF");
+    for (const documentType of ["national_id_front", "national_id_back", "intent_letter", "proof_activity"]) {
+      await responseData(await ownerContext.request.post(`/api/merchant/verifications/${verificationCase.id}/documents`, { multipart: { documentType, file: { name: `${documentType}.pdf`, mimeType: "application/pdf", buffer: pdf } } }), 201);
+    }
+    const { data: storedDocuments } = await admin.from("verification_documents").select("storage_path").eq("case_id", verificationCase.id);
+    created.verificationPaths.push(...(storedDocuments ?? []).map((document) => document.storage_path));
+    await responseData(await ownerContext.request.post(`/api/merchant/verifications/${verificationCase.id}/submit`, { data: {} }), 200);
+    const { data: submitted } = await admin.from("verification_cases").select("status").eq("id", verificationCase.id).single();
+    expect(submitted?.status).toBe("submitted");
+    const ownerPage = await ownerContext.newPage();
+    await ownerPage.goto("/marchand");
+    await expect(ownerPage.getByRole("heading", { name: `Commerce dossier ${runId}` })).toBeVisible();
+    await expect(ownerPage.getByText(/Dossier de vérification/i)).toBeVisible();
+    await ownerContext.close();
   });
 });
