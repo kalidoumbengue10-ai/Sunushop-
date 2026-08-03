@@ -24,6 +24,7 @@ test("la candidature réelle alimente le CRM et propose la lettre d’intention"
   await page.goto("/devenir-marchand");
   await expect(page.getByRole("link", { name: /Télécharger la lettre d’intention/i })).toHaveAttribute("download", "Lettre-intention-SunuShop.html");
   await expect(page.getByText(/identifiant URL/i)).toHaveCount(0);
+  await expect(page.getByLabel("Mode & accessoires")).toBeVisible();
   await page.getByLabel("Nom et prénom").fill("Awa Ndiaye");
   await page.getByLabel("Nom du commerce").fill("Atelier Test");
   await page.getByLabel("Adresse email").fill("awa@example.test");

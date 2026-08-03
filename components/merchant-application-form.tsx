@@ -1,11 +1,32 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
+import Script from "next/script";
 
-export function MerchantApplicationForm({ categories }: { categories: Array<{ name: string }> }) {
+declare global {
+  interface Window {
+    sunuShopMerchantTurnstile?: (token: string) => void;
+    sunuShopMerchantTurnstileError?: () => void;
+    sunuShopMerchantTurnstileExpired?: () => void;
+    turnstile?: { reset: () => void };
+  }
+}
+
+export function MerchantApplicationForm({ categories, turnstileSiteKey }: { categories: Array<{ name: string }>; turnstileSiteKey?: string }) {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [captchaToken, setCaptchaToken] = useState<string>();
+  useEffect(() => {
+    window.sunuShopMerchantTurnstile = (token) => { setCaptchaToken(token); setError(""); };
+    window.sunuShopMerchantTurnstileError = () => { setCaptchaToken(undefined); setError("Le contrôle anti-robot n’a pas pu se charger. Actualisez la page ou désactivez votre bloqueur de contenu."); };
+    window.sunuShopMerchantTurnstileExpired = () => { setCaptchaToken(undefined); setError("Le contrôle anti-robot a expiré. Validez-le de nouveau."); };
+    return () => {
+      delete window.sunuShopMerchantTurnstile;
+      delete window.sunuShopMerchantTurnstileError;
+      delete window.sunuShopMerchantTurnstileExpired;
+    };
+  }, []);
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault(); setBusy(true); setMessage(""); setError("");
     const formElement = event.currentTarget; const form = new FormData(formElement);
@@ -14,16 +35,16 @@ export function MerchantApplicationForm({ categories }: { categories: Array<{ na
       body: JSON.stringify({
         contactName: form.get("contactName"), shopName: form.get("shopName"), email: form.get("email"), phone: form.get("phone"),
         city: form.get("city") || undefined, businessType: form.get("businessType"), salesChannel: form.get("salesChannel"),
-        categories: form.getAll("categories"), message: form.get("message") || undefined, consent: form.get("consent") === "on",
+        categories: form.getAll("categories"), message: form.get("message") || undefined, consent: form.get("consent") === "on", captchaToken,
       }),
     });
-    const payload = await response.json().catch(() => null); setBusy(false);
+    const payload = await response.json().catch(() => null); setBusy(false); setCaptchaToken(undefined); window.turnstile?.reset();
     if (!response.ok) return setError(payload?.error?.message ?? "La candidature n’a pas pu être envoyée.");
     setMessage(payload.data.alreadyKnown ? "Votre dossier a été actualisé. Notre équipe reviendra vers vous par email." : "Votre candidature est bien arrivée dans notre CRM. Nous l’étudions avant de vous inviter à déposer les justificatifs.");
     formElement.reset();
   };
   return (
-    <section className="merchant-application-layout">
+    <><>{turnstileSiteKey && <Script src="https://challenges.cloudflare.com/turnstile/v0/api.js" strategy="afterInteractive" />}</><section className="merchant-application-layout">
       <aside className="merchant-application-guide">
         <span className="mvp-eyebrow">Candidature commerçant</span><h1>Présentez votre commerce à SunuShop.</h1>
         <p>Ce formulaire ouvre votre dossier. Il ne crée pas de compte automatiquement.</p>
@@ -48,12 +69,13 @@ export function MerchantApplicationForm({ categories }: { categories: Array<{ na
             <label className="mvp-field">Statut de l’activité<select name="businessType" required><option value="">Choisir</option><option value="informal">Commerçant individuel / activité informelle</option><option value="formal">Entreprise enregistrée</option></select></label>
           </div>
           <label className="mvp-field">Comment vendez-vous aujourd’hui ?<input name="salesChannel" placeholder="En boutique, WhatsApp, Instagram…" required /></label>
-          <fieldset className="mvp-document"><legend>Catégories de produits</legend><div className="application-category-grid">{categories.map((category) => <label key={category.name}><input type="checkbox" name="categories" value={category.name} /> <span>{category.name}</span></label>)}</div></fieldset>
+          <fieldset className="mvp-document"><legend>Catégories de produits</legend>{categories.length ? <div className="application-category-grid">{categories.map((category) => <label key={category.name}><input type="checkbox" name="categories" value={category.name} /> <span>{category.name}</span></label>)}</div> : <p className="application-category-empty">Les catégories sont momentanément indisponibles. Vous pouvez préciser vos produits dans la présentation ci-dessous.</p>}</fieldset>
           <label className="mvp-field">Présentez brièvement votre activité<textarea name="message" rows={4} maxLength={1000} placeholder="Produits proposés, ancienneté, zone de clientèle…" /></label>
           <label className="application-consent"><input name="consent" type="checkbox" required /><span>J’accepte que SunuShop utilise ces informations pour étudier ma candidature et me recontacter.</span></label>
-          <button className="mvp-button" disabled={busy}>{busy ? "Envoi du dossier…" : "Envoyer ma candidature"}</button>
+          {turnstileSiteKey && <div className="merchant-captcha"><div className="cf-turnstile" data-sitekey={turnstileSiteKey} data-callback="sunuShopMerchantTurnstile" data-error-callback="sunuShopMerchantTurnstileError" data-expired-callback="sunuShopMerchantTurnstileExpired" />{!captchaToken && !error && <small>Validation anti-robot en cours…</small>}</div>}
+          <button className="mvp-button" disabled={busy || Boolean(turnstileSiteKey && !captchaToken)}>{busy ? "Envoi du dossier…" : "Envoyer ma candidature"}</button>
         </form>
       </section>
-    </section>
+    </section></>
   );
 }
