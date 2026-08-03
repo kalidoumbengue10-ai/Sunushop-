@@ -6,7 +6,15 @@ import { getServerSupabase } from "@/lib/infrastructure/supabase/server";
 
 export const dynamic = "force-dynamic";
 
-export default async function MotDePassePage() {
+export default async function MotDePassePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ next?: string }>;
+}) {
+  const requestedNext = (await searchParams).next;
+  const next = requestedNext?.startsWith("/") && !requestedNext.startsWith("//")
+    ? requestedNext
+    : undefined;
   const supabase = await getServerSupabase();
 
   if (!supabase) {
@@ -30,7 +38,7 @@ export default async function MotDePassePage() {
   return (
     <MvpShell>
       <main className="mvp-auth">
-        <PasswordUpdateForm />
+        <PasswordUpdateForm next={next} />
       </main>
     </MvpShell>
   );

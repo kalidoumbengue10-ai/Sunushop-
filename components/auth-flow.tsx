@@ -155,7 +155,7 @@ export function AuthFlow({ turnstileSiteKey }: { turnstileSiteKey?: string }) {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           email,
-          ...(mode === "recover" ? {} : { password }),
+          ...(mode === "recover" ? { next } : { password }),
           ...(mode === "sign_up" ? { next } : {}),
           captchaToken,
         }),

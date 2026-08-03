@@ -55,6 +55,28 @@ export default async function MarchandPage() {
   }
 
   const admin = getAdminSupabase();
+  if (!membership && !courierMembership && user.email && admin) {
+    const { data: pendingInvitation } = await admin
+      .from("workspace_invitations")
+      .select("id")
+      .eq("kind", "merchant_owner")
+      .eq("email", user.email)
+      .eq("status", "pending")
+      .gt("expires_at", new Date().toISOString())
+      .maybeSingle();
+    if (pendingInvitation) {
+      const { data: notification } = await admin
+        .from("notification_outbox")
+        .select("payload")
+        .eq("dedupe_key", `merchant-invitation:${pendingInvitation.id}`)
+        .maybeSingle();
+      const invitationUrl = (notification?.payload as { url?: string } | null)?.url;
+      if (invitationUrl) {
+        const next = new URL(invitationUrl).searchParams.get("next");
+        if (next?.startsWith("/invitations/claim?token=")) redirect(next);
+      }
+    }
+  }
   const { data: merchant } =
     membership && admin
       ? await admin

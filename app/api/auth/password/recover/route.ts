@@ -27,8 +27,10 @@ export async function POST(request: Request) {
       );
     }
 
+    const passwordPage = new URL("/mot-de-passe", "https://sunushop.local");
+    if (input.next) passwordPage.searchParams.set("next", input.next);
     const { error } = await supabase.auth.resetPasswordForEmail(input.email, {
-      redirectTo: getAuthCallbackUrl(request, "/mot-de-passe"),
+      redirectTo: getAuthCallbackUrl(request, `${passwordPage.pathname}${passwordPage.search}`),
       captchaToken: input.captchaToken,
     });
 

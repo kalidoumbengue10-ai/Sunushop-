@@ -40,6 +40,7 @@ export const signInWithPasswordSchema = z.object({
 export const recoverPasswordSchema = z.object({
   email: authEmail,
   captchaToken: z.string().min(10).optional(),
+  next: safeNextPath,
 });
 
 export const updatePasswordSchema = z.object({

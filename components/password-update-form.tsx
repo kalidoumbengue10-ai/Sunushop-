@@ -3,7 +3,7 @@
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 
-export function PasswordUpdateForm() {
+export function PasswordUpdateForm({ next }: { next?: string }) {
   const router = useRouter();
   const [password, setPassword] = useState("");
   const [confirmation, setConfirmation] = useState("");
@@ -33,7 +33,7 @@ export function PasswordUpdateForm() {
       return;
     }
 
-    router.push("/connexion?message=password-updated");
+    router.push(next ?? "/connexion?message=password-updated");
     router.refresh();
   };
 

@@ -481,26 +481,31 @@ test.describe.serial("flux authentifiés marketplace", () => {
     const token = nextPath ? new URL(nextPath, invitationUrl.origin).searchParams.get("token") : null;
     expect(token).toBeTruthy();
 
-    await createUser(onboardingEmail, "Fatou Test");
+    const ownerId = await createUser(onboardingEmail, "Fatou Test");
 
     const ownerContext = await browser.newContext();
     await signIn(ownerContext, onboardingEmail);
-    const claim = await responseData<{ merchantId: string }>(await ownerContext.request.post("/api/invitations/claim", { data: { token } }), 200);
-    created.merchantIds.push(claim.merchantId);
+    const ownerPage = await ownerContext.newPage();
+    await ownerPage.goto("/marchand");
+    await expect(ownerPage.getByText(/dossier commerçant est prêt/i)).toBeVisible();
+    await ownerPage.getByRole("link", { name: "Ouvrir mon espace" }).click();
+    const { data: ownerMembership, error: ownerMembershipError } = await admin
+      .from("merchant_members").select("merchant_id").eq("user_id", ownerId).eq("role", "owner").single();
+    if (ownerMembershipError) throw ownerMembershipError;
+    const merchantId = ownerMembership.merchant_id;
+    created.merchantIds.push(merchantId);
     const restrictedProduct = await ownerContext.request.post("/api/merchant/products", { data: {
-      merchantId: claim.merchantId, categoryId: crypto.randomUUID(), title: "Interdit avant KYC",
+      merchantId, categoryId: crypto.randomUUID(), title: "Interdit avant KYC",
       description: "Ne doit jamais être créé.", sku: `BLOCKED-${runId}`, priceXof: 1000, stock: 1, publish: false,
     } });
     expect(restrictedProduct.status()).toBe(403);
     await expect(restrictedProduct.json()).resolves.toMatchObject({ error: { code: "KYC_APPROVAL_REQUIRED" } });
 
-    const ownerPage = await ownerContext.newPage();
-    await ownerPage.goto("/marchand");
     await expect(ownerPage.getByText("Espace sécurisé · vérification")).toBeVisible();
     await expect(ownerPage.getByRole("button", { name: "Catalogue" })).toHaveCount(0);
     await expect(ownerPage.getByRole("button", { name: "Livreurs" })).toHaveCount(0);
 
-    const { data: verificationCase, error: caseError } = await admin.from("verification_cases").select("id").eq("merchant_id", claim.merchantId).single();
+    const { data: verificationCase, error: caseError } = await admin.from("verification_cases").select("id").eq("merchant_id", merchantId).single();
     if (caseError) throw caseError;
     const pdf = Buffer.from("%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\n%%EOF");
     for (const documentType of ["national_id_front", "national_id_back", "intent_letter", "proof_activity"]) {
@@ -515,7 +520,7 @@ test.describe.serial("flux authentifiés marketplace", () => {
     const approvedAt = new Date().toISOString();
     const { error: approvalError } = await admin.from("verification_cases").update({ status: "approved", decided_at: approvedAt }).eq("id", verificationCase.id);
     if (approvalError) throw approvalError;
-    const { error: merchantApprovalError } = await admin.from("merchant_accounts").update({ verification_status: "approved" }).eq("id", claim.merchantId);
+    const { error: merchantApprovalError } = await admin.from("merchant_accounts").update({ verification_status: "approved" }).eq("id", merchantId);
     if (merchantApprovalError) throw merchantApprovalError;
     const { error: leadConversionError } = await admin.from("crm_leads").update({ status: "converted", converted_at: approvedAt }).eq("id", lead.id);
     if (leadConversionError) throw leadConversionError;
