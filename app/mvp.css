@@ -12,3 +12,19 @@
 
 @media(max-width:850px){.mvp-menu-toggle{display:flex}.mvp-menu-toggle span{position:absolute;opacity:0}.mvp-menu-toggle b{margin:0}.mvp-nav{position:absolute;top:64px;right:16px;left:16px;display:none;align-items:stretch;gap:4px;padding:12px;border:1px solid rgba(23,39,31,.12);border-radius:16px;background:#fff;box-shadow:0 18px 45px rgba(23,39,31,.16)}.mvp-nav.is-open{display:grid}.mvp-nav a:not(.mvp-nav__cta){display:block;padding:12px;border-radius:10px}.mvp-nav__cta{text-align:center}.marketplace-hero{min-height:auto;grid-template-columns:1fr}.marketplace-hero__panel{display:grid;grid-template-columns:repeat(3,1fr)}.marketplace-hero__panel .hero-panel-tag{grid-column:1/-1}.marketplace-hero__panel>div{grid-template-columns:36px 1fr;padding:12px}.shop-directory-grid{grid-template-columns:1fr 1fr}.merchant-bottom-cta,.merchant-application-layout{grid-template-columns:1fr}.merchant-application-guide{position:static}.courier-mission-grid{grid-template-columns:1fr}}
 @media(max-width:600px){.marketplace-home{padding-top:12px}.marketplace-hero{border-radius:23px}.marketplace-hero__copy{padding:35px 24px}.marketplace-hero__copy h1{font-size:42px}.marketplace-hero__copy>p{font-size:15px}.marketplace-trust{display:grid;gap:10px}.marketplace-hero__panel{grid-template-columns:1fr;padding:24px}.marketplace-hero__panel .hero-panel-tag{grid-column:auto}.catalog-tools{grid-template-columns:1fr}.catalog-category-drawer{top:56px}.marketplace-section-heading{align-items:flex-start}.shop-directory-grid{grid-template-columns:1fr}.merchant-bottom-cta{margin-top:45px}.merchant-application-guide,.merchant-application-card{padding:24px}.merchant-application-guide h1{font-size:36px}.application-category-grid{grid-template-columns:1fr}.courier-hero{align-items:flex-start;flex-direction:column;padding:25px}.courier-month-stat{width:100%}.courier-route{grid-template-columns:1fr}.courier-route>i{transform:rotate(90deg);justify-self:center}.courier-code-form{grid-template-columns:1fr}.mvp-shell{width:min(100% - 22px,1180px)}}
+
+/* Dépôt documentaire marchand */
+.mvp-document{display:grid;align-content:start;gap:12px;padding:18px;border-style:solid}
+.mvp-document__heading{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.mvp-document__heading strong{font-size:14px;line-height:1.35}
+.mvp-document>small{min-height:34px;color:#68776f;line-height:1.45}
+.mvp-document__input{position:absolute!important;width:1px!important;height:1px!important;padding:0!important;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0!important}
+.mvp-required-badge,.mvp-optional-badge{flex:none;padding:5px 8px;border-radius:999px;font-size:9px;font-weight:900;text-transform:uppercase}
+.mvp-required-badge{color:#8b3324;background:#f9e9e4}
+.mvp-optional-badge{color:#526159;background:#ebece7}
+.mvp-document .mvp-button{width:100%}
+.mvp-document-submit{display:grid;gap:8px;margin-top:18px;padding:18px;border-radius:14px;background:#f3f1e9}
+.mvp-document-submit p{margin:0!important;color:#263c31}
+.mvp-document-submit small{color:#7a5616;line-height:1.5}
+.mvp-document-submit .mvp-button{width:max-content;margin-top:4px}
+@media(max-width:560px){.mvp-document-submit .mvp-button{width:100%}}

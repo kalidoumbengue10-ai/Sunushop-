@@ -5,14 +5,17 @@ import {
 } from "./verification";
 
 describe("checklist KYC", () => {
-  it("accepte le passeport pour un marchand informel", () => {
+  it("garde le passeport facultatif et exige la CNI", () => {
     expect(
       isVerificationChecklistComplete("informal", true, [
         "passport_identity",
         "intent_letter",
         "proof_activity",
       ]),
-    ).toBe(true);
+    ).toBe(false);
+    expect(requiredVerificationDocuments("informal", true).optional).toEqual([
+      "passport_identity",
+    ]);
   });
 
   it("exige les deux faces de la CNI", () => {
@@ -27,6 +30,8 @@ describe("checklist KYC", () => {
 
   it("exige NINEA, RCCM et mandat lorsque nécessaire", () => {
     expect(requiredVerificationDocuments("formal", false).required).toEqual([
+      "national_id_front",
+      "national_id_back",
       "intent_letter",
       "proof_activity",
       "ninea",

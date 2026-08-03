@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useState } from "react";
+import { FormEvent, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { formatPrice } from "@/lib/marketplace";
 import { CourierManager } from "@/components/courier-manager";
@@ -131,17 +131,19 @@ function DocumentUploader({
   caseId,
   type,
   latest,
+  required,
 }: {
   caseId: string;
   type: VerificationDocumentType;
   latest?: DocumentRow;
+  required: boolean;
 }) {
   const router = useRouter();
-  const [file, setFile] = useState<File>();
+  const inputRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
-  const upload = async () => {
+  const upload = async (file?: File) => {
     if (!file) return;
     setBusy(true);
     setError("");
@@ -158,33 +160,35 @@ function DocumentUploader({
       setError(payload.error?.message ?? "Échec de l’envoi.");
       return;
     }
-    setFile(undefined);
+    if (inputRef.current) inputRef.current.value = "";
     router.refresh();
   };
 
   return (
     <div className="mvp-document">
-      <label>
-        {documentLabels[type]}
-        <input
-          type="file"
-          accept=".jpg,.jpeg,.png,.pdf,image/jpeg,image/png,application/pdf"
-          onChange={(event) => setFile(event.target.files?.[0])}
-        />
-      </label>
-      {latest && (
-        <small>
-          Version {latest.version} · {latest.status}
-        </small>
-      )}
+      <div className="mvp-document__heading">
+        <strong>{documentLabels[type]}</strong>
+        <span className={required ? "mvp-required-badge" : "mvp-optional-badge"}>
+          {required ? "Obligatoire" : "Facultatif"}
+        </span>
+      </div>
+      <small>{latest ? `Fichier reçu · version ${latest.version} · ${latest.status}` : "PDF, JPG ou PNG · 10 Mo maximum"}</small>
+      <input
+        ref={inputRef}
+        className="mvp-document__input"
+        aria-label={`${latest ? "Remplacer" : "Ajouter"} ${documentLabels[type]}`}
+        type="file"
+        accept=".jpg,.jpeg,.png,.pdf,image/jpeg,image/png,application/pdf"
+        onChange={(event) => upload(event.target.files?.[0])}
+      />
       {error && <p className="mvp-alert mvp-alert--error">{error}</p>}
       <button
         type="button"
         className="mvp-button mvp-button--secondary"
-        disabled={!file || busy}
-        onClick={upload}
+        disabled={busy}
+        onClick={() => inputRef.current?.click()}
       >
-        {busy ? "Envoi…" : latest ? "Remplacer" : "Envoyer"}
+        {busy ? "Envoi en cours…" : latest ? "Remplacer le fichier" : "Ajouter le fichier"}
       </button>
     </div>
   );
@@ -424,12 +428,14 @@ export function MerchantWorkspace(props: MerchantWorkspaceProps) {
     props.merchant.kind,
     props.merchant.representative_is_legal_owner,
   );
-  const documentTypes = [
-    "national_id_front",
-    "national_id_back",
-    "passport_identity",
-    ...checklist.required,
-  ] as VerificationDocumentType[];
+  const documentTypes = [...checklist.required, ...checklist.optional];
+  const requiredUploaded = checklist.required.filter((type) => {
+    const document = latestDocuments.get(type);
+    return document && ["uploaded", "accepted"].includes(document.status);
+  });
+  const missingRequired = checklist.required.filter(
+    (type) => !requiredUploaded.includes(type),
+  );
   const canEditDocuments = ["draft", "needs_changes"].includes(
     props.verificationCase?.status ?? "",
   );
@@ -509,8 +515,8 @@ export function MerchantWorkspace(props: MerchantWorkspaceProps) {
               </p>
             )}
             <p>
-              Choisissez soit le passeport, soit les deux faces de la CNI. Les
-              autres documents sont obligatoires selon votre statut.
+              La CNI recto-verso, la lettre d’intention remplie et la preuve
+              d’activité sont obligatoires. Le passeport est facultatif.
             </p>
             <p>
               <Link
@@ -527,6 +533,7 @@ export function MerchantWorkspace(props: MerchantWorkspaceProps) {
                     caseId={props.verificationCase!.id}
                     type={type}
                     latest={latestDocuments.get(type)}
+                    required={checklist.required.includes(type)}
                     key={type}
                   />
                 ))}
@@ -544,19 +551,23 @@ export function MerchantWorkspace(props: MerchantWorkspaceProps) {
               </div>
             )}
             {canEditDocuments && (
-              <button
-                className="mvp-button"
-                disabled={busy}
-                onClick={() =>
-                  submitJson(
-                    `/api/merchant/verifications/${props.verificationCase!.id}/submit`,
-                    {},
-                    "Dossier envoyé à l’équipe de vérification.",
-                  )
-                }
-              >
-                Soumettre le dossier complet
-              </button>
+              <div className="mvp-document-submit">
+                <p><strong>{requiredUploaded.length}/{checklist.required.length} documents obligatoires ajoutés</strong></p>
+                {missingRequired.length > 0 && <small>Pièces manquantes : {missingRequired.map((type) => documentLabels[type]).join(", ")}.</small>}
+                <button
+                  className="mvp-button"
+                  disabled={busy || missingRequired.length > 0}
+                  onClick={() =>
+                    submitJson(
+                      `/api/merchant/verifications/${props.verificationCase!.id}/submit`,
+                      {},
+                      "Dossier envoyé à l’équipe de vérification.",
+                    )
+                  }
+                >
+                  Soumettre le dossier complet
+                </button>
+              </div>
             )}
             <div className="mvp-divider" />
             <form className="mvp-form" onSubmit={saveRecoveryEmail}>

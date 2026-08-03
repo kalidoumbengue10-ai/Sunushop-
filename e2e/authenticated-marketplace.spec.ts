@@ -504,11 +504,15 @@ test.describe.serial("flux authentifiés marketplace", () => {
     await expect(ownerPage.getByText("Espace sécurisé · vérification")).toBeVisible();
     await expect(ownerPage.getByRole("button", { name: "Catalogue" })).toHaveCount(0);
     await expect(ownerPage.getByRole("button", { name: "Livreurs" })).toHaveCount(0);
+    await expect(ownerPage.getByText("Obligatoire", { exact: true })).toHaveCount(4);
+    await expect(ownerPage.getByText("Facultatif", { exact: true })).toHaveCount(1);
 
     const { data: verificationCase, error: caseError } = await admin.from("verification_cases").select("id").eq("merchant_id", merchantId).single();
     if (caseError) throw caseError;
     const pdf = Buffer.from("%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\n%%EOF");
-    for (const documentType of ["national_id_front", "national_id_back", "intent_letter", "proof_activity"]) {
+    await ownerPage.getByLabel("Ajouter CNI recto").setInputFiles({ name: "national_id_front.pdf", mimeType: "application/pdf", buffer: pdf });
+    await expect(ownerPage.getByLabel("Remplacer CNI recto")).toHaveCount(1);
+    for (const documentType of ["national_id_back", "intent_letter", "proof_activity"]) {
       await responseData(await ownerContext.request.post(`/api/merchant/verifications/${verificationCase.id}/documents`, { multipart: { documentType, file: { name: `${documentType}.pdf`, mimeType: "application/pdf", buffer: pdf } } }), 201);
     }
     const { data: storedDocuments } = await admin.from("verification_documents").select("storage_path").eq("case_id", verificationCase.id);

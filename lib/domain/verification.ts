@@ -13,22 +13,21 @@ export function requiredVerificationDocuments(
   kind: MerchantKind,
   representativeIsLegalOwner: boolean,
 ) {
-  const common: VerificationDocumentType[] = [
+  const required: VerificationDocumentType[] = [
+    "national_id_front",
+    "national_id_back",
     "intent_letter",
     "proof_activity",
   ];
 
   if (kind === "formal") {
-    common.push("ninea", "rccm");
-    if (!representativeIsLegalOwner) common.push("representative_mandate");
+    required.push("ninea", "rccm");
+    if (!representativeIsLegalOwner) required.push("representative_mandate");
   }
 
   return {
-    required: common,
-    identityAlternatives: [
-      ["passport_identity"],
-      ["national_id_front", "national_id_back"],
-    ] satisfies VerificationDocumentType[][],
+    required,
+    optional: ["passport_identity"] satisfies VerificationDocumentType[],
   };
 }
 
@@ -43,10 +42,5 @@ export function isVerificationChecklistComplete(
     representativeIsLegalOwner,
   );
 
-  return (
-    checklist.required.every((document) => documents.has(document)) &&
-    checklist.identityAlternatives.some((alternative) =>
-      alternative.every((document) => documents.has(document)),
-    )
-  );
+  return checklist.required.every((document) => documents.has(document));
 }
