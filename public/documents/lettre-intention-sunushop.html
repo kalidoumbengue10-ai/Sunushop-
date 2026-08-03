@@ -3,30 +3,372 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Lettre d’intention marchand SunuShop</title>
+  <title>Lettre d’intention commerçant — SunuShop</title>
   <style>
-    body{font-family:Arial,sans-serif;color:#17271f;max-width:760px;margin:48px auto;padding:0 24px;line-height:1.6}
-    h1{font-size:28px}h2{font-size:18px;margin-top:32px}.line{display:inline-block;min-width:280px;border-bottom:1px solid #17271f}
-    .notice{padding:16px;background:#f3efe4;border-radius:10px}.signature{margin-top:70px;display:grid;grid-template-columns:1fr 1fr;gap:50px}
-    button{padding:12px 18px;border:0;border-radius:999px;background:#173f2e;color:white;font-weight:700}
-    @media print{button,.notice{display:none}body{margin:0 auto}}
+    :root {
+      --ink: #17271f;
+      --muted: #53645b;
+      --brand: #173f2e;
+      --paper: #fff;
+      --soft: #f3efe4;
+      --line: #a9b2ad;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: Arial, Helvetica, sans-serif;
+      color: var(--ink);
+      background: #eeeae0;
+      margin: 0;
+      line-height: 1.5;
+    }
+    .toolbar {
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      display: flex;
+      justify-content: center;
+      padding: 14px;
+      background: rgba(238, 234, 224, .95);
+    }
+    button {
+      padding: 12px 20px;
+      border: 0;
+      border-radius: 999px;
+      background: var(--brand);
+      color: white;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .page {
+      width: min(210mm, calc(100% - 28px));
+      min-height: 297mm;
+      margin: 0 auto 24px;
+      padding: 18mm 18mm 16mm;
+      background: var(--paper);
+      box-shadow: 0 8px 30px rgba(23, 39, 31, .12);
+    }
+    .brand {
+      margin: 0 0 4px;
+      color: var(--brand);
+      font-weight: 800;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+    h1 {
+      margin: 0;
+      font-size: 27px;
+      line-height: 1.15;
+    }
+    h2 {
+      margin: 24px 0 10px;
+      font-size: 18px;
+    }
+    p { margin: 10px 0; }
+    .subtitle {
+      margin: 7px 0 22px;
+      color: var(--muted);
+    }
+    .notice {
+      padding: 13px 15px;
+      border-radius: 10px;
+      background: var(--soft);
+      font-size: 14px;
+    }
+    .field {
+      display: inline-block;
+      min-width: 250px;
+      min-height: 1.3em;
+      border-bottom: 1px solid var(--line);
+      vertical-align: bottom;
+    }
+    .field.short { min-width: 150px; }
+    .field.long { min-width: 100%; }
+    .choice { white-space: nowrap; }
+    ol { padding-left: 22px; }
+    li { margin: 8px 0; }
+    .signature {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 48px;
+      margin-top: 28px;
+    }
+    .signature-box {
+      min-height: 110px;
+      padding-top: 8px;
+      border-top: 1px solid var(--line);
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+    }
+    th, td {
+      padding: 9px 8px;
+      border: 1px solid #c9d0cc;
+      text-align: left;
+      vertical-align: top;
+    }
+    th { background: var(--soft); }
+    .small {
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .check { font-size: 18px; line-height: 1; }
+    @media (max-width: 680px) {
+      .page { padding: 28px 22px; }
+      .signature { grid-template-columns: 1fr; gap: 24px; }
+      .field { min-width: 180px; }
+    }
+    @media print {
+      @page { size: A4; margin: 0; }
+      body { background: white; }
+      .toolbar { display: none; }
+      .page {
+        width: 210mm;
+        min-height: 297mm;
+        margin: 0;
+        padding: 17mm 18mm 15mm;
+        box-shadow: none;
+        break-after: page;
+      }
+      .page:last-child { break-after: auto; }
+      .notice { border: 1px solid #d7d0c1; }
+    }
   </style>
 </head>
 <body>
-  <button onclick="window.print()">Imprimer ou enregistrer en PDF</button>
-  <h1>Lettre d’intention marchand SunuShop</h1>
-  <p class="notice">Complétez ce document, signez-le, puis importez une photo lisible ou le PDF dans votre dossier de vérification.</p>
-  <p>Je soussigné(e), <span class="line">&nbsp;</span>, titulaire de la pièce d’identité numéro <span class="line">&nbsp;</span>, déclare souhaiter proposer les produits de l’activité suivante sur SunuShop :</p>
-  <p><span class="line">&nbsp;</span></p>
-  <p>Nom public de la boutique : <span class="line">&nbsp;</span></p>
-  <p>Adresse ou zone d’activité : <span class="line">&nbsp;</span></p>
-  <p>Téléphone professionnel : <span class="line">&nbsp;</span></p>
-  <h2>Engagements</h2>
-  <p>Je certifie que les informations et documents transmis sont exacts. Je m’engage à publier uniquement des produits autorisés, à maintenir les prix et stocks à jour, à respecter les délais annoncés et à traiter les commandes et réclamations de bonne foi.</p>
-  <p>Je comprends que SunuShop peut demander des informations complémentaires, suspendre l’examen ou retirer une boutique en cas d’informations incohérentes, de produits interdits ou de manquement aux règles de la marketplace.</p>
-  <div class="signature">
-    <p>Fait à :<br><br>Date :</p>
-    <p>Nom et signature :<br><br><br></p>
+  <div class="toolbar">
+    <button type="button" onclick="window.print()">Imprimer ou enregistrer en PDF</button>
   </div>
+
+  <main>
+    <section class="page">
+      <p class="brand">SunuShop</p>
+      <h1>Lettre d’intention et déclaration d’engagement du commerçant</h1>
+      <p class="subtitle">À l’attention de l’équipe chargée de la vérification des marchands SunuShop</p>
+
+      <p class="notice">
+        Complétez toutes les rubriques qui vous concernent, paraphez si nécessaire,
+        signez la lettre, puis importez une photo lisible ou un PDF dans votre dossier
+        de vérification SunuShop.
+      </p>
+
+      <p>
+        Je soussigné(e), <span class="field"></span>, né(e) le
+        <span class="field short"></span>, titulaire de la
+        <span class="choice">CNI ☐</span> / du <span class="choice">passeport ☐</span>
+        numéro <span class="field"></span>,
+      </p>
+      <p>
+        agissant en qualité de <span class="field"></span>,
+        <span class="choice">pour mon propre compte ☐</span> /
+        <span class="choice">pour le compte de l’entreprise ☐</span>,
+      </p>
+      <p>
+        raison sociale, le cas échéant : <span class="field long"></span>
+      </p>
+      <p>
+        NINEA : <span class="field"></span>
+        RCCM : <span class="field"></span>
+      </p>
+
+      <h2>Objet de la demande</h2>
+      <p>
+        Par la présente, je confirme mon intention d’ouvrir et d’exploiter une boutique
+        marchande sur SunuShop sous le nom public :
+        <span class="field long"></span>
+      </p>
+      <p>
+        Activité principale et catégories de produits proposées :
+        <span class="field long"></span><br>
+        <span class="field long"></span>
+      </p>
+      <p>
+        Adresse ou zone d’activité :
+        <span class="field long"></span>
+      </p>
+      <p>
+        Téléphone professionnel : <span class="field"></span>
+        E-mail : <span class="field"></span>
+      </p>
+
+      <h2>Déclarations et engagements</h2>
+      <p>Je déclare et m’engage à :</p>
+      <ol>
+        <li>
+          fournir des informations et des justificatifs exacts, lisibles, valides et
+          à jour, et signaler sans délai toute modification importante concernant mon
+          identité, mon entreprise, mon activité ou mes coordonnées ;
+        </li>
+        <li>
+          proposer uniquement des produits licites, authentiques, traçables et dont
+          je suis autorisé(e) à assurer la vente, en excluant notamment les produits
+          interdits, contrefaits, dangereux ou présentés de manière trompeuse ;
+        </li>
+        <li>
+          obtenir et maintenir, lorsque mon activité l’exige, les autorisations,
+          agréments, licences, garanties ou justificatifs sectoriels nécessaires ;
+        </li>
+        <li>
+          publier des descriptions et photos fidèles, ainsi que des prix, stocks,
+          conditions de vente, zones de remise ou de livraison et délais exacts ;
+        </li>
+        <li>
+          confirmer, préparer et remettre les commandes avec diligence, informer le
+          client en cas d’indisponibilité ou de retard et traiter de bonne foi les
+          annulations, retours, réclamations et litiges ;
+        </li>
+        <li>
+          respecter les règles applicables de SunuShop ainsi que les obligations
+          légales, fiscales, commerciales et de protection du consommateur liées à
+          mon activité.
+        </li>
+      </ol>
+
+      <p>
+        Je reconnais que cette lettre exprime mon intention de rejoindre SunuShop et
+        ne vaut pas, à elle seule, validation définitive de ma boutique. J’autorise
+        SunuShop à vérifier la cohérence des éléments transmis et à demander des pièces
+        complémentaires. Je comprends qu’un dossier incomplet ou incohérent, un produit
+        interdit ou un manquement aux règles peut entraîner une demande de correction,
+        un refus, une suspension ou la fermeture de la boutique, dans les conditions
+        applicables au service.
+      </p>
+
+      <p>
+        Je certifie sur l’honneur l’exactitude des déclarations ci-dessus.
+      </p>
+
+      <div class="signature">
+        <div class="signature-box">
+          Fait à :<br><br>
+          Le :
+        </div>
+        <div class="signature-box">
+          Nom complet, mention « Lu et approuvé » et signature :<br><br><br>
+        </div>
+      </div>
+    </section>
+
+    <section class="page">
+      <p class="brand">SunuShop</p>
+      <h1>Annexe — Pièces du dossier marchand</h1>
+      <p class="subtitle">
+        Cette annexe sert de liste de contrôle. Elle ne remplace pas la lettre signée.
+      </p>
+
+      <h2>1. Pièces requises dans l’application</h2>
+      <table>
+        <thead>
+          <tr>
+            <th aria-label="Case à cocher"></th>
+            <th>Pièce</th>
+            <th>Qui doit la fournir ?</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="check">☐</td>
+            <td>CNI recto et verso, ou page d’identité du passeport</td>
+            <td>Tous les commerçants</td>
+          </tr>
+          <tr>
+            <td class="check">☐</td>
+            <td>Présente lettre d’intention complétée et signée</td>
+            <td>Tous les commerçants</td>
+          </tr>
+          <tr>
+            <td class="check">☐</td>
+            <td>
+              Preuve d’activité : par exemple photo de la boutique ou de l’atelier,
+              facture commerciale récente, catalogue ou page professionnelle active
+            </td>
+            <td>Tous les commerçants</td>
+          </tr>
+          <tr>
+            <td class="check">☐</td>
+            <td>Avis d’immatriculation NINEA</td>
+            <td>
+              Requis actuellement par SunuShop pour les dossiers formels ;
+              à prévoir pour toute unité économique lors de sa régularisation
+            </td>
+          </tr>
+          <tr>
+            <td class="check">☐</td>
+            <td>Extrait ou certificat RCCM</td>
+            <td>Entreprises ou activités déclarées comme formelles</td>
+          </tr>
+          <tr>
+            <td class="check">☐</td>
+            <td>Mandat ou procuration autorisant le représentant à agir</td>
+            <td>Si le signataire n’est pas le responsable légal</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2>2. Pièces complémentaires pouvant être demandées selon le cas</h2>
+      <table>
+        <thead>
+          <tr>
+            <th aria-label="Case à cocher"></th>
+            <th>Pièce complémentaire</th>
+            <th>Utilité</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="check">☐</td>
+            <td>Statuts à jour ou acte constitutif</td>
+            <td>Confirmer la dénomination, l’objet et le représentant d’une société ou d’un GIE</td>
+          </tr>
+          <tr>
+            <td class="check">☐</td>
+            <td>Justificatif du lieu d’activité : bail, titre de propriété ou attestation d’occupation</td>
+            <td>Confirmer l’adresse déclarée</td>
+          </tr>
+          <tr>
+            <td class="check">☐</td>
+            <td>Facture fournisseur, bon de livraison ou preuve d’achat récente</td>
+            <td>Vérifier l’origine et la traçabilité des produits</td>
+          </tr>
+          <tr>
+            <td class="check">☐</td>
+            <td>Photos datées de la boutique, de l’atelier, du stock et de l’enseigne</td>
+            <td>Confirmer la réalité de l’activité et du stock</td>
+          </tr>
+          <tr>
+            <td class="check">☐</td>
+            <td>Carte professionnelle, carte de commerçant ou carte d’import-export</td>
+            <td>Pour les activités qui nécessitent ou utilisent ces titres</td>
+          </tr>
+          <tr>
+            <td class="check">☐</td>
+            <td>Autorisation, agrément, licence ou certificat sectoriel</td>
+            <td>Produits alimentaires transformés, cosmétiques, santé ou autre secteur réglementé</td>
+          </tr>
+          <tr>
+            <td class="check">☐</td>
+            <td>Justificatif du numéro de paiement professionnel</td>
+            <td>Confirmer que le compte Wave ou Orange Money utilisé appartient au marchand autorisé</td>
+          </tr>
+          <tr>
+            <td class="check">☐</td>
+            <td>Conditions de garantie ou preuve d’authenticité</td>
+            <td>Électronique, produits de marque et biens à valeur élevée</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <p class="notice">
+        Conseil SunuShop : ne demander que les pièces utiles au niveau de risque du
+        dossier. Informer le commerçant de la finalité de la collecte, protéger les
+        fichiers transmis et prévoir leur suppression lorsqu’ils ne sont plus nécessaires.
+      </p>
+      <p class="small">
+        Formats acceptés par l’application : PDF, JPG ou PNG, 10 Mo maximum par fichier.
+        Les documents doivent être complets, nets, non coupés et encore valides.
+      </p>
+    </section>
+  </main>
 </body>
 </html>

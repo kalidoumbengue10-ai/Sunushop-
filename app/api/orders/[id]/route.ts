@@ -1,5 +1,6 @@
 import { requireUser } from "@/lib/api/auth";
 import { apiFailure, apiSuccess } from "@/lib/api/response";
+import { deriveDeliveryCode } from "@/lib/domain/delivery-code";
 
 export async function GET(
   _request: Request,
@@ -8,12 +9,13 @@ export async function GET(
   const requestId = crypto.randomUUID();
   try {
     const { id } = await context.params;
-    const { supabase } = await requireUser();
+    const { user, supabase } = await requireUser();
     const [
       { data: order, error: orderError },
       { data: items, error: itemsError },
       { data: events, error: eventsError },
       { data: paymentDeclarations, error: paymentDeclarationsError },
+      { data: delivery, error: deliveryError },
     ] = await Promise.all([
       supabase
         .from("orders")
@@ -42,13 +44,33 @@ export async function GET(
         )
         .eq("order_id", id)
         .order("created_at", { ascending: false }),
+      supabase
+        .from("deliveries")
+        .select("id, status, pickup_verified_at, delivered_at")
+        .eq("order_id", id)
+        .maybeSingle(),
     ]);
     if (orderError) throw orderError;
     if (itemsError) throw itemsError;
     if (eventsError) throw eventsError;
     if (paymentDeclarationsError) throw paymentDeclarationsError;
+    if (deliveryError) throw deliveryError;
     return apiSuccess(
-      { order, items, events, paymentDeclarations },
+      {
+        order,
+        items,
+        events,
+        paymentDeclarations,
+        delivery: delivery
+          ? {
+              ...delivery,
+              recipientCode:
+                order.buyer_id === user.id && delivery.status !== "delivered"
+                  ? deriveDeliveryCode(delivery.id, "recipient")
+                  : null,
+            }
+          : null,
+      },
       { requestId },
     );
   } catch (error) {

@@ -17,11 +17,31 @@ export default async function BoutiquePage({
   if (!admin) notFound();
   const shop = await new SupabaseCatalogRepository(admin).findShopBySlug(slug);
   if (!shop) notFound();
+  const { data: branding } = await admin
+    .from("merchant_media")
+    .select("kind, storage_bucket, storage_path")
+    .eq("merchant_id", shop.id);
+  const mediaUrl = (kind: "logo" | "cover") => {
+    const item = branding?.find((entry) => entry.kind === kind);
+    return item
+      ? admin.storage.from(item.storage_bucket).getPublicUrl(item.storage_path).data.publicUrl
+      : null;
+  };
+  const coverUrl = mediaUrl("cover");
+  const logoUrl = mediaUrl("logo");
 
   return (
     <MvpShell>
       <main className="mvp-main">
         <div className="mvp-shell">
+          {coverUrl && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img className="mvp-shop-cover" src={coverUrl} alt={`Façade de ${shop.name}`} />
+          )}
+          {logoUrl && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img className="mvp-shop-logo" src={logoUrl} alt={`Logo ${shop.name}`} />
+          )}
           <span className="mvp-eyebrow">Boutique vérifiée</span>
           <h1 className="mvp-title">{shop.name}</h1>
           <p className="mvp-lede">

@@ -111,6 +111,18 @@ export function AuthFlow({ turnstileSiteKey }: { turnstileSiteKey?: string }) {
     };
   }, []);
 
+  useEffect(() => {
+    if (profile === "admin" && mode === "sign_up") {
+      // Le changement de profil invalide immédiatement le mode inscription admin.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setMode("sign_in");
+      setPassword("");
+      setPasswordConfirmation("");
+      setMessage("");
+      setError("");
+    }
+  }, [mode, profile]);
+
   const resetCaptcha = () => {
     setCaptchaToken(undefined);
     window.turnstile?.reset();

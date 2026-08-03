@@ -42,6 +42,13 @@ type OrderPayload = {
     declared_at: string;
     confirmed_by_merchant_at: string | null;
   }>;
+  delivery: {
+    id: string;
+    status: string;
+    recipientCode: string | null;
+    pickup_verified_at: string | null;
+    delivered_at: string | null;
+  } | null;
 };
 
 export function OrderTracking({ orderId }: { orderId: string }) {
@@ -121,6 +128,13 @@ export function OrderTracking({ orderId }: { orderId: string }) {
           {payload.order.merchant_accounts.public_name} ·{" "}
           {formatPrice(payload.order.total_xof)}
         </p>
+        {payload.delivery?.recipientCode && (
+          <div className="mvp-alert">
+            <strong>Code de réception</strong>
+            <div className="mvp-code">{payload.delivery.recipientCode}</div>
+            Ne communiquez ce code au livreur qu’après avoir reçu votre commande.
+          </div>
+        )}
         <div className="mvp-list">
           {payload.items.map((item) => (
             <div className="mvp-row" key={item.id}>

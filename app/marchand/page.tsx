@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { MerchantWorkspace } from "@/components/merchant-workspace";
+import { CourierWorkspace } from "@/components/courier-workspace";
 import { MvpShell } from "@/components/mvp-shell";
 import { SetupRequired } from "@/components/setup-required";
 import { pilotConfig } from "@/lib/config/env";
@@ -36,6 +37,22 @@ export default async function MarchandPage() {
     .eq("active", true)
     .limit(1)
     .maybeSingle();
+
+  const { data: courierMembership } = await supabase
+    .from("courier_memberships")
+    .select("id")
+    .eq("courier_user_id", user.id)
+    .eq("status", "active")
+    .limit(1)
+    .maybeSingle();
+
+  if (!membership && courierMembership) {
+    return (
+      <MvpShell>
+        <main className="mvp-main"><div className="mvp-shell"><CourierWorkspace /></div></main>
+      </MvpShell>
+    );
+  }
 
   const admin = getAdminSupabase();
   const { data: merchant } =

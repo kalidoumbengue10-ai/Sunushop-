@@ -86,6 +86,30 @@ const databaseErrorMap: Record<string, { status: number; message: string }> = {
     status: 404,
     message: "Déclaration de paiement introuvable.",
   },
+  INVITATION_NOT_FOUND: {
+    status: 404,
+    message: "Cette invitation est invalide ou expirée.",
+  },
+  INVITATION_EMAIL_MISMATCH: {
+    status: 403,
+    message: "Connectez-vous avec l’adresse email invitée.",
+  },
+  DELIVERY_NOT_FOUND: {
+    status: 404,
+    message: "Livraison introuvable.",
+  },
+  DELIVERY_TRANSITION_NOT_ALLOWED: {
+    status: 409,
+    message: "Ce changement d’état de livraison n’est pas autorisé.",
+  },
+  DELIVERY_CODE_INVALID: {
+    status: 422,
+    message: "Le code de livraison est invalide.",
+  },
+  DELIVERY_CODE_LOCKED: {
+    status: 429,
+    message: "Trop de tentatives. Contactez le commerçant.",
+  },
 };
 
 export function normalizeApiError(error: unknown): ApiError {

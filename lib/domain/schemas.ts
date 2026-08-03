@@ -305,3 +305,81 @@ export const crmTaskSchema = z.object({
 export const crmTaskUpdateSchema = z.object({
   completed: z.boolean(),
 });
+
+export const prelaunchLeadSchema = z.object({
+  contactName: z.string().trim().min(2).max(120),
+  shopName: z.string().trim().min(2).max(120),
+  email: authEmail,
+  phone: z.string().trim().min(8).max(24),
+  city: z.string().trim().min(2).max(120).optional(),
+  categories: z.array(z.string().trim().min(2).max(80)).max(12).default([]),
+  message: z.string().trim().max(1000).optional(),
+  consent: z.literal(true, {
+    error: "Votre accord est nécessaire pour être recontacté.",
+  }),
+  captchaToken: z.string().min(10).optional(),
+});
+
+export const merchantInvitationSchema = merchantApplicationSchema.safeExtend({
+  email: authEmail,
+  leadId: uuid.optional(),
+});
+
+export const courierInvitationSchema = z.object({
+  merchantId: uuid,
+  email: authEmail,
+  displayName: z.string().trim().min(2).max(120),
+  phone: z.string().trim().min(8).max(24),
+});
+
+export const invitationClaimSchema = z.object({
+  token: z.string().min(32).max(200),
+});
+
+export const addressInputSchema = z.object({
+  label: z.string().trim().min(2).max(80),
+  recipientName: z.string().trim().min(2).max(120),
+  phone: z.string().trim().min(8).max(24),
+  region: z.string().trim().min(2).max(120),
+  city: z.string().trim().min(2).max(120),
+  addressHint: z.string().trim().min(2).max(300),
+  latitude: z.number().min(-90).max(90).nullable().optional(),
+  longitude: z.number().min(-180).max(180).nullable().optional(),
+  isDefault: z.boolean().default(false),
+}).superRefine((value, context) => {
+  if ((value.latitude == null) !== (value.longitude == null)) {
+    context.addIssue({
+      code: "custom",
+      path: ["latitude"],
+      message: "Latitude et longitude doivent être renseignées ensemble.",
+    });
+  }
+});
+
+export const cartItemInputSchema = z.object({
+  variantId: uuid,
+  quantity: z.int().min(0).max(99),
+});
+
+export const deliveryAssignmentSchema = z.object({
+  orderId: uuid,
+  courierMembershipId: uuid,
+});
+
+export const deliveryStatusSchema = z.object({
+  status: z.enum(["accepted", "at_pickup", "in_transit", "failed", "cancelled"]),
+  note: z.string().trim().min(2).max(500).optional(),
+});
+
+export const deliveryCodeSchema = z.object({
+  code: z.string().regex(/^\d{6}$/, "Le code doit contenir six chiffres."),
+});
+
+export const categoryInputSchema = z.object({
+  id: uuid.optional(),
+  name: z.string().trim().min(2).max(120),
+  slug,
+  description: z.string().trim().max(500).optional(),
+  position: z.int().min(0).max(10_000).default(100),
+  active: z.boolean().default(true),
+});

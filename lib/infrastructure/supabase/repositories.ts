@@ -130,10 +130,23 @@ export class SupabaseCatalogRepository implements CatalogRepository {
 
     const { data, error } = await request;
     if (error) throw error;
-
-    return ((data ?? []) as unknown as RawProduct[])
+    const mapped = ((data ?? []) as unknown as RawProduct[])
       .map((product) => mapProduct(this.client, product))
-      .filter((product): product is CatalogItem => product !== null);
+      .filter(
+        (product): product is CatalogItem =>
+          product !== null &&
+          product.imageUrl !== null &&
+          product.variant.availableQuantity > 0,
+      );
+    if (!mapped.length) return [];
+    const { data: zones, error: zonesError } = await this.client
+      .from("delivery_zones")
+      .select("merchant_id")
+      .in("merchant_id", [...new Set(mapped.map((item) => item.merchant.id))])
+      .eq("active", true);
+    if (zonesError) throw zonesError;
+    const orderable = new Set((zones ?? []).map((zone) => zone.merchant_id));
+    return mapped.filter((product) => orderable.has(product.merchant.id));
   }
 
   async findShopBySlug(slug: string): Promise<PublicShop | null> {
@@ -171,6 +184,7 @@ export class SupabaseCatalogRepository implements CatalogRepository {
 
     if (productsError) throw productsError;
     if (zonesError) throw zonesError;
+    if (!zones?.length) return null;
 
     return {
       id: merchant.id,
@@ -195,7 +209,12 @@ export class SupabaseCatalogRepository implements CatalogRepository {
       })),
       products: ((products ?? []) as unknown as RawProduct[])
         .map((product) => mapProduct(this.client, product))
-        .filter((product): product is CatalogItem => product !== null),
+        .filter(
+          (product): product is CatalogItem =>
+            product !== null &&
+            product.imageUrl !== null &&
+            product.variant.availableQuantity > 0,
+        ),
     };
   }
 

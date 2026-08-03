@@ -4,6 +4,8 @@ import Link from "next/link";
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import { formatPrice } from "@/lib/marketplace";
+import { CourierManager } from "@/components/courier-manager";
+import { MerchantMedia } from "@/components/merchant-media";
 import {
   requiredVerificationDocuments,
   type MerchantKind,
@@ -525,7 +527,7 @@ export function MerchantWorkspace(props: MerchantWorkspaceProps) {
   return (
     <div className="mvp-sidebar-layout">
       <aside className="mvp-sidebar">
-        {["dossier", "catalogue", "livraison", "abonnement", "commandes"].map(
+        {["dossier", "boutique", "catalogue", "livraison", "livreurs", "abonnement", "commandes"].map(
           (name) => (
             <button
               key={name}
@@ -566,6 +568,12 @@ export function MerchantWorkspace(props: MerchantWorkspaceProps) {
           {message && <p className="mvp-alert">{message}</p>}
           {error && <p className="mvp-alert mvp-alert--error">{error}</p>}
         </div>
+
+        {tab === "boutique" && <MerchantMedia merchantId={props.merchant.id} />}
+
+        {tab === "livreurs" && (
+          <CourierManager merchantId={props.merchant.id} orders={props.orders} />
+        )}
 
         {tab === "dossier" && props.verificationCase && (
           <div className="mvp-card mvp-card--full">

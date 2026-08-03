@@ -39,6 +39,11 @@ describe("contrat statique des migrations", () => {
       "crm_lead_notes",
       "crm_tasks",
       "crm_lead_events",
+      "workspace_invitations",
+      "addresses",
+      "courier_memberships",
+      "deliveries",
+      "delivery_events",
     ].forEach((table) => {
       expect(sql).toContain(
         `alter table public.${table} enable row level security;`,
@@ -50,6 +55,7 @@ describe("contrat statique des migrations", () => {
     expect(sql).toContain("create function public.create_order_batch");
     expect(sql).toContain("create function public.review_verification_case");
     expect(sql).toContain("create function public.declare_direct_payment");
+    expect(sql).toContain("create function public.complete_delivery_stage");
     expect(sql).toContain("subscription_expires_j7");
     expect(sql).toContain("subscription_expires_j2");
     expect(sql).toContain("'merchant-verification',\n  false");

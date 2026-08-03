@@ -15,9 +15,11 @@ import {
 import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { AdminCrm, type CrmLead } from "@/components/admin-crm";
+import { CategoryAdmin } from "@/components/category-admin";
+import { MerchantInvitationPanel } from "@/components/merchant-invitation-panel";
 import { formatPrice } from "@/lib/marketplace";
 
-type AdminTab = "overview" | "crm" | "verifications" | "subscriptions";
+type AdminTab = "overview" | "crm" | "verifications" | "subscriptions" | "categories";
 
 type VerificationQueueItem = {
   id: string;
@@ -207,6 +209,7 @@ export function AdminWorkspace({ initialTab = "overview" }: { initialTab?: Admin
     { id: "crm" as const, label: "Prospects", icon: UsersRound, badge: leads.filter((lead) => lead.status === "new").length },
     { id: "verifications" as const, label: "Dossiers commerçants", icon: FileCheck2, badge: queue.length },
     { id: "subscriptions" as const, label: "Abonnements", icon: ReceiptText, badge: payments.length },
+    { id: "categories" as const, label: "Catégories", icon: Store },
   ];
 
   const title = {
@@ -214,6 +217,7 @@ export function AdminWorkspace({ initialTab = "overview" }: { initialTab?: Admin
     crm: ["Prospects", "Transformez chaque demande en prochaine étape claire."],
     verifications: ["Dossiers commerçants", "Validez les informations avec un parcours lisible et traçable."],
     subscriptions: ["Abonnements", "Activez les accès après confirmation des paiements."],
+    categories: ["Catégories", "Organisez la navigation et le classement des boutiques."],
   }[tab];
 
   return (
@@ -267,7 +271,14 @@ export function AdminWorkspace({ initialTab = "overview" }: { initialTab?: Admin
           </div>
         )}
 
-        {tab === "crm" && <AdminCrm leads={leads} reload={loadLeads} />}
+        {tab === "crm" && (
+          <>
+            <AdminCrm leads={leads} reload={loadLeads} />
+            <MerchantInvitationPanel leads={leads} reload={loadLeads} />
+          </>
+        )}
+
+        {tab === "categories" && <CategoryAdmin />}
 
         {tab === "verifications" && (
           <section className="admin-panel admin-operation-panel">

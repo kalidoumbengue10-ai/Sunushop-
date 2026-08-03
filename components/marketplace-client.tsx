@@ -22,6 +22,17 @@ type PaymentMethod =
   | "wave_direct"
   | "orange_money_direct";
 
+type SavedAddress = {
+  id: string;
+  label: string;
+  recipient_name: string;
+  phone: string;
+  region: string;
+  city: string;
+  address_hint: string;
+  is_default: boolean;
+};
+
 const storageKey = "sunushop-live-cart-v1";
 
 function isPaymentMethodAvailable(
@@ -47,6 +58,8 @@ export function MarketplaceClient({
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [orders, setOrders] = useState<OrderResult[]>([]);
+  const [savedAddresses, setSavedAddresses] = useState<SavedAddress[]>([]);
+  const [selectedAddressId, setSelectedAddressId] = useState("");
 
   useEffect(() => {
     try {
@@ -57,7 +70,32 @@ export function MarketplaceClient({
     } catch {
       localStorage.removeItem(storageKey);
     }
-  }, []);
+    fetch("/api/client/cart")
+      .then(async (response) => {
+        if (!response.ok) return null;
+        return response.json();
+      })
+      .then((payload) => {
+        if (!payload) return;
+        const cloudItems = (payload.data.items as Array<{ variant_id: string; quantity: number }>)
+          .map((item) => {
+            const product = initialProducts.find((candidate) => candidate.variant.id === item.variant_id);
+            return product ? { product, quantity: item.quantity } : null;
+          })
+          .filter((item): item is CartLine => item !== null);
+        if (cloudItems.length) setCart(cloudItems);
+      })
+      .catch(() => undefined);
+    fetch("/api/client/addresses")
+      .then(async (response) => response.ok ? response.json() : null)
+      .then((payload) => {
+        if (!payload) return;
+        const items = payload.data.items as SavedAddress[];
+        setSavedAddresses(items);
+        setSelectedAddressId((items.find((item) => item.is_default) ?? items[0])?.id ?? "");
+      })
+      .catch(() => undefined);
+  }, [initialProducts]);
 
   useEffect(() => {
     localStorage.setItem(storageKey, JSON.stringify(cart));
@@ -116,6 +154,14 @@ export function MarketplaceClient({
       const existing = current.find(
         (line) => line.product.variant.id === product.variant.id,
       );
+      const quantity = existing
+        ? Math.min(product.variant.availableQuantity, existing.quantity + 1)
+        : 1;
+      fetch("/api/client/cart", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ variantId: product.variant.id, quantity }),
+      }).catch(() => undefined);
       if (existing) {
         return current.map((line) =>
           line === existing
@@ -138,6 +184,11 @@ export function MarketplaceClient({
     setCart((current) =>
       current.filter((line) => line.product.variant.id !== variantId),
     );
+    fetch("/api/client/cart", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ variantId, quantity: 0 }),
+    }).catch(() => undefined);
   };
 
   const requestGroups = groups.map(([merchantId, lines]) => ({
@@ -212,6 +263,16 @@ export function MarketplaceClient({
       return;
     }
     setOrders(payload.data.orders as OrderResult[]);
+    const purchasedVariants = cart.map((line) => line.product.variant.id);
+    await Promise.all(
+      purchasedVariants.map((variantId) =>
+        fetch("/api/client/cart", {
+          method: "PUT",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ variantId, quantity: 0 }),
+        }),
+      ),
+    );
     setCart([]);
     setQuote([]);
     localStorage.removeItem(storageKey);
@@ -231,6 +292,8 @@ export function MarketplaceClient({
           <div className="mvp-product-grid">
             {initialProducts.map((product) => (
               <article className="mvp-product" key={product.variant.id}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img className="mvp-product__image" src={product.imageUrl ?? ""} alt={product.title} />
                 <div className="mvp-product__body">
                   <small>
                     {product.merchant.name} · {product.category.name}
@@ -404,27 +467,34 @@ export function MarketplaceClient({
               </div>
             ))}
             <h3>Destinataire</h3>
-            <div className="mvp-form__grid">
+            {savedAddresses.length > 0 && (
+              <label className="mvp-field">Adresse enregistrée
+                <select value={selectedAddressId} onChange={(event) => setSelectedAddressId(event.target.value)}>
+                  {savedAddresses.map((address) => <option value={address.id} key={address.id}>{address.label} · {address.city}</option>)}
+                </select>
+              </label>
+            )}
+            <div className="mvp-form__grid" key={selectedAddressId}>
               <label className="mvp-field">
                 Nom
-                <input name="name" required />
+                <input name="name" defaultValue={savedAddresses.find((item) => item.id === selectedAddressId)?.recipient_name} required />
               </label>
               <label className="mvp-field">
                 Téléphone
-                <input name="phone" placeholder="+221770000000" required />
+                <input name="phone" defaultValue={savedAddresses.find((item) => item.id === selectedAddressId)?.phone} placeholder="+221770000000" required />
               </label>
               <label className="mvp-field">
                 Région
-                <input name="region" required />
+                <input name="region" defaultValue={savedAddresses.find((item) => item.id === selectedAddressId)?.region} required />
               </label>
               <label className="mvp-field">
                 Ville
-                <input name="city" required />
+                <input name="city" defaultValue={savedAddresses.find((item) => item.id === selectedAddressId)?.city} required />
               </label>
             </div>
             <label className="mvp-field">
               Adresse ou point de repère
-              <textarea name="addressHint" required />
+              <textarea name="addressHint" key={selectedAddressId} defaultValue={savedAddresses.find((item) => item.id === selectedAddressId)?.address_hint} required />
             </label>
             <button className="mvp-button" disabled={busy}>
               {busy ? "Création…" : "Confirmer les commandes"}
