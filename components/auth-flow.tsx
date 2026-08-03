@@ -165,6 +165,11 @@ export function AuthFlow({ turnstileSiteKey }: { turnstileSiteKey?: string }) {
       resetCaptcha();
 
       if (!response.ok) {
+        if (payload?.error?.code === "ACCOUNT_ALREADY_EXISTS") {
+          setMode("sign_in");
+          setPassword("");
+          setPasswordConfirmation("");
+        }
         setError(
           payload?.error?.message ??
             "Le serveur n’a pas pu traiter la demande. Réessayez.",

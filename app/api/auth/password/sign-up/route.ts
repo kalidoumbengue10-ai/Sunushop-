@@ -81,6 +81,19 @@ export async function POST(request: Request) {
       );
     }
 
+    if (
+      invitationToken &&
+      data.user &&
+      Array.isArray(data.user.identities) &&
+      data.user.identities.length === 0
+    ) {
+      throw new ApiError(
+        409,
+        "ACCOUNT_ALREADY_EXISTS",
+        "Un compte existe déjà avec cette adresse. Connectez-vous avec votre mot de passe actuel ou utilisez « J’ai oublié mon mot de passe ».",
+      );
+    }
+
     return apiSuccess(
       {
         confirmationRequired: !data.session,
