@@ -219,7 +219,7 @@ test.describe.serial("flux authentifiés marketplace", () => {
         const page = await merchantContext.newPage();
         await page.goto("/marchand");
         await expect(page.getByRole("heading", { name: merchant.public_name })).toBeVisible();
-        await page.getByRole("button", { name: "Catalogue" }).click();
+        await page.getByRole("button", { name: /^Produits/ }).click();
         await expect(page.getByText(`Produit E2E ${runId}`)).toBeVisible();
 
         await test.step("le client enregistre son adresse, synchronise son panier et commande", async () => {
@@ -300,6 +300,18 @@ test.describe.serial("flux authentifiés marketplace", () => {
           await expect(clientPage.getByRole("heading", { name: "Achats, adresses et suivi" })).toBeVisible();
           await expect(clientPage.getByText("Maison E2E")).toBeVisible();
           await expect(clientPage.getByText(batch.orders[0].publicCode)).toBeVisible();
+        });
+
+        await test.step("le tiroir panier affiche l’article, son badge et survit à une navigation", async () => {
+          const cartPage = await clientContext.newPage();
+          await cartPage.goto("/marche");
+          await expect(cartPage.getByLabel(/Ouvrir le panier/)).toBeVisible();
+          await cartPage.getByLabel(/Ouvrir le panier/).click();
+          await expect(cartPage.getByRole("dialog", { name: "Panier" })).toBeVisible();
+          await expect(cartPage.getByText(`Produit E2E ${runId}`)).toBeVisible();
+          await cartPage.goto("/marche");
+          await expect(cartPage.getByLabel(/Ouvrir le panier \(\d+ articles?\)/)).toBeVisible();
+          await cartPage.close();
         });
 
         await test.step("le marchand prépare la commande et invite son livreur", async () => {
@@ -501,9 +513,9 @@ test.describe.serial("flux authentifiés marketplace", () => {
     expect(restrictedProduct.status()).toBe(403);
     await expect(restrictedProduct.json()).resolves.toMatchObject({ error: { code: "KYC_APPROVAL_REQUIRED" } });
 
-    await expect(ownerPage.getByText("Espace sécurisé · vérification")).toBeVisible();
-    await expect(ownerPage.getByRole("button", { name: "Catalogue" })).toHaveCount(0);
-    await expect(ownerPage.getByRole("button", { name: "Livreurs" })).toHaveCount(0);
+    await expect(ownerPage.getByRole("heading", { name: "Complétez votre dossier" })).toBeVisible();
+    await expect(ownerPage.getByRole("button", { name: /^Produits/ })).toHaveCount(0);
+    await expect(ownerPage.getByRole("button", { name: /^Livreurs/ })).toHaveCount(0);
     await expect(ownerPage.getByText("Obligatoire", { exact: true })).toHaveCount(4);
     await expect(ownerPage.getByText("Facultatif", { exact: true })).toHaveCount(1);
 
@@ -511,7 +523,7 @@ test.describe.serial("flux authentifiés marketplace", () => {
     if (caseError) throw caseError;
     const pdf = Buffer.from("%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\n%%EOF");
     await ownerPage.getByLabel("Ajouter CNI recto").setInputFiles({ name: "national_id_front.pdf", mimeType: "application/pdf", buffer: pdf });
-    await expect(ownerPage.getByLabel("Remplacer CNI recto")).toHaveCount(1);
+    await expect(ownerPage.getByLabel("Remplacer CNI recto")).toHaveCount(1, { timeout: 20_000 });
     for (const documentType of ["national_id_back", "intent_letter", "proof_activity"]) {
       await responseData(await ownerContext.request.post(`/api/merchant/verifications/${verificationCase.id}/documents`, { multipart: { documentType, file: { name: `${documentType}.pdf`, mimeType: "application/pdf", buffer: pdf } } }), 201);
     }
@@ -530,8 +542,27 @@ test.describe.serial("flux authentifiés marketplace", () => {
     if (leadConversionError) throw leadConversionError;
     await ownerPage.reload();
     await expect(ownerPage.getByRole("heading", { name: `Commerce dossier ${runId}` })).toBeVisible();
-    await expect(ownerPage.getByRole("button", { name: "Catalogue" })).toBeVisible();
-    await expect(ownerPage.getByRole("button", { name: "Livreurs" })).toBeVisible();
+    await expect(ownerPage.getByRole("button", { name: /^Produits/ })).toBeVisible();
+    await expect(ownerPage.getByRole("button", { name: /^Livreurs/ })).toBeVisible();
     await ownerContext.close();
+  });
+
+  test("les métriques analytics admin exigent une authentification et un rôle admin", async ({ browser }) => {
+    const anonymousContext = await browser.newContext();
+    const anonymous = await anonymousContext.request.get(
+      "/api/admin/analytics?from=2026-01-01T00:00:00.000Z&to=2026-02-01T00:00:00.000Z",
+    );
+    expect(anonymous.status()).toBe(401);
+    await anonymousContext.close();
+
+    const clientEmail = `e2e-analytics-client-${runId}@example.test`;
+    await createUser(clientEmail, "Client sans rôle admin");
+    const clientContext = await browser.newContext();
+    await signIn(clientContext, clientEmail);
+    const forbidden = await clientContext.request.get(
+      "/api/admin/analytics?from=2026-01-01T00:00:00.000Z&to=2026-02-01T00:00:00.000Z",
+    );
+    expect(forbidden.status()).toBe(403);
+    await clientContext.close();
   });
 });

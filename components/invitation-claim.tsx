@@ -8,6 +8,9 @@ export function InvitationClaim() {
   const token = useSearchParams().get("token");
   const [state, setState] = useState<"loading" | "done" | "error">("loading");
   const [message, setMessage] = useState("Validation de votre invitation…");
+  const reconnectUrl = token
+    ? `/connexion?profil=vendeur&mode=inscription&next=${encodeURIComponent(`/invitations/claim?token=${token}`)}`
+    : "/connexion?profil=vendeur&next=/marchand";
 
   useEffect(() => {
     if (!token) {
@@ -46,7 +49,7 @@ export function InvitationClaim() {
         {message}
       </p>
       {state === "done" && <Link className="mvp-button" href="/marchand">Ouvrir mon espace</Link>}
-      {state === "error" && <Link className="mvp-button" href="/connexion?profil=vendeur&next=/marchand">Se reconnecter</Link>}
+      {state === "error" && <Link className="mvp-button" href={reconnectUrl}>Changer de compte</Link>}
     </section>
   );
 }

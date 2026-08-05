@@ -1,5 +1,4 @@
 begin;
-
 create function public.declare_direct_payment(
   p_order_id uuid,
   p_channel public.payment_channel,
@@ -78,7 +77,6 @@ begin
   return v_id;
 end;
 $$;
-
 create function public.confirm_direct_payment(p_declaration_id uuid)
 returns void
 language plpgsql
@@ -130,7 +128,6 @@ begin
   end if;
 end;
 $$;
-
 revoke all on function public.declare_direct_payment(
   uuid,
   public.payment_channel,
@@ -147,5 +144,4 @@ grant execute on function public.declare_direct_payment(
   timestamptz
 ) to authenticated;
 grant execute on function public.confirm_direct_payment(uuid) to authenticated;
-
 commit;

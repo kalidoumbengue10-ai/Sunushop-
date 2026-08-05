@@ -15,8 +15,10 @@ export default async function BoutiquePage({
   const { slug } = await params;
   const admin = getAdminSupabase();
   if (!admin) notFound();
-  const shop = await new SupabaseCatalogRepository(admin).findShopBySlug(slug);
+  const repository = new SupabaseCatalogRepository(admin);
+  const shop = await repository.findShopBySlug(slug);
   if (!shop) notFound();
+  const page = await repository.listPage({ merchantSlug: slug, page: 1, limit: 24 });
   const { data: branding } = await admin
     .from("merchant_media")
     .select("kind, storage_bucket, storage_path")
@@ -58,7 +60,7 @@ export default async function BoutiquePage({
               </div>
             ))}
           </div>
-          <MarketplaceClient initialProducts={shop.products} />
+          <MarketplaceClient initialProducts={page.products} initialTotal={page.total} merchantSlug={shop.slug} groupByCategory />
         </div>
       </main>
     </MvpShell>

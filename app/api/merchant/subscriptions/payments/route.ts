@@ -1,6 +1,8 @@
+import { requireAdminClient } from "@/lib/api/auth";
 import { requireApprovedMerchantAccess } from "@/lib/api/merchant-access";
 import { apiFailure, apiSuccess } from "@/lib/api/response";
 import { subscriptionPaymentSchema } from "@/lib/domain/schemas";
+import { enqueueEmail } from "@/lib/notifications/outbox";
 
 export async function POST(request: Request) {
   const requestId = crypto.randomUUID();
@@ -19,6 +21,12 @@ export async function POST(request: Request) {
       },
     );
     if (error) throw error;
+    const operationsEmail = process.env.SUNUSHOP_OPERATIONS_NOTIFICATION_EMAIL?.trim() || process.env.SUNUSHOP_CRM_NOTIFICATION_EMAIL?.trim();
+    if (operationsEmail) {
+      const admin = requireAdminClient();
+      const { data: merchant } = await admin.from("merchant_accounts").select("public_name").eq("id", input.merchantId).maybeSingle();
+      await enqueueEmail(admin, { dedupeKey: `subscription-payment-submitted:${String(data?.id ?? data)}`, template: "subscription_payment_submitted", to: operationsEmail, payload: { shopName: merchant?.public_name, amountXof: input.amountXof, externalReference: input.externalReference } }).catch(() => false);
+    }
     return apiSuccess(data, { status: 201, requestId });
   } catch (error) {
     return apiFailure(error, requestId);

@@ -145,14 +145,14 @@ export default async function MarchandPage() {
     admin!
       .from("products")
       .select(
-        "id, title, status, product_media(id, storage_path), product_variants(id, sku, price_xof, inventory_items(available_quantity, reserved_quantity))",
+        "id, category_id, title, description, status, product_media(id, storage_path, alt_text, position), product_variants(id, sku, title, attributes, price_xof, compare_at_price_xof, active, inventory_items(available_quantity, reserved_quantity, low_stock_threshold))",
       )
       .eq("merchant_id", merchant.id)
       .order("created_at", { ascending: false }),
     admin!
       .from("delivery_zones")
       .select(
-        "id, label, region, city, fee_xof, min_delay_minutes, max_delay_minutes",
+        "id, label, region, city, fee_xof, min_delay_minutes, max_delay_minutes, active, delivery_methods(kind), delivery_category_rates(category_id, fee_xof)",
       )
       .eq("merchant_id", merchant.id)
       .order("created_at", { ascending: false }),
@@ -174,7 +174,7 @@ export default async function MarchandPage() {
     admin!
       .from("orders")
       .select(
-        "id, public_code, status, total_xof, created_at, direct_payment_declarations(id, external_reference, confirmed_by_merchant_at)",
+        "id, public_code, merchant_sequence, status, total_xof, created_at, direct_payment_declarations(id, external_reference, confirmed_by_merchant_at)",
       )
       .eq("merchant_id", merchant.id)
       .order("created_at", { ascending: false })
@@ -187,6 +187,14 @@ export default async function MarchandPage() {
       .limit(20),
   ]);
 
+  const productsWithMediaUrls = (products ?? []).map((product) => ({
+    ...product,
+    product_media: product.product_media.map((media) => ({
+      ...media,
+      url: admin!.storage.from("product-media").getPublicUrl(media.storage_path).data.publicUrl,
+    })),
+  }));
+
   return (
     <MvpShell>
       <main className="mvp-main">
@@ -197,7 +205,7 @@ export default async function MarchandPage() {
             documents={documents ?? []}
             categories={categories ?? []}
             plans={plans ?? []}
-            products={products ?? []}
+            products={productsWithMediaUrls}
             zones={zones ?? []}
             subscription={subscription}
             payments={payments ?? []}

@@ -1,5 +1,4 @@
 begin;
-
 create table public.rate_limit_buckets (
   key_hash text not null,
   action text not null,
@@ -9,10 +8,8 @@ create table public.rate_limit_buckets (
   primary key (key_hash, action),
   constraint rate_limit_count_positive check (request_count > 0)
 );
-
 alter table public.rate_limit_buckets enable row level security;
 revoke all on public.rate_limit_buckets from anon, authenticated;
-
 create function public.consume_rate_limit(
   p_key_hash text,
   p_action text,
@@ -61,7 +58,6 @@ begin
   return v_bucket.request_count <= p_max_requests;
 end;
 $$;
-
 create function public.create_merchant_application(
   p_kind public.merchant_kind,
   p_public_name text,
@@ -158,7 +154,6 @@ begin
   );
 end;
 $$;
-
 create function public.submit_subscription_payment(
   p_merchant_id uuid,
   p_plan_id text,
@@ -228,7 +223,6 @@ begin
   return v_submission;
 end;
 $$;
-
 create function public.document_retention_candidates(
   p_rejected_days integer default 90,
   p_closed_days integer default 365
@@ -265,7 +259,6 @@ as $$
       )
     );
 $$;
-
 create function public.mark_verification_document_purged(p_document_id uuid)
 returns void
 language plpgsql
@@ -281,17 +274,14 @@ begin
   where id = p_document_id;
 end;
 $$;
-
 revoke all on function public.consume_rate_limit(text, text, integer, integer) from public;
 revoke all on function public.create_merchant_application(public.merchant_kind, text, text, text, text, text, text, text, text, boolean) from public;
 revoke all on function public.submit_subscription_payment(uuid, text, public.payment_channel, text, integer, timestamptz) from public;
 revoke all on function public.document_retention_candidates(integer, integer) from public;
 revoke all on function public.mark_verification_document_purged(uuid) from public;
-
 grant execute on function public.consume_rate_limit(text, text, integer, integer) to service_role;
 grant execute on function public.create_merchant_application(public.merchant_kind, text, text, text, text, text, text, text, text, boolean) to authenticated;
 grant execute on function public.submit_subscription_payment(uuid, text, public.payment_channel, text, integer, timestamptz) to authenticated;
 grant execute on function public.document_retention_candidates(integer, integer) to service_role;
 grant execute on function public.mark_verification_document_purged(uuid) to service_role;
-
 commit;

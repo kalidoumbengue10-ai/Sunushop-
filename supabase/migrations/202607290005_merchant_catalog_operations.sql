@@ -1,5 +1,4 @@
 begin;
-
 create function public.create_merchant_product(
   p_merchant_id uuid,
   p_category_id uuid,
@@ -136,7 +135,6 @@ begin
   );
 end;
 $$;
-
 create function public.create_delivery_zone(
   p_merchant_id uuid,
   p_method_kind public.delivery_method_kind,
@@ -223,7 +221,6 @@ begin
   );
 end;
 $$;
-
 create function public.set_merchant_product_publication(
   p_product_id uuid,
   p_publish boolean
@@ -300,13 +297,10 @@ begin
   return v_product;
 end;
 $$;
-
 revoke all on function public.create_merchant_product(uuid, uuid, text, text, text, text, text, integer, integer, integer, boolean) from public;
 revoke all on function public.create_delivery_zone(uuid, public.delivery_method_kind, text, text, text, text, integer, integer, integer) from public;
 revoke all on function public.set_merchant_product_publication(uuid, boolean) from public;
-
 grant execute on function public.create_merchant_product(uuid, uuid, text, text, text, text, text, integer, integer, integer, boolean) to authenticated;
 grant execute on function public.create_delivery_zone(uuid, public.delivery_method_kind, text, text, text, text, integer, integer, integer) to authenticated;
 grant execute on function public.set_merchant_product_publication(uuid, boolean) to authenticated;
-
 commit;

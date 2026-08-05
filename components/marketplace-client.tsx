@@ -1,519 +1,168 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useEffect, useMemo, useState } from "react";
-import type { CatalogItem, PublicShop, QuoteGroup } from "@/lib/domain/repositories";
+import { Check, Minus, Plus, ShoppingBag } from "lucide-react";
+import { useMemo, useState } from "react";
+import { useCart } from "@/components/cart-provider";
+import type { CatalogItem } from "@/lib/domain/repositories";
+import {
+  optionValueAvailable,
+  productOptionNames,
+  productOptionValues,
+  resolveProductVariant,
+} from "@/lib/domain/product-options";
 import { formatPrice } from "@/lib/marketplace";
 
-type CartLine = {
-  product: CatalogItem;
-  quantity: number;
-};
+function ProductCard({ product }: { product: CatalogItem }) {
+  const cart = useCart();
+  const [selected, setSelected] = useState<Record<string, string>>(product.variant.attributes);
+  const [quantity, setQuantity] = useState(1);
+  const [added, setAdded] = useState(false);
+  const optionNames = productOptionNames(product.variants);
+  const variant = resolveProductVariant(product.variants, selected) ?? product.variant;
 
-type OrderResult = {
-  publicCode: string;
-  id: string;
-  merchantId: string;
-  totalXof: number;
-};
+  const selectOption = (name: string, value: string) => {
+    const wanted = { ...selected, [name]: value };
+    const exact = resolveProductVariant(product.variants, wanted);
+    const compatible = exact ?? product.variants.find((candidate) =>
+      candidate.availableQuantity > 0 && candidate.attributes[name] === value,
+    );
+    if (compatible) {
+      setSelected(compatible.attributes);
+      setQuantity((current) => Math.min(current, Math.max(1, compatible.availableQuantity)));
+    }
+  };
 
-type PaymentMethod =
-  | "cash_on_delivery"
-  | "wave_direct"
-  | "orange_money_direct";
+  const add = () => {
+    cart.add({ ...product, variant }, quantity);
+    cart.open();
+    setAdded(true);
+    window.setTimeout(() => setAdded(false), 1600);
+  };
 
-type SavedAddress = {
-  id: string;
-  label: string;
-  recipient_name: string;
-  phone: string;
-  region: string;
-  city: string;
-  address_hint: string;
-  is_default: boolean;
-};
+  return (
+    <article className="mvp-product">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img className="mvp-product__image" src={product.imageUrl ?? ""} alt={product.title} />
+      <div className="mvp-product__body">
+        <small className="product-category">{product.category.name}</small>
+        <h3>{product.title}</h3>
+        <p>{product.description}</p>
+        <Link className="product-shop-link" href={`/boutiques/${product.merchant.slug}`}>Vendu par {product.merchant.name}</Link>
 
-const storageKey = "sunushop-live-cart-v1";
+        {optionNames.map((name) => (
+          <fieldset className="product-options" key={name}>
+            <legend>{name}</legend>
+            <div>
+              {productOptionValues(product.variants, name).map((value) => {
+                const available = optionValueAvailable(product.variants, selected, name, value);
+                return (
+                  <button
+                    type="button"
+                    key={value}
+                    className={selected[name] === value ? "is-active" : ""}
+                    disabled={!available}
+                    onClick={() => selectOption(name, value)}
+                    aria-pressed={selected[name] === value}
+                  >
+                    {value}
+                  </button>
+                );
+              })}
+            </div>
+          </fieldset>
+        ))}
 
-function isPaymentMethodAvailable(
-  shop: PublicShop | undefined,
-  paymentMethod: PaymentMethod,
-) {
-  if (paymentMethod === "cash_on_delivery") return true;
-  if (paymentMethod === "wave_direct") return Boolean(shop?.paymentMethods.wave);
-  return Boolean(shop?.paymentMethods.orangeMoney);
+        <div className="product-purchase-row">
+          <div><span className="mvp-price">{formatPrice(variant.priceXof)}</span><small>{variant.availableQuantity} en stock</small></div>
+          <div className="quantity-stepper" aria-label={`Quantité pour ${product.title}`}>
+            <button type="button" onClick={() => setQuantity((value) => Math.max(1, value - 1))} disabled={quantity <= 1} aria-label="Diminuer la quantité"><Minus /></button>
+            <output aria-live="polite">{quantity}</output>
+            <button type="button" onClick={() => setQuantity((value) => Math.min(variant.availableQuantity, value + 1))} disabled={quantity >= variant.availableQuantity} aria-label="Augmenter la quantité"><Plus /></button>
+          </div>
+        </div>
+        <button className="mvp-button product-add-button" onClick={add} disabled={variant.availableQuantity < 1}>
+          {added ? <><Check /> Ajouté au panier</> : <><ShoppingBag /> Ajouter {quantity > 1 ? `${quantity} articles` : "au panier"}</>}
+        </button>
+      </div>
+    </article>
+  );
 }
 
 export function MarketplaceClient({
   initialProducts,
+  initialTotal = initialProducts.length,
+  merchantSlug,
+  groupByCategory = false,
 }: {
   initialProducts: CatalogItem[];
+  initialTotal?: number;
+  merchantSlug?: string;
+  groupByCategory?: boolean;
 }) {
-  const [cart, setCart] = useState<CartLine[]>([]);
-  const [shops, setShops] = useState<Record<string, PublicShop>>({});
-  const [zones, setZones] = useState<Record<string, string>>({});
-  const [payments, setPayments] = useState<Record<string, PaymentMethod>>({});
-  const [quote, setQuote] = useState<QuoteGroup[]>([]);
-  const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState("");
-  const [error, setError] = useState("");
-  const [orders, setOrders] = useState<OrderResult[]>([]);
-  const [savedAddresses, setSavedAddresses] = useState<SavedAddress[]>([]);
-  const [selectedAddressId, setSelectedAddressId] = useState("");
-  const [categoryMenuOpen, setCategoryMenuOpen] = useState(false);
+  const [products, setProducts] = useState(initialProducts);
+  const [total, setTotal] = useState(initialTotal);
+  const [page, setPage] = useState(1);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [activeCategory, setActiveCategory] = useState("Toutes");
   const [search, setSearch] = useState("");
 
   const categories = useMemo(
-    () => ["Toutes", ...Array.from(new Set(initialProducts.map((product) => product.category.name))).sort()],
-    [initialProducts],
+    () => ["Toutes", ...Array.from(new Set(products.map((product) => product.category.name))).sort()],
+    [products],
   );
-  const filteredProducts = useMemo(() => {
+  const filtered = useMemo(() => {
     const query = search.trim().toLocaleLowerCase("fr");
-    return initialProducts.filter((product) =>
+    return products.filter((product) =>
       (activeCategory === "Toutes" || product.category.name === activeCategory) &&
       (!query || `${product.title} ${product.description} ${product.merchant.name}`.toLocaleLowerCase("fr").includes(query)),
     );
-  }, [activeCategory, initialProducts, search]);
+  }, [activeCategory, products, search]);
 
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem(storageKey);
-      // Synchronisation unique avec le stockage navigateur après hydratation.
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      if (saved) setCart(JSON.parse(saved) as CartLine[]);
-    } catch {
-      localStorage.removeItem(storageKey);
-    }
-    fetch("/api/client/cart")
-      .then(async (response) => {
-        if (!response.ok) return null;
-        return response.json();
-      })
-      .then((payload) => {
-        if (!payload) return;
-        const cloudItems = (payload.data.items as Array<{ variant_id: string; quantity: number }>)
-          .map((item) => {
-            const product = initialProducts.find((candidate) => candidate.variant.id === item.variant_id);
-            return product ? { product, quantity: item.quantity } : null;
-          })
-          .filter((item): item is CartLine => item !== null);
-        if (cloudItems.length) setCart(cloudItems);
-      })
-      .catch(() => undefined);
-    fetch("/api/client/addresses")
-      .then(async (response) => response.ok ? response.json() : null)
-      .then((payload) => {
-        if (!payload) return;
-        const items = payload.data.items as SavedAddress[];
-        setSavedAddresses(items);
-        setSelectedAddressId((items.find((item) => item.is_default) ?? items[0])?.id ?? "");
-      })
-      .catch(() => undefined);
-  }, [initialProducts]);
+  const sections = useMemo(() => {
+    if (!groupByCategory || activeCategory !== "Toutes") return [[activeCategory, filtered] as const];
+    return categories.slice(1).map((category) => [category, filtered.filter((product) => product.category.name === category)] as const);
+  }, [activeCategory, categories, filtered, groupByCategory]);
 
-  useEffect(() => {
-    localStorage.setItem(storageKey, JSON.stringify(cart));
-  }, [cart]);
-
-  const groups = useMemo(() => {
-    const map = new Map<string, CartLine[]>();
-    cart.forEach((line) => {
-      const existing = map.get(line.product.merchant.id) ?? [];
-      existing.push(line);
-      map.set(line.product.merchant.id, existing);
-    });
-    return [...map.entries()];
-  }, [cart]);
-
-  useEffect(() => {
-    const missing = groups
-      .map(([, lines]) => lines[0]?.product.merchant)
-      .filter(
-        (merchant): merchant is CatalogItem["merchant"] =>
-          Boolean(merchant) && !shops[merchant.id],
-      );
-    if (!missing.length) return;
-
-    Promise.all(
-      missing.map(async (merchant) => {
-        const response = await fetch(`/api/shops/${merchant.slug}`);
-        if (!response.ok) return null;
-        const payload = await response.json();
-        return payload.data as PublicShop;
-      }),
-    ).then((loaded) => {
-      setShops((current) => {
-        const next = { ...current };
-        loaded.forEach((shop) => {
-          if (shop) next[shop.id] = shop;
-        });
-        return next;
-      });
-      setZones((current) => {
-        const next = { ...current };
-        loaded.forEach((shop) => {
-          if (shop?.deliveryZones[0] && !next[shop.id]) {
-            next[shop.id] = shop.deliveryZones[0].id;
-          }
-        });
-        return next;
-      });
-    });
-  }, [groups, shops]);
-
-  const add = (product: CatalogItem) => {
-    setQuote([]);
-    setOrders([]);
-    setCart((current) => {
-      const existing = current.find(
-        (line) => line.product.variant.id === product.variant.id,
-      );
-      const quantity = existing
-        ? Math.min(product.variant.availableQuantity, existing.quantity + 1)
-        : 1;
-      fetch("/api/client/cart", {
-        method: "PUT",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ variantId: product.variant.id, quantity }),
-      }).catch(() => undefined);
-      if (existing) {
-        return current.map((line) =>
-          line === existing
-            ? {
-                ...line,
-                quantity: Math.min(
-                  product.variant.availableQuantity,
-                  line.quantity + 1,
-                ),
-              }
-            : line,
-        );
-      }
-      return [...current, { product, quantity: 1 }];
-    });
-  };
-
-  const remove = (variantId: string) => {
-    setQuote([]);
-    setCart((current) =>
-      current.filter((line) => line.product.variant.id !== variantId),
-    );
-    fetch("/api/client/cart", {
-      method: "PUT",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ variantId, quantity: 0 }),
-    }).catch(() => undefined);
-  };
-
-  const requestGroups = groups.map(([merchantId, lines]) => ({
-    merchantId,
-    deliveryZoneId: zones[merchantId],
-    items: lines.map((line) => ({
-      variantId: line.product.variant.id,
-      quantity: line.quantity,
-    })),
-  }));
-
-  const requestQuote = async () => {
-    if (requestGroups.some((group) => !group.deliveryZoneId)) {
-      setError("Choisissez une zone pour chaque boutique.");
-      return;
-    }
-    setBusy(true);
-    setError("");
-    const response = await fetch("/api/cart/quote", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ groups: requestGroups }),
-    });
+  const loadMore = async () => {
+    setLoadingMore(true);
+    const nextPage = page + 1;
+    const params = new URLSearchParams({ page: String(nextPage), limit: "24" });
+    if (merchantSlug) params.set("merchant", merchantSlug);
+    const response = await fetch(`/api/storefront?${params}`);
     const payload = await response.json();
-    setBusy(false);
-    if (!response.ok) {
-      setError(payload.error?.message ?? "Impossible de calculer le total.");
-      return;
+    if (response.ok) {
+      const incoming = payload.data.products as CatalogItem[];
+      setProducts((current) => [...current, ...incoming.filter((product) => !current.some((item) => item.id === product.id))]);
+      setTotal(payload.data.pagination.total);
+      setPage(nextPage);
     }
-    setQuote(payload.data.groups as QuoteGroup[]);
-    setMessage("Prix, stock et livraison ont été recalculés.");
-  };
-
-  const createOrders = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    setBusy(true);
-    setError("");
-    const form = new FormData(event.currentTarget);
-    const response = await fetch("/api/orders/batch", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "idempotency-key": crypto.randomUUID(),
-      },
-      body: JSON.stringify({
-        recipient: {
-          name: form.get("name"),
-          phone: form.get("phone"),
-          region: form.get("region"),
-          city: form.get("city"),
-          addressHint: form.get("addressHint"),
-        },
-        groups: requestGroups.map((group) => ({
-          ...group,
-          paymentMethod: isPaymentMethodAvailable(
-            shops[group.merchantId],
-            payments[group.merchantId] ?? "cash_on_delivery",
-          )
-            ? (payments[group.merchantId] ?? "cash_on_delivery")
-            : "cash_on_delivery",
-        })),
-      }),
-    });
-    const payload = await response.json();
-    setBusy(false);
-    if (!response.ok) {
-      if (response.status === 401) {
-        setError("Connectez-vous avant de confirmer les commandes.");
-      } else {
-        setError(payload.error?.message ?? "Impossible de créer les commandes.");
-      }
-      return;
-    }
-    setOrders(payload.data.orders as OrderResult[]);
-    const purchasedVariants = cart.map((line) => line.product.variant.id);
-    await Promise.all(
-      purchasedVariants.map((variantId) =>
-        fetch("/api/client/cart", {
-          method: "PUT",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ variantId, quantity: 0 }),
-        }),
-      ),
-    );
-    setCart([]);
-    setQuote([]);
-    localStorage.removeItem(storageKey);
-    setMessage("Vos commandes ont été créées séparément par boutique.");
+    setLoadingMore(false);
   };
 
   return (
-    <div className="mvp-grid">
-      <section className="mvp-card mvp-card--full marketplace-catalog" id="catalogue">
-        <div className="marketplace-section-heading"><div><span className="mvp-eyebrow">Catalogue en direct</span><h2>Produits disponibles maintenant</h2><p>Commandez auprès de commerces vérifiés et suivez chaque étape depuis votre espace.</p></div><span>{filteredProducts.length} produit{filteredProducts.length > 1 ? "s" : ""}</span></div>
-        <div className="catalog-tools">
-          <div className="catalog-category-menu">
-            <button type="button" className="catalog-menu-button" aria-expanded={categoryMenuOpen} onClick={() => setCategoryMenuOpen((value) => !value)}><span className="catalog-menu-icon">☰</span>{activeCategory === "Toutes" ? "Toutes les catégories" : activeCategory}</button>
-            {categoryMenuOpen && <div className="catalog-category-drawer" role="menu">{categories.map((category) => <button type="button" role="menuitem" className={category === activeCategory ? "is-active" : ""} key={category} onClick={() => { setActiveCategory(category); setCategoryMenuOpen(false); }}>{category}<span>{category === "Toutes" ? initialProducts.length : initialProducts.filter((product) => product.category.name === category).length}</span></button>)}</div>}
-          </div>
-          <label className="catalog-search"><span>⌕</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Rechercher un produit ou une boutique" aria-label="Rechercher dans le catalogue" /></label>
+    <section className="marketplace-catalog" id="catalogue">
+      <div className="marketplace-section-heading">
+        <div><span className="mvp-eyebrow">Catalogue en direct</span><h2>{groupByCategory ? "Tous les produits de la boutique" : "Produits disponibles maintenant"}</h2><p>Prix, variantes et stocks visibles avant de créer un compte.</p></div>
+        <span>{total} produit{total > 1 ? "s" : ""}</span>
+      </div>
+      <div className="catalog-tools">
+        <div className="catalog-category-tabs" role="group" aria-label="Filtrer par catégorie">
+          {categories.map((category) => <button type="button" key={category} className={category === activeCategory ? "is-active" : ""} onClick={() => setActiveCategory(category)}>{category}</button>)}
         </div>
-        {filteredProducts.length ? (
-          <div className="mvp-product-grid">
-            {filteredProducts.map((product) => (
-              <article className="mvp-product" key={product.variant.id}>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img className="mvp-product__image" src={product.imageUrl ?? ""} alt={product.title} />
-                <div className="mvp-product__body">
-                  <small>{product.category.name}</small>
-                  <h2>{product.title}</h2>
-                  <p>{product.description}</p><Link className="product-shop-link" href={`/boutiques/${product.merchant.slug}`}>Vendu par {product.merchant.name}</Link>
-                  <span className="mvp-price">
-                    {formatPrice(product.variant.priceXof)}
-                  </span>
-                  <small>
-                    {product.variant.availableQuantity} disponible(s)
-                  </small>
-                  <button
-                    className="mvp-button"
-                    onClick={() => add(product)}
-                    disabled={product.variant.availableQuantity < 1}
-                  >
-                    Ajouter au panier
-                  </button>
-                </div>
-              </article>
-            ))}
-          </div>
-        ) : (
-          <div className="mvp-empty">{initialProducts.length ? "Aucun produit ne correspond à cette recherche." : "Le catalogue s’ouvre progressivement. Revenez bientôt pour découvrir les premiers produits disponibles."}</div>
-        )}
-      </section>
+        <label className="catalog-search"><span aria-hidden="true">⌕</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Rechercher un produit ou une boutique" aria-label="Rechercher dans le catalogue" /></label>
+      </div>
 
-      <aside className="mvp-card mvp-card--full mvp-cart">
-        <h2>
-          Panier séparé par boutique{" "}
-          <span className="mvp-cart-count">{cart.length}</span>
-        </h2>
-        {message && <p className="mvp-alert">{message}</p>}
-        {error && (
-          <p className="mvp-alert mvp-alert--error">
-            {error}{" "}
-            {error.includes("Connectez") && (
-              <Link href="/connexion?next=/marche">Se connecter</Link>
-            )}
-          </p>
-        )}
-        {orders.length > 0 && (
-          <div className="mvp-list">
-            {orders.map((order) => (
-              <div className="mvp-row" key={order.id}>
-                <div>
-                  <strong>{order.publicCode}</strong>
-                  <small>{formatPrice(order.totalXof)}</small>
-                </div>
-                <Link
-                  className="mvp-button mvp-button--secondary"
-                  href={`/commandes/${order.id}`}
-                >
-                  Suivre
-                </Link>
-              </div>
-            ))}
-          </div>
-        )}
-        {!groups.length ? (
-          <p className="mvp-empty">Votre panier est vide.</p>
-        ) : (
-          <>
-            {groups.map(([merchantId, lines]) => {
-              const shop = shops[merchantId];
-              return (
-                <div className="mvp-list" key={merchantId}>
-                  <h3>{lines[0].product.merchant.name}</h3>
-                  {lines.map((line) => (
-                    <div className="mvp-row" key={line.product.variant.id}>
-                      <div>
-                        <strong>{line.product.title}</strong>
-                        <small>
-                          {line.quantity} ×{" "}
-                          {formatPrice(line.product.variant.priceXof)}
-                        </small>
-                      </div>
-                      <button
-                        className="mvp-button mvp-button--secondary"
-                        onClick={() => remove(line.product.variant.id)}
-                      >
-                        Retirer
-                      </button>
-                    </div>
-                  ))}
-                  <div className="mvp-form__grid">
-                    <label className="mvp-field">
-                      Zone ou retrait
-                      <select
-                        value={zones[merchantId] ?? ""}
-                        onChange={(event) => {
-                          setQuote([]);
-                          setZones((current) => ({
-                            ...current,
-                            [merchantId]: event.target.value,
-                          }));
-                        }}
-                      >
-                        <option value="">Choisir</option>
-                        {shop?.deliveryZones.map((zone) => (
-                          <option value={zone.id} key={zone.id}>
-                            {zone.label} · {formatPrice(zone.feeXof)}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <label className="mvp-field">
-                      Paiement
-                      <select
-                        value={
-                          isPaymentMethodAvailable(
-                            shop,
-                            payments[merchantId] ?? "cash_on_delivery",
-                          )
-                            ? (payments[merchantId] ?? "cash_on_delivery")
-                            : "cash_on_delivery"
-                        }
-                        onChange={(event) =>
-                          setPayments((current) => ({
-                            ...current,
-                            [merchantId]: event.target.value as PaymentMethod,
-                          }))
-                        }
-                      >
-                        <option value="cash_on_delivery">À la livraison</option>
-                        {shop?.paymentMethods.wave && (
-                          <option value="wave_direct">Wave au vendeur</option>
-                        )}
-                        {shop?.paymentMethods.orangeMoney && (
-                          <option value="orange_money_direct">
-                            Orange Money au vendeur
-                          </option>
-                        )}
-                      </select>
-                      <small>
-                        Disponibles : paiement à la livraison
-                        {shop?.paymentMethods.wave ? " · Wave" : ""}
-                        {shop?.paymentMethods.orangeMoney
-                          ? " · Orange Money"
-                          : ""}
-                      </small>
-                    </label>
-                  </div>
-                </div>
-              );
-            })}
-            <button className="mvp-button" onClick={requestQuote} disabled={busy}>
-              {busy ? "Calcul…" : "Vérifier prix, stock et délais"}
-            </button>
-          </>
-        )}
+      {filtered.length ? sections.map(([category, items]) => items.length > 0 && (
+        <section className="catalog-category-section" key={category}>
+          {groupByCategory && activeCategory === "Toutes" && <header><h3>{category}</h3><span>{items.length} produit{items.length > 1 ? "s" : ""}</span></header>}
+          <div className="mvp-product-grid">{items.map((product) => <ProductCard product={product} key={product.id} />)}</div>
+        </section>
+      )) : <div className="mvp-empty">Aucun produit ne correspond à cette recherche.</div>}
 
-        {quote.length > 0 && (
-          <form className="mvp-form" onSubmit={createOrders}>
-            <div className="mvp-divider" />
-            <h3>Totaux confirmés</h3>
-            {quote.map((group) => (
-              <div className="mvp-row" key={group.merchantId}>
-                <div>
-                  <strong>{group.merchantName}</strong>
-                  <small>
-                    {group.deliveryLabel} · {group.minDelayMinutes} à{" "}
-                    {group.maxDelayMinutes} min
-                  </small>
-                </div>
-                <strong>{formatPrice(group.totalXof)}</strong>
-              </div>
-            ))}
-            <h3>Destinataire</h3>
-            {savedAddresses.length > 0 && (
-              <label className="mvp-field">Adresse enregistrée
-                <select value={selectedAddressId} onChange={(event) => setSelectedAddressId(event.target.value)}>
-                  {savedAddresses.map((address) => <option value={address.id} key={address.id}>{address.label} · {address.city}</option>)}
-                </select>
-              </label>
-            )}
-            <div className="mvp-form__grid" key={selectedAddressId}>
-              <label className="mvp-field">
-                Nom
-                <input name="name" defaultValue={savedAddresses.find((item) => item.id === selectedAddressId)?.recipient_name} required />
-              </label>
-              <label className="mvp-field">
-                Téléphone
-                <input name="phone" defaultValue={savedAddresses.find((item) => item.id === selectedAddressId)?.phone} placeholder="+221770000000" required />
-              </label>
-              <label className="mvp-field">
-                Région
-                <input name="region" defaultValue={savedAddresses.find((item) => item.id === selectedAddressId)?.region} required />
-              </label>
-              <label className="mvp-field">
-                Ville
-                <input name="city" defaultValue={savedAddresses.find((item) => item.id === selectedAddressId)?.city} required />
-              </label>
-            </div>
-            <label className="mvp-field">
-              Adresse ou point de repère
-              <textarea name="addressHint" key={selectedAddressId} defaultValue={savedAddresses.find((item) => item.id === selectedAddressId)?.address_hint} required />
-            </label>
-            <button className="mvp-button" disabled={busy}>
-              {busy ? "Création…" : "Confirmer les commandes"}
-            </button>
-          </form>
-        )}
-      </aside>
-    </div>
+      {products.length < total && (
+        <div className="catalog-load-more"><button type="button" className="mvp-button mvp-button--secondary" disabled={loadingMore} onClick={loadMore}>{loadingMore ? "Chargement…" : "Afficher plus de produits"}</button><small>{products.length} sur {total}</small></div>
+      )}
+    </section>
   );
 }

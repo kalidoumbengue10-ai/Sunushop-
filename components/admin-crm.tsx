@@ -2,10 +2,12 @@
 
 import {
   ArrowUpRight,
+  BadgeCheck,
   CalendarClock,
   Check,
   ChevronRight,
   ClipboardCheck,
+  Copy,
   Download,
   Mail,
   MessageCircle,
@@ -36,6 +38,7 @@ export type CrmLead = {
   converted_at: string | null;
   created_at: string;
   updated_at: string;
+  merchant_id?: string | null;
 };
 
 type LeadStatus =
@@ -118,6 +121,7 @@ export function AdminCrm({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [actionMessage, setActionMessage] = useState("");
+  const [invitationLink, setInvitationLink] = useState("");
 
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -138,6 +142,7 @@ export function AdminCrm({
   const openLead = async (id: string) => {
     setBusy(true);
     setError("");
+    setInvitationLink("");
     try {
       const response = await fetch(`/api/admin/crm/leads/${id}`);
       const payload = await response.json();
@@ -258,7 +263,7 @@ export function AdminCrm({
     }
     const digits = selected.phone.replace(/\D/g, "");
     const phone = digits.length === 9 ? `+221${digits}` : `+${digits}`;
-    setBusy(true); setError(""); setActionMessage("");
+    setBusy(true); setError(""); setActionMessage(""); setInvitationLink("");
     try {
       const response = await fetch("/api/admin/merchant-invitations", {
         method: "POST", headers: { "content-type": "application/json" },
@@ -275,10 +280,33 @@ export function AdminCrm({
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error?.message ?? "Invitation impossible.");
-      setActionMessage(payload.data.emailSent ? "L’accès documents a été envoyé par email." : "L’accès est créé. L’email est placé dans la file de reprise.");
+      setInvitationLink(String(payload.data.invitationUrl ?? ""));
+      setActionMessage(payload.data.emailSent ? "L’e-mail a été accepté par le serveur de messagerie. Le lien sécurisé est aussi disponible ci-dessous." : "L’accès est créé. L’e-mail sera retenté automatiquement ; utilisez le lien ci-dessous sans attendre.");
       await refreshSelected();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Invitation impossible.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const activateTestSubscription = async () => {
+    if (!selected?.merchant_id) return;
+    const confirmed = window.confirm("Activer le premier plan SunuShop disponible pendant 30 jours pour ce commerce ? Cette action ouvrira immédiatement la publication des produits si le dossier est validé.");
+    if (!confirmed) return;
+    setBusy(true); setError(""); setActionMessage("");
+    try {
+      const response = await fetch("/api/admin/subscriptions/test-activation", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ merchantId: selected.merchant_id, days: 30 }),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error?.message ?? "Activation impossible.");
+      setActionMessage("Abonnement de test actif pendant 30 jours. Le commerçant peut maintenant publier ses produits.");
+      await refreshSelected();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Activation impossible.");
     } finally {
       setBusy(false);
     }
@@ -384,7 +412,9 @@ export function AdminCrm({
 
             <div className="crm-drawer__body">
               {actionMessage && <p className="admin-feedback">{actionMessage}</p>}
+              {invitationLink && <section className="crm-invitation-fallback" aria-label="Lien d’accès aux documents"><div><strong>Lien sécurisé valable 7 jours</strong><small>À transmettre uniquement au commerçant concerné.</small></div><button type="button" onClick={async () => { await navigator.clipboard.writeText(invitationLink); setActionMessage("Lien sécurisé copié. Vous pouvez maintenant le transmettre au commerçant par WhatsApp."); }}><Copy /> Copier le lien</button>{selected.phone && <a href={`https://wa.me/${selected.phone.replace(/\D/g, "")}?text=${encodeURIComponent(`Bonjour, voici votre lien sécurisé SunuShop pour déposer vos documents : ${invitationLink}`)}`} target="_blank" rel="noreferrer"><MessageCircle /> Envoyer par WhatsApp</a>}</section>}
               {!['converted', 'rejected', 'archived'].includes(selected.status) && <section className="crm-detail-card crm-onboarding-action"><div><span className="admin-kicker">Accès sécurisé</span><h3>Espace de dépôt des documents</h3><p>Envoie ou renvoie le lien permettant de créer le mot de passe. Avant validation KYC, le commerçant ne verra que son dossier.</p></div><button type="button" className="admin-primary-button" onClick={inviteToDocuments} disabled={busy}><Send /> {selected.status === "onboarding" ? "Renvoyer l’accès documents" : "Envoyer l’accès documents"}</button></section>}
+              {selected.merchant_id && <section className="crm-detail-card crm-test-subscription"><div><span className="admin-kicker">Test du parcours marchand</span><h3>Ouvrir la publication pendant 30 jours</h3><p>Cette activation est réservée aux tests. Elle fonctionne uniquement après validation des documents et reste enregistrée dans l’historique d’audit.</p></div><button type="button" className="admin-primary-button" onClick={activateTestSubscription} disabled={busy}><BadgeCheck /> Activer l’abonnement test</button></section>}
               <section className="crm-detail-card">
                 <h3>Informations</h3>
                 <dl>

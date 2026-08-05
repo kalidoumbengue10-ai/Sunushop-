@@ -8,18 +8,18 @@ export const dynamic = "force-dynamic";
 
 export default async function MarchePage() {
   const admin = getAdminSupabase();
-  const products = admin
+  const page = admin
     ? await new SupabaseCatalogRepository(admin)
-        .list({ limit: 60 })
-        .catch(() => [])
-    : [];
+        .listPage({ page: 1, limit: 24 })
+        .catch(() => ({ products: [], total: 0 }))
+    : { products: [], total: 0 };
 
   return (
     <MvpShell>
       <main className="mvp-main">
         <div className="mvp-shell">
           {!admin && <SetupRequired />}
-          <MarketplaceClient initialProducts={products} />
+          <MarketplaceClient initialProducts={page.products} initialTotal={page.total} />
         </div>
       </main>
     </MvpShell>

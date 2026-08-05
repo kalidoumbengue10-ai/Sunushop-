@@ -68,6 +68,9 @@ export function AuthFlow({ turnstileSiteKey }: { turnstileSiteKey?: string }) {
         : "sign_in",
   );
   const mode = !canSignUp && selectedMode === "sign_up" ? "sign_in" : selectedMode;
+  const captchaRequired = Boolean(
+    turnstileSiteKey && !(invitationNext && mode === "sign_up"),
+  );
   const [email, setEmail] = useState(searchParams.get("email") ?? "");
   const [password, setPassword] = useState("");
   const [passwordConfirmation, setPasswordConfirmation] = useState("");
@@ -342,7 +345,7 @@ export function AuthFlow({ turnstileSiteKey }: { turnstileSiteKey?: string }) {
             </label>
           )}
 
-          {turnstileSiteKey && (
+          {captchaRequired && (
             <div
               className="cf-turnstile"
               data-sitekey={turnstileSiteKey}
@@ -352,7 +355,7 @@ export function AuthFlow({ turnstileSiteKey }: { turnstileSiteKey?: string }) {
             />
           )}
 
-          {turnstileSiteKey && !captchaToken && !error && (
+          {captchaRequired && !captchaToken && !error && (
             <p className="auth-captcha-status" role="status">
               Validation de sécurité en cours…
             </p>
@@ -360,7 +363,7 @@ export function AuthFlow({ turnstileSiteKey }: { turnstileSiteKey?: string }) {
 
           <button
             className="mvp-button"
-            disabled={busy || Boolean(turnstileSiteKey && !captchaToken)}
+            disabled={busy || Boolean(captchaRequired && !captchaToken)}
           >
             {busy
               ? "Un instant…"

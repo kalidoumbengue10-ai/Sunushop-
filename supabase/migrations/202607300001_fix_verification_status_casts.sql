@@ -1,5 +1,4 @@
 begin;
-
 create or replace function public.submit_verification_case(p_case_id uuid)
 returns public.verification_cases
 language plpgsql
@@ -96,8 +95,6 @@ begin
   return v_case;
 end;
 $$;
-
 revoke all on function public.submit_verification_case(uuid) from public;
 grant execute on function public.submit_verification_case(uuid) to authenticated;
-
 commit;

@@ -2,15 +2,25 @@ import { requireAdminClient } from "@/lib/api/auth";
 import { apiFailure, apiSuccess } from "@/lib/api/response";
 import { SupabaseCatalogRepository } from "@/lib/infrastructure/supabase/repositories";
 
-export async function GET() {
+export async function GET(request: Request) {
   const requestId = crypto.randomUUID();
   try {
     const admin = requireAdminClient();
-    const [products, categoryResult, mediaResult] = await Promise.all([
-      new SupabaseCatalogRepository(admin).list({ limit: 100 }),
+    const url = new URL(request.url);
+    const page = Math.max(1, Number.parseInt(url.searchParams.get("page") ?? "1", 10) || 1);
+    const limit = Math.min(60, Math.max(1, Number.parseInt(url.searchParams.get("limit") ?? "24", 10) || 24));
+    const [catalogPage, categoryResult, mediaResult] = await Promise.all([
+      new SupabaseCatalogRepository(admin).listPage({
+        page,
+        limit,
+        query: url.searchParams.get("query")?.trim() || undefined,
+        category: url.searchParams.get("category")?.trim() || undefined,
+        merchantSlug: url.searchParams.get("merchant")?.trim() || undefined,
+      }),
       admin.from("categories").select("id, slug, name, description").eq("active", true).order("position"),
       admin.from("merchant_media").select("merchant_id, kind, storage_bucket, storage_path"),
     ]);
+    const products = catalogPage.products;
     if (categoryResult.error) throw categoryResult.error;
     if (mediaResult.error) throw mediaResult.error;
     const media = new Map<string, { logoUrl: string | null; coverUrl: string | null }>();
@@ -45,6 +55,12 @@ export async function GET() {
       categories: categoryResult.data ?? [],
       shops: [...shops.values()].map((shop) => ({ ...shop, categories: [...shop.categories.values()] })),
       products,
+      pagination: {
+        page: catalogPage.page,
+        limit: catalogPage.limit,
+        total: catalogPage.total,
+        hasMore: catalogPage.page * catalogPage.limit < catalogPage.total,
+      },
     }, { requestId });
   } catch (error) {
     return apiFailure(error, requestId);

@@ -23,6 +23,7 @@ export async function POST(request: Request) {
     const isClientDestination =
       nextUrl.pathname === "/" ||
       nextUrl.pathname === "/marche" ||
+      nextUrl.pathname === "/commander" ||
       nextUrl.pathname.startsWith("/client") ||
       nextUrl.pathname.startsWith("/commandes/");
     if (!isClientDestination) {
@@ -53,6 +54,9 @@ export async function POST(request: Request) {
       email: input.email,
       action: "password_sign_up",
       captchaToken: input.captchaToken,
+      // Le jeton d’invitation (256 bits, lié à l’adresse et limité à 7 jours)
+      // remplace le CAPTCHA pour éviter les blocages des navigateurs intégrés.
+      skipCaptcha: Boolean(invitationToken),
     });
 
     const supabase = await getServerSupabase();

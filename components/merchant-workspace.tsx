@@ -3,9 +3,26 @@
 import Link from "next/link";
 import { FormEvent, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import {
+  BadgeDollarSign,
+  Bike,
+  Boxes,
+  ClipboardCheck,
+  ExternalLink,
+  LayoutDashboard,
+  PackageSearch,
+  ShoppingBag,
+  Store,
+  Truck,
+} from "lucide-react";
 import { formatPrice } from "@/lib/marketplace";
 import { CourierManager } from "@/components/courier-manager";
 import { MerchantMedia } from "@/components/merchant-media";
+import { MerchantDashboard } from "@/components/merchant-dashboard";
+import { MerchantProductWizard, type MerchantProductEditor } from "@/components/merchant-product-wizard";
+import { MerchantDeliverySettings, type MerchantDeliveryZone } from "@/components/merchant-delivery-settings";
+import { formatMerchantOrderNumber, merchantStatusLabel } from "@/lib/domain/merchant-ui";
+import { getBrowserSupabase } from "@/lib/infrastructure/supabase/browser";
 import {
   requiredVerificationDocuments,
   type MerchantKind,
@@ -50,33 +67,8 @@ type MerchantWorkspaceProps = {
     monthly_price_xof: number;
     product_limit: number | null;
   }>;
-  products: Array<{
-    id: string;
-    title: string;
-    status: string;
-    product_media: Array<{
-      id: string;
-      storage_path: string;
-    }>;
-    product_variants: Array<{
-      id: string;
-      sku: string;
-      price_xof: number;
-      inventory_items: Array<{
-        available_quantity: number;
-        reserved_quantity: number;
-      }>;
-    }>;
-  }>;
-  zones: Array<{
-    id: string;
-    label: string;
-    region: string;
-    city: string | null;
-    fee_xof: number;
-    min_delay_minutes: number;
-    max_delay_minutes: number;
-  }>;
+  products: MerchantProductEditor[];
+  zones: MerchantDeliveryZone[];
   subscription: {
     plan_id: string;
     status: string;
@@ -95,6 +87,7 @@ type MerchantWorkspaceProps = {
   orders: Array<{
     id: string;
     public_code: string;
+    merchant_sequence: number;
     status: string;
     total_xof: number;
     created_at: string;
@@ -142,26 +135,66 @@ function DocumentUploader({
   const inputRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+  const [progress, setProgress] = useState(0);
 
   const upload = async (file?: File) => {
     if (!file) return;
+    if (file.size < 1 || file.size > 10 * 1024 * 1024) {
+      setError("Le document doit peser moins de 10 Mo.");
+      if (inputRef.current) inputRef.current.value = "";
+      return;
+    }
+    if (["image/heic", "image/heif"].includes(file.type.toLowerCase())) {
+      setError("Le format HEIC n’est pas accepté. Enregistrez la photo au format JPEG, PNG ou PDF puis réessayez.");
+      if (inputRef.current) inputRef.current.value = "";
+      return;
+    }
     setBusy(true);
     setError("");
+    setSuccess("");
+    setProgress(0);
     const form = new FormData();
     form.set("documentType", type);
     form.set("file", file);
-    const response = await fetch(
-      `/api/merchant/verifications/${caseId}/documents`,
-      { method: "POST", body: form },
-    );
-    const payload = await response.json();
-    setBusy(false);
-    if (!response.ok) {
-      setError(payload.error?.message ?? "Échec de l’envoi.");
-      return;
+    try {
+      const result = await new Promise<{ ok: boolean; payload: { error?: { message?: string } } }>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open("POST", `/api/merchant/verifications/${caseId}/documents`);
+        xhr.timeout = 120_000;
+        xhr.upload.onprogress = (event) => {
+          if (event.lengthComputable) {
+            setProgress(Math.min(99, Math.round((event.loaded / event.total) * 100)));
+          }
+        };
+        xhr.onload = () => {
+          let payload: { error?: { message?: string } } = {};
+          try {
+            payload = JSON.parse(xhr.responseText) as { error?: { message?: string } };
+          } catch {
+            // Une réponse non JSON sera présentée avec un message compréhensible.
+          }
+          resolve({ ok: xhr.status >= 200 && xhr.status < 300, payload });
+        };
+        xhr.onerror = () => reject(new Error("NETWORK_ERROR"));
+        xhr.ontimeout = () => reject(new Error("UPLOAD_TIMEOUT"));
+        xhr.send(form);
+      });
+      if (!result.ok) {
+        setError(result.payload.error?.message ?? "Le document n’a pas pu être enregistré. Réessayez avec une connexion stable.");
+        return;
+      }
+      setProgress(100);
+      setSuccess(`${documentLabels[type]} enregistré avec succès.`);
+      if (inputRef.current) inputRef.current.value = "";
+      router.refresh();
+    } catch (caught) {
+      setError(caught instanceof Error && caught.message === "UPLOAD_TIMEOUT"
+        ? "L’envoi a dépassé deux minutes. Vérifiez votre connexion puis réessayez."
+        : "La connexion a été interrompue. Réessayez : le fichier reste disponible sur votre téléphone.");
+    } finally {
+      setBusy(false);
     }
-    if (inputRef.current) inputRef.current.value = "";
-    router.refresh();
   };
 
   return (
@@ -181,6 +214,7 @@ function DocumentUploader({
         accept=".jpg,.jpeg,.png,.pdf,image/jpeg,image/png,application/pdf"
         onChange={(event) => upload(event.target.files?.[0])}
       />
+      {success && <p className="mvp-alert">{success}</p>}
       {error && <p className="mvp-alert mvp-alert--error">{error}</p>}
       <button
         type="button"
@@ -188,7 +222,190 @@ function DocumentUploader({
         disabled={busy}
         onClick={() => inputRef.current?.click()}
       >
-        {busy ? "Envoi en cours…" : latest ? "Remplacer le fichier" : "Ajouter le fichier"}
+        {busy ? `Envoi en cours… ${progress}%` : latest || success ? "Remplacer le fichier" : "Ajouter le fichier"}
+      </button>
+    </div>
+  );
+}
+
+function DirectDocumentUploader({
+  caseId,
+  type,
+  latest,
+  required,
+}: {
+  caseId: string;
+  type: VerificationDocumentType;
+  latest?: DocumentRow;
+  required: boolean;
+}) {
+  const router = useRouter();
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+  const [progress, setProgress] = useState(0);
+
+  const upload = async (file?: File) => {
+    if (!file) return;
+    if (file.size < 1 || file.size > 10 * 1024 * 1024) {
+      setError("Le document doit peser moins de 10 Mo.");
+      inputRef.current && (inputRef.current.value = "");
+      return;
+    }
+
+    const extension = file.name.split(".").pop()?.toLowerCase() ?? "";
+    if (
+      ["image/heic", "image/heif"].includes(file.type.toLowerCase()) ||
+      ["heic", "heif"].includes(extension)
+    ) {
+      setError(
+        "Le format HEIC n’est pas accepté. Enregistrez la photo au format JPEG, PNG ou PDF puis réessayez.",
+      );
+      inputRef.current && (inputRef.current.value = "");
+      return;
+    }
+
+    const declaredMime = file.type.toLowerCase();
+    const mimeType = ["image/jpeg", "image/png", "application/pdf"].includes(
+      declaredMime,
+    )
+      ? declaredMime
+      : extension === "jpg" || extension === "jpeg"
+        ? "image/jpeg"
+        : extension === "png"
+          ? "image/png"
+          : extension === "pdf"
+            ? "application/pdf"
+            : null;
+    if (!mimeType) {
+      setError("Choisissez une photo JPG, PNG ou un document PDF.");
+      inputRef.current && (inputRef.current.value = "");
+      return;
+    }
+
+    setBusy(true);
+    setError("");
+    setSuccess("");
+    setProgress(10);
+    try {
+      const authorizationResponse = await fetch(
+        `/api/merchant/verifications/${caseId}/documents/upload-url`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            documentType: type,
+            fileName: file.name || "document",
+            fileSize: file.size,
+            mimeType,
+          }),
+        },
+      );
+      const authorization = (await authorizationResponse.json()) as {
+        data?: { storagePath: string; token: string };
+        error?: { message?: string };
+      };
+      if (!authorizationResponse.ok || !authorization.data) {
+        setError(
+          authorization.error?.message ??
+            "L’envoi n’a pas pu être autorisé. Reconnectez-vous puis réessayez.",
+        );
+        return;
+      }
+
+      setProgress(25);
+      const uploadFile =
+        declaredMime === mimeType
+          ? file
+          : new File([file], file.name || "document", {
+              type: mimeType,
+              lastModified: file.lastModified,
+            });
+      const { error: storageError } = await getBrowserSupabase().storage
+        .from("merchant-verification")
+        .uploadToSignedUrl(
+          authorization.data.storagePath,
+          authorization.data.token,
+          uploadFile,
+          { contentType: mimeType, cacheControl: "0", upsert: false },
+        );
+      if (storageError) {
+        throw new Error("STORAGE_UPLOAD_FAILED", { cause: storageError });
+      }
+
+      setProgress(85);
+      const finalizeResponse = await fetch(
+        `/api/merchant/verifications/${caseId}/documents/finalize`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            documentType: type,
+            storagePath: authorization.data.storagePath,
+          }),
+        },
+      );
+      const finalized = (await finalizeResponse.json()) as {
+        error?: { message?: string };
+      };
+      if (!finalizeResponse.ok) {
+        setError(
+          finalized.error?.message ??
+            "Le fichier a été envoyé mais n’a pas pu être enregistré. Réessayez.",
+        );
+        return;
+      }
+
+      setProgress(100);
+      setSuccess(`${documentLabels[type]} enregistré avec succès.`);
+      inputRef.current && (inputRef.current.value = "");
+      router.refresh();
+    } catch (caught) {
+      setError(
+        caught instanceof Error && caught.message === "STORAGE_UPLOAD_FAILED"
+          ? "La photo n’a pas pu être envoyée au stockage sécurisé. Vérifiez le réseau puis réessayez."
+          : "La connexion a été interrompue. Réessayez : le fichier reste disponible sur votre téléphone.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="mvp-document">
+      <div className="mvp-document__heading">
+        <strong>{documentLabels[type]}</strong>
+        <span className={required ? "mvp-required-badge" : "mvp-optional-badge"}>
+          {required ? "Obligatoire" : "Facultatif"}
+        </span>
+      </div>
+      <small>
+        {latest
+          ? `Fichier reçu · version ${latest.version} · ${latest.status}`
+          : "PDF, JPG ou PNG · 10 Mo maximum"}
+      </small>
+      <input
+        ref={inputRef}
+        className="mvp-document__input"
+        aria-label={`${latest ? "Remplacer" : "Ajouter"} ${documentLabels[type]}`}
+        type="file"
+        accept=".jpg,.jpeg,.png,.pdf,image/jpeg,image/png,application/pdf"
+        onChange={(event) => upload(event.target.files?.[0])}
+      />
+      {success && <p className="mvp-alert">{success}</p>}
+      {error && <p className="mvp-alert mvp-alert--error">{error}</p>}
+      <button
+        type="button"
+        className="mvp-button mvp-button--secondary"
+        disabled={busy}
+        onClick={() => inputRef.current?.click()}
+      >
+        {busy
+          ? `Envoi sécurisé en cours… ${progress}%`
+          : latest || success
+            ? "Remplacer le fichier"
+            : "Ajouter le fichier"}
       </button>
     </div>
   );
@@ -257,9 +474,41 @@ const nextMerchantOrderLabel: Record<string, string> = {
   delivered: "Livrée",
 };
 
+type MerchantTab =
+  | "dashboard"
+  | "commandes"
+  | "catalogue"
+  | "livraison"
+  | "livreurs"
+  | "boutique"
+  | "abonnement"
+  | "dossier";
+
+const merchantNavigation = [
+  { id: "dashboard", label: "Vue d’ensemble", hint: "Activité et chiffres", icon: LayoutDashboard },
+  { id: "commandes", label: "Commandes", hint: "Suivi des ventes", icon: ShoppingBag },
+  { id: "catalogue", label: "Produits", hint: "Photos, prix et stocks", icon: Boxes },
+  { id: "livraison", label: "Livraison", hint: "Zones et tarifs", icon: Truck },
+  { id: "livreurs", label: "Livreurs", hint: "Équipe et affectations", icon: Bike },
+  { id: "boutique", label: "Ma boutique", hint: "Image et présentation", icon: Store },
+  { id: "abonnement", label: "Abonnement", hint: "Plan et paiements", icon: BadgeDollarSign },
+  { id: "dossier", label: "Dossier", hint: "Documents et validation", icon: ClipboardCheck },
+] satisfies Array<{ id: MerchantTab; label: string; hint: string; icon: typeof LayoutDashboard }>;
+
+const merchantSectionTitles: Record<MerchantTab, { eyebrow: string; title: string; description: string }> = {
+  dashboard: { eyebrow: "Pilotage", title: "Vue d’ensemble", description: "Les informations essentielles de votre boutique, sans surcharge." },
+  commandes: { eyebrow: "Ventes", title: "Commandes", description: "Préparez et faites avancer chaque commande." },
+  catalogue: { eyebrow: "Catalogue", title: "Produits", description: "Ajoutez vos photos, variantes, prix et stocks." },
+  livraison: { eyebrow: "Logistique", title: "Livraison", description: "Configurez simplement les régions et leurs tarifs." },
+  livreurs: { eyebrow: "Équipe", title: "Livreurs", description: "Organisez les personnes qui prennent en charge vos colis." },
+  boutique: { eyebrow: "Vitrine", title: "Ma boutique", description: "Soignez la présentation visible par vos clients." },
+  abonnement: { eyebrow: "Accès", title: "Abonnement", description: "Consultez votre plan et transmettez un paiement." },
+  dossier: { eyebrow: "Conformité", title: "Dossier marchand", description: "Suivez la validation de vos documents SunuShop." },
+};
+
 export function MerchantWorkspace(props: MerchantWorkspaceProps) {
   const router = useRouter();
-  const [tab, setTab] = useState("dossier");
+  const [tab, setTab] = useState<MerchantTab>(props.merchant?.verification_status === "approved" ? "dashboard" : "dossier");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -444,54 +693,83 @@ export function MerchantWorkspace(props: MerchantWorkspaceProps) {
     props.subscriptionPaymentNumbers.wave ||
       props.subscriptionPaymentNumbers.orangeMoney,
   );
+  const subscriptionReady = ["active", "grace"].includes(props.merchant.subscription_status);
+  const visibleNavigation = verificationOnly
+    ? merchantNavigation.filter((item) => item.id === "dossier")
+    : merchantNavigation;
+  const currentSection = merchantSectionTitles[tab];
 
   return (
-    <div className="mvp-sidebar-layout">
-      <aside className="mvp-sidebar">
-        {(verificationOnly ? ["dossier"] : ["dossier", "boutique", "catalogue", "livraison", "livreurs", "abonnement", "commandes"]).map(
-          (name) => (
+    <div className="merchant-app-layout">
+      <aside className="merchant-sidebar">
+        <div className="merchant-sidebar__brand">
+          <span className="merchant-sidebar__logo">S</span>
+          <div><strong>SunuShop</strong><small>Espace marchand</small></div>
+        </div>
+        <nav aria-label="Navigation de l’espace marchand">
+          <span className="merchant-sidebar__label">Gérer ma boutique</span>
+          {visibleNavigation.map(({ id, label, hint, icon: Icon }) => (
             <button
-              key={name}
-              className={tab === name ? "is-active" : ""}
-              onClick={() => setTab(name)}
+              type="button"
+              key={id}
+              className={tab === id ? "is-active" : ""}
+              onClick={() => setTab(id)}
             >
-              {name[0].toUpperCase() + name.slice(1)}
+              <Icon aria-hidden="true" />
+              <span><strong>{label}</strong><small>{hint}</small></span>
             </button>
-          ),
-        )}
+          ))}
+        </nav>
+        <div className="merchant-sidebar__footer">
+          <span className="merchant-sidebar__status-dot" data-active={props.merchant.status === "active"} />
+          <div><strong>{props.merchant.status === "active" ? "Boutique en ligne" : "Boutique en préparation"}</strong><small>{subscriptionReady ? "Abonnement actif" : "Publication verrouillée"}</small></div>
+        </div>
       </aside>
-      <section>
-        <div className="mvp-card mvp-card--full">
-          <span className="mvp-eyebrow">{verificationOnly ? "Espace sécurisé · vérification" : "Espace marchand"}</span>
-          <h1 className="mvp-title">{props.merchant.public_name}</h1>
-          {verificationOnly && <p className="mvp-lede">Cet espace est réservé à votre dossier. Les outils boutique, produits, commandes et livreurs seront débloqués après validation par SunuShop.</p>}
-          <div className="mvp-actions">
+      <main className="merchant-app-main">
+        <header className="merchant-topbar">
+          <div className="merchant-topbar__title">
+            <span className="mvp-eyebrow">{currentSection.eyebrow}</span>
+            <h1>{currentSection.title}</h1>
+            <p>{currentSection.description}</p>
+          </div>
+          <div className="merchant-topbar__shop">
+            <div><small>Commerce</small><h2>{props.merchant.public_name}</h2></div>
+            {props.merchant.status === "active" && (
+              <Link href={`/boutiques/${props.merchant.slug}`} aria-label="Voir la boutique publique">
+                <ExternalLink aria-hidden="true" />
+              </Link>
+            )}
+          </div>
+          <div className="merchant-topbar__statuses">
             <span
               className="mvp-status"
               data-status={props.merchant.verification_status}
             >
-              Vérification {props.merchant.verification_status}
+              Dossier {merchantStatusLabel(props.merchant.verification_status)}
             </span>
             {!verificationOnly && <span
               className="mvp-status"
               data-status={props.merchant.subscription_status}
             >
-              Abonnement {props.merchant.subscription_status}
+              Abonnement {merchantStatusLabel(props.merchant.subscription_status)}
             </span>}
-            {props.merchant.status === "active" && (
-              <Link
-                className="mvp-button mvp-button--secondary"
-                href={`/boutiques/${props.merchant.slug}`}
-              >
-                Voir la boutique
-              </Link>
-            )}
           </div>
-          {message && <p className="mvp-alert">{message}</p>}
-          {error && <p className="mvp-alert mvp-alert--error">{error}</p>}
-        </div>
+        </header>
+
+        {verificationOnly && <div className="merchant-context-note"><PackageSearch /><p>Cet espace est réservé à votre dossier documentaire. Après sa validation, vous pourrez préparer la boutique ; l’abonnement restera obligatoire pour publier.</p></div>}
+        {message && <p className="mvp-alert merchant-global-feedback">{message}</p>}
+        {error && <p className="mvp-alert mvp-alert--error merchant-global-feedback">{error}</p>}
+
+        {!verificationOnly && !subscriptionReady && (
+          <div className="merchant-subscription-paywall" role="status">
+            <div><span className="mvp-eyebrow">Dossier validé · abonnement requis</span><h2>Vos documents sont validés. Votre boutique reste inactive.</h2><p>Préparez vos produits en brouillon dès maintenant. Pour les publier, rendre la boutique visible sur le marché et recevoir des commandes, vous devez d’abord activer un abonnement marchand.</p></div>
+            <button className="mvp-button" onClick={() => setTab("abonnement")}>Activer mon abonnement</button>
+          </div>
+        )}
 
         {tab === "boutique" && <MerchantMedia merchantId={props.merchant.id} />}
+
+        {tab === "dashboard" && <section className="merchant-content-surface merchant-content-surface--dashboard"><MerchantDashboard merchantId={props.merchant.id} /></section>}
 
         {tab === "livreurs" && (
           <CourierManager merchantId={props.merchant.id} orders={props.orders} />
@@ -529,7 +807,7 @@ export function MerchantWorkspace(props: MerchantWorkspaceProps) {
             {canEditDocuments ? (
               <div className="mvp-document-grid">
                 {documentTypes.map((type) => (
-                  <DocumentUploader
+                  <DirectDocumentUploader
                     caseId={props.verificationCase!.id}
                     type={type}
                     latest={latestDocuments.get(type)}
@@ -583,111 +861,12 @@ export function MerchantWorkspace(props: MerchantWorkspaceProps) {
           </div>
         )}
 
-        {tab === "catalogue" && (
-          <div className="mvp-card mvp-card--full">
-            <h2>Catalogue</h2>
-            <form className="mvp-form" onSubmit={createProduct}>
-              <div className="mvp-form__grid">
-                <label className="mvp-field">
-                  Catégorie
-                  <select name="categoryId" required>
-                    {props.categories.map((category) => (
-                      <option value={category.id} key={category.id}>
-                        {category.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="mvp-field">
-                  Nom du produit
-                  <input name="title" required />
-                </label>
-                <label className="mvp-field">
-                  SKU
-                  <input name="sku" required />
-                </label>
-                <label className="mvp-field">
-                  Variante
-                  <input name="variantTitle" />
-                </label>
-                <label className="mvp-field">
-                  Prix XOF
-                  <input name="priceXof" type="number" min="0" required />
-                </label>
-                <label className="mvp-field">
-                  Stock
-                  <input name="stock" type="number" min="0" required />
-                </label>
-              </div>
-              <label className="mvp-field">
-                Description
-                <textarea name="description" required />
-              </label>
-              <label>
-                <input
-                  name="publish"
-                  type="checkbox"
-                  disabled={props.merchant.status !== "active"}
-                />{" "}
-                Publier immédiatement
-              </label>
-              <button className="mvp-button" disabled={busy}>
-                Ajouter le produit
-              </button>
-            </form>
-            <div className="mvp-list">
-              {props.products.map((product) => {
-                const variant = product.product_variants[0];
-                const inventory = variant?.inventory_items?.[0];
-                return (
-                  <div className="mvp-row" key={product.id}>
-                    <div>
-                      <strong>{product.title}</strong>
-                      <small>
-                        {variant?.sku} ·{" "}
-                        {formatPrice(variant?.price_xof ?? 0)} · stock{" "}
-                        {inventory?.available_quantity ?? 0}
-                      </small>
-                    </div>
-                    <span className="mvp-status" data-status={product.status}>
-                      {product.status}
-                    </span>
-                    <small>
-                      {product.product_media.length} image
-                      {product.product_media.length > 1 ? "s" : ""}
-                    </small>
-                    <ProductMediaUploader productId={product.id} />
-                    <button
-                      type="button"
-                      className="mvp-button mvp-button--secondary"
-                      disabled={
-                        busy ||
-                        (product.status !== "published" &&
-                          props.merchant!.status !== "active")
-                      }
-                      onClick={() =>
-                        setProductPublication(
-                          product.id,
-                          product.status !== "published",
-                        )
-                      }
-                    >
-                      {product.status === "published"
-                        ? "Dépublier"
-                        : "Publier"}
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
+        {tab === "catalogue" && <div className="mvp-card mvp-card--full"><MerchantProductWizard merchantId={props.merchant.id} categories={props.categories} products={props.products} deliveryReady={props.zones.some((zone) => zone.active)} subscriptionReady={subscriptionReady} onOpenSubscription={() => setTab("abonnement")} onOpenDelivery={() => setTab("livraison")} /></div>}
 
         {tab === "livraison" && (
           <div className="mvp-card mvp-card--full">
-            <h2>Retrait et livraison par zone</h2>
             <form className="mvp-form" onSubmit={savePaymentNumbers}>
-              <h3>Paiements directs au vendeur</h3>
+              <h3>Coordonnées de paiement à la commande</h3>
               <p>
                 Ces numéros ne sont communiqués qu’après création d’une
                 commande utilisant le canal correspondant.
@@ -717,70 +896,7 @@ export function MerchantWorkspace(props: MerchantWorkspaceProps) {
               </button>
             </form>
             <div className="mvp-divider" />
-            <form className="mvp-form" onSubmit={createZone}>
-              <div className="mvp-form__grid">
-                <label className="mvp-field">
-                  Mode
-                  <select name="methodKind">
-                    <option value="merchant_delivery">Livraison vendeur</option>
-                    <option value="pickup">Retrait</option>
-                  </select>
-                </label>
-                <label className="mvp-field">
-                  Nom du mode
-                  <input name="methodName" placeholder="Livraison standard" required />
-                </label>
-                <label className="mvp-field">
-                  Région
-                  <input name="region" required />
-                </label>
-                <label className="mvp-field">
-                  Ville
-                  <input name="city" />
-                </label>
-                <label className="mvp-field">
-                  Libellé public
-                  <input name="label" placeholder="Dakar centre" required />
-                </label>
-                <label className="mvp-field">
-                  Tarif XOF
-                  <input name="feeXof" type="number" min="0" required />
-                </label>
-                <label className="mvp-field">
-                  Délai minimum, minutes
-                  <input
-                    name="minDelayMinutes"
-                    type="number"
-                    min="0"
-                    required
-                  />
-                </label>
-                <label className="mvp-field">
-                  Délai maximum, minutes
-                  <input
-                    name="maxDelayMinutes"
-                    type="number"
-                    min="0"
-                    required
-                  />
-                </label>
-              </div>
-              <button className="mvp-button">Ajouter la zone</button>
-            </form>
-            <div className="mvp-list">
-              {props.zones.map((zone) => (
-                <div className="mvp-row" key={zone.id}>
-                  <div>
-                    <strong>{zone.label}</strong>
-                    <small>
-                      {zone.region} {zone.city} · {zone.min_delay_minutes} à{" "}
-                      {zone.max_delay_minutes} min
-                    </small>
-                  </div>
-                  <strong>{formatPrice(zone.fee_xof)}</strong>
-                </div>
-              ))}
-            </div>
+            <MerchantDeliverySettings merchantId={props.merchant.id} categories={props.categories} zones={props.zones} />
           </div>
         )}
 
@@ -914,13 +1030,13 @@ export function MerchantWorkspace(props: MerchantWorkspaceProps) {
                 <div className="mvp-row" key={order.id}>
                   <div>
                     <Link href={`/commandes/${order.id}`}>
-                      <strong>{order.public_code}</strong>
+                      <strong>{formatMerchantOrderNumber(order.merchant_sequence)}</strong>
                     </Link>
-                    <small>{formatPrice(order.total_xof)}</small>
+                    <small>{order.public_code} · {formatPrice(order.total_xof)}</small>
                   </div>
                   <div className="mvp-actions">
                     <span className="mvp-status" data-status={order.status}>
-                      {order.status.replaceAll("_", " ")}
+                      {merchantStatusLabel(order.status)}
                     </span>
                     {order.direct_payment_declarations
                       .filter(
@@ -980,7 +1096,7 @@ export function MerchantWorkspace(props: MerchantWorkspaceProps) {
             </div>
           </div>
         )}
-      </section>
+      </main>
     </div>
   );
 }

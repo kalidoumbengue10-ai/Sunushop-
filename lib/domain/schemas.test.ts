@@ -4,6 +4,7 @@ import {
   crmLeadUpdateSchema,
   merchantApplicationSchema,
   orderBatchSchema,
+  productDetailsSchema,
   prelaunchLeadIngestSchema,
   signUpWithPasswordSchema,
 } from "./schemas";
@@ -13,6 +14,19 @@ const zoneA = "00000000-0000-4000-8000-000000000002";
 const variantA = "00000000-0000-4000-8000-000000000003";
 
 describe("validation des entrées métier", () => {
+  it("accepte un SKU facultatif et refuse les combinaisons dupliquées", () => {
+    const base = {
+      categoryId: "00000000-0000-4000-8000-000000000010",
+      title: "T-shirt Sunu",
+      description: "Un produit suffisamment bien décrit.",
+      optionNames: ["Taille"],
+    };
+    expect(productDetailsSchema.safeParse({ ...base, variants: [{ title: "M", attributes: { Taille: "M" }, priceXof: 5000, stock: 4 }] }).success).toBe(true);
+    expect(productDetailsSchema.safeParse({ ...base, variants: [
+      { title: "M", attributes: { Taille: "M" }, priceXof: 5000, stock: 4 },
+      { title: "M bis", attributes: { Taille: "M" }, priceXof: 5500, stock: 2 },
+    ] }).success).toBe(false);
+  });
   it("normalise un email d’inscription valide", () => {
     const result = signUpWithPasswordSchema.parse({
       email: "CLIENT@EXEMPLE.COM",

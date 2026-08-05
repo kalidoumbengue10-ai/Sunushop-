@@ -3,6 +3,7 @@ import { ApiError } from "@/lib/api/errors";
 import { apiFailure, apiSuccess } from "@/lib/api/response";
 import { deriveDeliveryCode, hashDeliveryCode } from "@/lib/domain/delivery-code";
 import { deliveryAssignmentSchema } from "@/lib/domain/schemas";
+import { enqueueEmail } from "@/lib/notifications/outbox";
 
 async function requireFulfillment(merchantId: string) {
   const { user, supabase } = await requireUser();
@@ -69,7 +70,7 @@ export async function POST(request: Request) {
     const user = await requireFulfillment(order.merchant_id);
     const { data: courier, error: courierError } = await admin
       .from("courier_memberships")
-      .select("id, merchant_id, status")
+      .select("id, merchant_id, courier_user_id, status")
       .eq("id", input.courierMembershipId)
       .eq("merchant_id", order.merchant_id)
       .eq("status", "active")
@@ -102,6 +103,7 @@ export async function POST(request: Request) {
         public_message: "La livraison a été réaffectée.",
         metadata: { previousCourierMembershipId: existing.courier_membership_id, courierMembershipId: courier.id },
       });
+      await enqueueEmail(admin, { dedupeKey: `delivery-assigned:${data.id}:${courier.id}`, template: "delivery_assigned", recipientUserId: courier.courier_user_id, payload: { orderCode: order.public_code, url: new URL("/marchand", request.url).toString() } }).catch(() => false);
       return apiSuccess({ ...data, pickupCode: deriveDeliveryCode(data.id, "pickup") }, { requestId });
     }
     if (order.status !== "ready_for_handoff") {
@@ -139,6 +141,7 @@ export async function POST(request: Request) {
       to_status: "assigned",
       public_message: "Un livreur a été affecté à la commande.",
     });
+    await enqueueEmail(admin, { dedupeKey: `delivery-assigned:${id}:${courier.id}`, template: "delivery_assigned", recipientUserId: courier.courier_user_id, payload: { orderCode: order.public_code, url: new URL("/marchand", request.url).toString() } }).catch(() => false);
     return apiSuccess({ ...data, pickupCode }, { status: 201, requestId });
   } catch (error) {
     return apiFailure(error, requestId);

@@ -7,6 +7,7 @@ export async function protectPasswordAuthRequest(input: {
   email: string;
   action: "password_sign_up" | "password_sign_in" | "password_recovery";
   captchaToken?: string;
+  skipCaptcha?: boolean;
 }) {
   const ip = await getRequestIp();
   const limits = {
@@ -28,7 +29,7 @@ export async function protectPasswordAuthRequest(input: {
       windowSeconds: limits.windowSeconds,
       maxRequests: limits.ip,
     }),
-    verifyCaptcha(input.captchaToken, ip),
+    input.skipCaptcha ? Promise.resolve() : verifyCaptcha(input.captchaToken, ip),
   ]);
 }
 

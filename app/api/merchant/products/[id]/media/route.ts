@@ -25,6 +25,14 @@ export async function POST(
     }
     await requireApprovedMerchantAccess(product.merchant_id, ["owner", "manager", "catalog"]);
 
+    const { count } = await supabase
+      .from("product_media")
+      .select("id", { count: "exact", head: true })
+      .eq("product_id", id);
+    if ((count ?? 0) >= 8) {
+      throw new ApiError(409, "PRODUCT_MEDIA_LIMIT", "Vous pouvez ajouter jusqu’à 8 photos par produit.");
+    }
+
     const form = await request.formData();
     const file = form.get("file");
     if (!(file instanceof File)) {
@@ -52,8 +60,9 @@ export async function POST(
         storage_bucket: "product-media",
         storage_path: uploadedPath,
         alt_text: altText || null,
+        position: count ?? 0,
       })
-      .select("id, storage_path")
+      .select("id, storage_path, alt_text, position")
       .single();
     if (insertError) throw insertError;
 

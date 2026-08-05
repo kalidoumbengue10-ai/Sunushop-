@@ -2,6 +2,7 @@ import { requireAdminClient, requireUser } from "@/lib/api/auth";
 import { ApiError } from "@/lib/api/errors";
 import { apiFailure, apiSuccess } from "@/lib/api/response";
 import { cartItemInputSchema } from "@/lib/domain/schemas";
+import { SupabaseCatalogRepository } from "@/lib/infrastructure/supabase/repositories";
 
 async function activeCart(userId: string) {
   const admin = requireAdminClient();
@@ -36,7 +37,14 @@ export async function GET() {
       .eq("cart_id", cartId)
       .order("created_at");
     if (error) throw error;
-    return apiSuccess({ cartId, items: data ?? [] }, { requestId });
+    const products = await new SupabaseCatalogRepository(admin).findByVariantIds(
+      (data ?? []).map((item) => item.variant_id),
+    );
+    const productMap = new Map(products.map((product) => [product.variant.id, product]));
+    return apiSuccess({
+      cartId,
+      items: (data ?? []).map((item) => ({ ...item, product: productMap.get(item.variant_id) ?? null })),
+    }, { requestId });
   } catch (error) {
     return apiFailure(error, requestId);
   }

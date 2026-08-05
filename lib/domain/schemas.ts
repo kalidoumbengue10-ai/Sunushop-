@@ -85,6 +85,18 @@ export const verificationDocumentTypeSchema = z.enum([
   "representative_mandate",
 ]);
 
+export const verificationDocumentUploadRequestSchema = z.object({
+  documentType: verificationDocumentTypeSchema,
+  fileName: z.string().trim().min(1).max(255),
+  fileSize: z.int().min(1).max(10 * 1024 * 1024),
+  mimeType: z.string().trim().max(120).optional(),
+});
+
+export const verificationDocumentFinalizeSchema = z.object({
+  documentType: verificationDocumentTypeSchema,
+  storagePath: z.string().trim().min(20).max(800),
+});
+
 export const verificationDecisionSchema = z
   .object({
     outcome: z.enum([
@@ -123,6 +135,12 @@ export const subscriptionPaymentSchema = z.object({
 export const subscriptionDecisionSchema = z.object({
   approved: z.boolean(),
   rejectionReason: z.string().trim().min(2).max(500).optional(),
+});
+
+export const subscriptionTestActivationSchema = z.object({
+  merchantId: uuid,
+  planId: z.string().trim().min(1).max(60).optional(),
+  days: z.int().min(1).max(90).default(30),
 });
 
 const quoteItemSchema = z.object({
@@ -229,12 +247,54 @@ export const productInputSchema = z.object({
   title: z.string().trim().min(2).max(180),
   slug: slug.optional(),
   description: z.string().trim().min(10).max(5000),
-  sku: z.string().trim().min(1).max(80),
+  sku: z.string().trim().max(80).optional().transform((value) => value || undefined),
   variantTitle: z.string().trim().max(120).optional(),
   priceXof: z.int().min(0),
   compareAtPriceXof: z.int().min(0).optional(),
   stock: z.int().min(0).max(1_000_000),
   publish: z.boolean().default(false),
+});
+
+export const productDraftSchema = z.object({
+  merchantId: uuid,
+  categoryId: uuid,
+  title: z.string().trim().min(2).max(180),
+  description: z.string().trim().min(10).max(5000),
+});
+
+const productVariantEditorSchema = z.object({
+  id: uuid.optional(),
+  title: z.string().trim().max(120).optional(),
+  attributes: z.record(z.string().trim().min(1).max(40), z.string().trim().min(1).max(80)).default({}),
+  sku: z.string().trim().max(80).optional().transform((value) => value || undefined),
+  priceXof: z.int().min(0),
+  compareAtPriceXof: z.int().min(0).optional(),
+  stock: z.int().min(0).max(1_000_000),
+  lowStockThreshold: z.int().min(0).max(1_000_000).default(5),
+  active: z.boolean().default(true),
+});
+
+export const productDetailsSchema = z.object({
+  categoryId: uuid,
+  title: z.string().trim().min(2).max(180),
+  description: z.string().trim().min(10).max(5000),
+  optionNames: z.array(z.string().trim().min(1).max(40)).max(2).default([]),
+  variants: z.array(productVariantEditorSchema).min(1).max(50),
+}).superRefine((value, context) => {
+  const combinations = new Set<string>();
+  value.variants.forEach((variant, index) => {
+    const key = Object.entries(variant.attributes)
+      .sort(([left], [right]) => left.localeCompare(right, "fr"))
+      .map(([name, option]) => `${name.toLocaleLowerCase("fr")}:${option.toLocaleLowerCase("fr")}`)
+      .join("|") || "standard";
+    if (combinations.has(key)) {
+      context.addIssue({ code: "custom", path: ["variants", index, "attributes"], message: "Cette combinaison existe déjà." });
+    }
+    combinations.add(key);
+    if (variant.compareAtPriceXof !== undefined && variant.compareAtPriceXof < variant.priceXof) {
+      context.addIssue({ code: "custom", path: ["variants", index, "compareAtPriceXof"], message: "Le prix barré doit être supérieur ou égal au prix de vente." });
+    }
+  });
 });
 
 export const productPublicationSchema = z.object({
@@ -252,6 +312,40 @@ export const deliveryZoneInputSchema = z.object({
   feeXof: z.int().min(0),
   minDelayMinutes: z.int().min(0).max(43_200),
   maxDelayMinutes: z.int().min(0).max(43_200),
+});
+
+export const deliveryRegionInputSchema = z.object({
+  merchantId: uuid,
+  region: z.string().trim().min(2).max(120),
+  enabled: z.boolean().default(true),
+  feeXof: z.int().min(0),
+  minDelayDays: z.int().min(0).max(30),
+  maxDelayDays: z.int().min(0).max(30),
+  categoryRates: z.array(z.object({
+    categoryId: uuid,
+    feeXof: z.int().min(0),
+  })).max(100).default([]),
+}).refine((value) => value.maxDelayDays >= value.minDelayDays, {
+  path: ["maxDelayDays"],
+  message: "Le délai maximal doit être supérieur au délai minimal.",
+});
+
+export const merchantAnalyticsQuerySchema = z.object({
+  merchantId: uuid,
+  from: z.iso.datetime(),
+  to: z.iso.datetime(),
+  granularity: z.enum(["day", "week", "month", "year"]).default("day"),
+}).refine((value) => new Date(value.to).getTime() > new Date(value.from).getTime(), {
+  path: ["to"],
+  message: "La fin de période doit suivre le début.",
+});
+
+export const adminAnalyticsQuerySchema = z.object({
+  from: z.iso.datetime(),
+  to: z.iso.datetime(),
+}).refine((value) => new Date(value.to).getTime() > new Date(value.from).getTime(), {
+  path: ["to"],
+  message: "La fin de période doit suivre le début.",
 });
 
 export const merchantSettingsSchema = z.object({

@@ -1,8 +1,6 @@
 begin;
-
 create extension if not exists pgcrypto with schema extensions;
 create extension if not exists citext with schema extensions;
-
 create type public.merchant_kind as enum ('informal', 'formal');
 create type public.merchant_status as enum ('draft', 'pending', 'active', 'suspended', 'closed');
 create type public.merchant_member_role as enum ('owner', 'manager', 'catalog', 'fulfillment');
@@ -45,7 +43,6 @@ create type public.subscription_status as enum ('pending', 'active', 'grace', 'e
 create type public.payment_submission_status as enum ('pending', 'approved', 'rejected');
 create type public.payment_channel as enum ('wave', 'orange_money');
 create type public.notification_status as enum ('pending', 'processing', 'sent', 'failed');
-
 create function public.set_updated_at()
 returns trigger
 language plpgsql
@@ -56,7 +53,6 @@ begin
   return new;
 end;
 $$;
-
 create table public.profiles (
   id uuid primary key references auth.users(id) on delete cascade,
   display_name text,
@@ -67,7 +63,6 @@ create table public.profiles (
   updated_at timestamptz not null default timezone('utc', now()),
   constraint profiles_phone_format check (phone is null or phone ~ '^\+[1-9][0-9]{7,14}$')
 );
-
 create table public.merchant_accounts (
   id uuid primary key default extensions.gen_random_uuid(),
   owner_user_id uuid not null references public.profiles(id) on delete restrict,
@@ -94,7 +89,6 @@ create table public.merchant_accounts (
   constraint merchant_phone_format check (phone ~ '^\+[1-9][0-9]{7,14}$'),
   constraint formal_merchant_legal_name check (kind = 'informal' or legal_name is not null)
 );
-
 create table public.merchant_members (
   merchant_id uuid not null references public.merchant_accounts(id) on delete cascade,
   user_id uuid not null references public.profiles(id) on delete cascade,
@@ -103,7 +97,6 @@ create table public.merchant_members (
   created_at timestamptz not null default timezone('utc', now()),
   primary key (merchant_id, user_id)
 );
-
 create table public.admin_roles (
   user_id uuid not null references public.profiles(id) on delete cascade,
   role public.admin_role_kind not null,
@@ -111,7 +104,6 @@ create table public.admin_roles (
   created_at timestamptz not null default timezone('utc', now()),
   primary key (user_id, role)
 );
-
 create table public.verification_cases (
   id uuid primary key default extensions.gen_random_uuid(),
   merchant_id uuid not null references public.merchant_accounts(id) on delete cascade,
@@ -129,7 +121,6 @@ create table public.verification_cases (
   unique (merchant_id, submission_version),
   constraint verification_submission_version_positive check (submission_version > 0)
 );
-
 create table public.verification_documents (
   id uuid primary key default extensions.gen_random_uuid(),
   case_id uuid not null references public.verification_cases(id) on delete cascade,
@@ -157,7 +148,6 @@ create table public.verification_documents (
     (status <> 'purged' and storage_path is not null)
   )
 );
-
 create table public.verification_reviews (
   id uuid primary key default extensions.gen_random_uuid(),
   case_id uuid not null references public.verification_cases(id) on delete cascade,
@@ -169,7 +159,6 @@ create table public.verification_reviews (
   created_at timestamptz not null default timezone('utc', now()),
   constraint verification_review_outcome check (outcome in ('in_review', 'needs_changes', 'approved', 'rejected', 'suspended'))
 );
-
 create table public.verification_events (
   id bigint generated always as identity primary key,
   case_id uuid not null references public.verification_cases(id) on delete cascade,
@@ -182,7 +171,6 @@ create table public.verification_events (
   metadata jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default timezone('utc', now())
 );
-
 create table public.categories (
   id uuid primary key default extensions.gen_random_uuid(),
   parent_id uuid references public.categories(id) on delete set null,
@@ -193,7 +181,6 @@ create table public.categories (
   active boolean not null default true,
   created_at timestamptz not null default timezone('utc', now())
 );
-
 create table public.products (
   id uuid primary key default extensions.gen_random_uuid(),
   merchant_id uuid not null references public.merchant_accounts(id) on delete cascade,
@@ -209,7 +196,6 @@ create table public.products (
   constraint product_title_length check (char_length(title) between 2 and 180),
   constraint product_slug_format check (slug::text ~ '^[a-z0-9]+(?:-[a-z0-9]+)*$')
 );
-
 create table public.product_variants (
   id uuid primary key default extensions.gen_random_uuid(),
   product_id uuid not null references public.products(id) on delete cascade,
@@ -226,7 +212,6 @@ create table public.product_variants (
   constraint variant_price_positive check (price_xof >= 0),
   constraint variant_compare_price check (compare_at_price_xof is null or compare_at_price_xof >= price_xof)
 );
-
 create table public.inventory_items (
   variant_id uuid primary key references public.product_variants(id) on delete cascade,
   merchant_id uuid not null references public.merchant_accounts(id) on delete cascade,
@@ -237,7 +222,6 @@ create table public.inventory_items (
   constraint inventory_non_negative check (available_quantity >= 0 and reserved_quantity >= 0),
   constraint inventory_reservation_valid check (reserved_quantity <= available_quantity)
 );
-
 create table public.product_media (
   id uuid primary key default extensions.gen_random_uuid(),
   product_id uuid not null references public.products(id) on delete cascade,
@@ -248,7 +232,6 @@ create table public.product_media (
   position integer not null default 0,
   created_at timestamptz not null default timezone('utc', now())
 );
-
 create table public.delivery_methods (
   id uuid primary key default extensions.gen_random_uuid(),
   merchant_id uuid not null references public.merchant_accounts(id) on delete cascade,
@@ -259,7 +242,6 @@ create table public.delivery_methods (
   created_at timestamptz not null default timezone('utc', now()),
   updated_at timestamptz not null default timezone('utc', now())
 );
-
 create table public.delivery_zones (
   id uuid primary key default extensions.gen_random_uuid(),
   delivery_method_id uuid not null references public.delivery_methods(id) on delete cascade,
@@ -276,7 +258,6 @@ create table public.delivery_zones (
   constraint delivery_fee_non_negative check (fee_xof >= 0),
   constraint delivery_delay_valid check (min_delay_minutes >= 0 and max_delay_minutes >= min_delay_minutes)
 );
-
 create table public.carts (
   id uuid primary key default extensions.gen_random_uuid(),
   buyer_id uuid not null references public.profiles(id) on delete cascade,
@@ -285,7 +266,6 @@ create table public.carts (
   updated_at timestamptz not null default timezone('utc', now()),
   constraint cart_status check (status in ('active', 'converted', 'abandoned'))
 );
-
 create table public.cart_items (
   id uuid primary key default extensions.gen_random_uuid(),
   cart_id uuid not null references public.carts(id) on delete cascade,
@@ -297,7 +277,6 @@ create table public.cart_items (
   unique (cart_id, variant_id),
   constraint cart_item_quantity check (quantity between 1 and 99)
 );
-
 create table public.delivery_quotes (
   id uuid primary key default extensions.gen_random_uuid(),
   buyer_id uuid not null references public.profiles(id) on delete cascade,
@@ -317,7 +296,6 @@ create table public.delivery_quotes (
     and total_xof = subtotal_xof + delivery_fee_xof
   )
 );
-
 create table public.order_batches (
   id uuid primary key default extensions.gen_random_uuid(),
   buyer_id uuid not null references public.profiles(id) on delete restrict,
@@ -330,7 +308,6 @@ create table public.order_batches (
   constraint order_batch_count check (order_count > 0),
   constraint order_batch_total check (total_xof >= 0)
 );
-
 create table public.orders (
   id uuid primary key default extensions.gen_random_uuid(),
   batch_id uuid not null references public.order_batches(id) on delete restrict,
@@ -358,7 +335,6 @@ create table public.orders (
     and total_xof = subtotal_xof + delivery_fee_xof
   )
 );
-
 create table public.order_items (
   id uuid primary key default extensions.gen_random_uuid(),
   order_id uuid not null references public.orders(id) on delete restrict,
@@ -374,7 +350,6 @@ create table public.order_items (
   constraint order_item_price check (unit_price_xof >= 0),
   constraint order_item_quantity check (quantity between 1 and 99)
 );
-
 create table public.order_events (
   id bigint generated always as identity primary key,
   order_id uuid not null references public.orders(id) on delete cascade,
@@ -387,7 +362,6 @@ create table public.order_events (
   metadata jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default timezone('utc', now())
 );
-
 create table public.direct_payment_declarations (
   id uuid primary key default extensions.gen_random_uuid(),
   order_id uuid not null references public.orders(id) on delete cascade,
@@ -402,7 +376,6 @@ create table public.direct_payment_declarations (
   unique (merchant_id, channel, external_reference),
   constraint direct_payment_amount check (amount_xof > 0)
 );
-
 create table public.subscription_plans (
   id text primary key,
   name text not null,
@@ -416,7 +389,6 @@ create table public.subscription_plans (
   constraint plan_product_limit_positive check (product_limit is null or product_limit > 0),
   constraint plan_team_limit_positive check (team_member_limit > 0)
 );
-
 create table public.merchant_subscriptions (
   id uuid primary key default extensions.gen_random_uuid(),
   merchant_id uuid not null references public.merchant_accounts(id) on delete cascade,
@@ -429,11 +401,9 @@ create table public.merchant_subscriptions (
   created_at timestamptz not null default timezone('utc', now()),
   updated_at timestamptz not null default timezone('utc', now())
 );
-
 create unique index merchant_one_open_subscription
   on public.merchant_subscriptions(merchant_id)
   where status in ('pending', 'active', 'grace');
-
 create table public.subscription_payment_submissions (
   id uuid primary key default extensions.gen_random_uuid(),
   merchant_id uuid not null references public.merchant_accounts(id) on delete cascade,
@@ -452,7 +422,6 @@ create table public.subscription_payment_submissions (
   unique (channel, external_reference),
   constraint subscription_payment_amount check (amount_xof > 0)
 );
-
 create table public.audit_events (
   id bigint generated always as identity primary key,
   actor_id uuid references public.profiles(id) on delete set null,
@@ -466,7 +435,6 @@ create table public.audit_events (
   metadata jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default timezone('utc', now())
 );
-
 create table public.notification_outbox (
   id uuid primary key default extensions.gen_random_uuid(),
   dedupe_key text unique,
@@ -483,7 +451,6 @@ create table public.notification_outbox (
   constraint notification_channel check (channel in ('email', 'sms', 'whatsapp', 'in_app')),
   constraint notification_attempts check (attempts >= 0)
 );
-
 create table public.webhook_events (
   id uuid primary key default extensions.gen_random_uuid(),
   provider text not null,
@@ -495,7 +462,6 @@ create table public.webhook_events (
   created_at timestamptz not null default timezone('utc', now()),
   unique (provider, provider_event_id)
 );
-
 create index merchant_accounts_public_idx
   on public.merchant_accounts(status, verification_status, subscription_status);
 create index verification_cases_queue_idx
@@ -520,7 +486,6 @@ create index audit_entity_idx on public.audit_events(entity_type, entity_id, cre
 create index notification_outbox_queue_idx
   on public.notification_outbox(status, available_at)
   where status in ('pending', 'failed');
-
 create trigger profiles_set_updated_at before update on public.profiles
   for each row execute function public.set_updated_at();
 create trigger merchant_accounts_set_updated_at before update on public.merchant_accounts
@@ -543,7 +508,6 @@ create trigger orders_set_updated_at before update on public.orders
   for each row execute function public.set_updated_at();
 create trigger merchant_subscriptions_set_updated_at before update on public.merchant_subscriptions
   for each row execute function public.set_updated_at();
-
 create function public.handle_new_auth_user()
 returns trigger
 language plpgsql
@@ -565,9 +529,7 @@ begin
   return new;
 end;
 $$;
-
 create trigger auth_user_profile_sync
   after insert or update of phone, email on auth.users
   for each row execute function public.handle_new_auth_user();
-
 commit;

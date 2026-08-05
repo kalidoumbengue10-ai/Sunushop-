@@ -56,7 +56,14 @@ export async function createMerchantOnboardingInvitation(input: {
         }).eq("id", queued.id);
       }
     }
-    return { id: pending.id, expiresAt: pending.expires_at, emailSent, alreadyPending: true };
+    const queuedPayload = queued?.payload as Record<string, unknown> | undefined;
+    return {
+      id: pending.id,
+      expiresAt: pending.expires_at,
+      emailSent,
+      alreadyPending: true,
+      invitationUrl: String(queuedPayload?.url ?? ""),
+    };
   }
 
   const { token, tokenHash } = createInvitationToken();
@@ -115,5 +122,5 @@ export async function createMerchantOnboardingInvitation(input: {
     }).eq("id", outbox.id);
   }
 
-  return { id: invitation.id, expiresAt, emailSent, alreadyPending: false };
+  return { id: invitation.id, expiresAt, emailSent, alreadyPending: false, invitationUrl: url };
 }

@@ -15,6 +15,7 @@ import {
 import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { AdminCrm, type CrmLead } from "@/components/admin-crm";
+import { AdminCrmMetrics } from "@/components/admin-crm-metrics";
 import { CategoryAdmin } from "@/components/category-admin";
 import { MerchantInvitationPanel } from "@/components/merchant-invitation-panel";
 import { formatPrice } from "@/lib/marketplace";
@@ -252,6 +253,7 @@ export function AdminWorkspace({ initialTab = "overview" }: { initialTab?: Admin
               <div><span>À traiter aujourd’hui</span><h2>Faites avancer les bons dossiers.</h2><p>Les nouvelles demandes, les relances et les validations prioritaires sont regroupées pour vous aider à décider rapidement.</p><button type="button" onClick={() => setTab("crm")}>Voir les prospects <ArrowRight /></button></div>
               <div className="admin-hero-card__score"><small>Opportunités en cours</small><strong>{qualified}</strong><span><TrendingUp /> prospects qualifiés</span></div>
             </section>
+            <AdminCrmMetrics />
             <section className="admin-stat-grid">
               <article><span className="admin-stat-icon admin-stat-icon--orange"><UsersRound /></span><div><small>NOUVEAUX PROSPECTS</small><strong>{leads.filter((lead) => lead.status === "new").length}</strong><button onClick={() => setTab("crm")}>Ouvrir le suivi</button></div></article>
               <article><span className="admin-stat-icon admin-stat-icon--blue"><CalendarClock /></span><div><small>RELANCES À FAIRE</small><strong>{followUps}</strong><button onClick={() => setTab("crm")}>Voir les échéances</button></div></article>

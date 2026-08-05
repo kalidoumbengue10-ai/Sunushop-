@@ -1,6 +1,8 @@
 import { requireAdminClient, requireAdminRole } from "@/lib/api/auth";
 import { apiFailure, apiSuccess } from "@/lib/api/response";
 import { verificationDecisionSchema } from "@/lib/domain/schemas";
+import { merchantStatusLabel } from "@/lib/domain/merchant-ui";
+import { enqueueEmail } from "@/lib/notifications/outbox";
 
 export async function POST(
   request: Request,
@@ -25,6 +27,11 @@ export async function POST(
         converted_at: new Date().toISOString(),
       }).eq("merchant_id", data.merchant_id);
       if (crmError) throw crmError;
+    }
+    if (data?.merchant_id) {
+      const admin = requireAdminClient();
+      const { data: merchant } = await admin.from("merchant_accounts").select("owner_user_id, email, public_name").eq("id", data.merchant_id).maybeSingle();
+      if (merchant) await enqueueEmail(admin, { dedupeKey: `verification-decision:${id}:${input.outcome}`, template: input.outcome === "approved" ? "merchant_documents_approved" : "verification_decision", to: merchant.email, recipientUserId: merchant.owner_user_id, payload: { shopName: merchant.public_name, statusLabel: merchantStatusLabel(input.outcome), message: input.merchantMessage, url: new URL("/marchand", request.url).toString() } }).catch(() => false);
     }
     return apiSuccess(data, { requestId });
   } catch (error) {

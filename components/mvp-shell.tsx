@@ -2,9 +2,27 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { ShoppingBag } from "lucide-react";
 import { useState } from "react";
+import { CartProvider, useCart } from "@/components/cart-provider";
+import { CartDrawer } from "@/components/cart-drawer";
 
-export function MvpShell({ children }: { children: React.ReactNode }) {
+function CartTrigger() {
+  const cart = useCart();
+  return (
+    <button
+      type="button"
+      className="mvp-cart-trigger"
+      onClick={cart.open}
+      aria-label={`Ouvrir le panier (${cart.itemCount} article${cart.itemCount > 1 ? "s" : ""})`}
+    >
+      <ShoppingBag aria-hidden="true" />
+      {cart.itemCount > 0 && <span className="mvp-cart-count">{cart.itemCount}</span>}
+    </button>
+  );
+}
+
+function ShellChrome({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
   const isAuth = pathname === "/connexion" || pathname === "/mot-de-passe";
@@ -31,9 +49,19 @@ export function MvpShell({ children }: { children: React.ReactNode }) {
             <Link href="/devenir-marchand">Vendre sur SunuShop</Link>
             <Link href={isAuth ? "/marche" : area.href} className="mvp-nav__cta">{isAuth ? "Retour au marché" : area.label}</Link>
           </nav>
+          <CartTrigger />
         </div>
       </header>
       {children}
+      <CartDrawer />
     </div>
+  );
+}
+
+export function MvpShell({ children }: { children: React.ReactNode }) {
+  return (
+    <CartProvider>
+      <ShellChrome>{children}</ShellChrome>
+    </CartProvider>
   );
 }

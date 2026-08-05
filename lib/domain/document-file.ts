@@ -30,22 +30,17 @@ export async function validateVerificationFile(file: File) {
     );
   }
 
-  const mime = file.type as AllowedDocumentMime;
-  if (!(mime in signatures)) {
-    throw new ApiError(
-      400,
-      "INVALID_FILE_TYPE",
-      "Utilisez un fichier JPEG, PNG ou PDF.",
-    );
-  }
-
   const buffer = await file.arrayBuffer();
   const bytes = new Uint8Array(buffer);
-  if (!signatures[mime](bytes)) {
+  const mime = (Object.entries(signatures) as Array<[
+    AllowedDocumentMime,
+    (value: Uint8Array) => boolean,
+  ]>).find(([, matches]) => matches(bytes))?.[0];
+  if (!mime) {
     throw new ApiError(
       400,
       "FILE_SIGNATURE_MISMATCH",
-      "Le contenu du fichier ne correspond pas à son format.",
+      "Le fichier n’est pas un JPEG, PNG ou PDF valide.",
     );
   }
 

@@ -63,4 +63,15 @@ describe("contrat statique des migrations", () => {
     expect(sql).toContain("create type public.crm_lead_status");
     expect(sql).toContain("create policy crm_leads_admin_access");
   });
+
+  it("modernise l’espace marchand via une migration additive", () => {
+    expect(sql).toContain("create table public.delivery_category_rates");
+    expect(sql).toContain("create table public.merchant_order_counters");
+    expect(sql).toContain("create function public.save_merchant_product_variants");
+    expect(sql).toContain("highest_category_or_region_default");
+    expect(sql).toContain("create function public.admin_activate_test_subscription");
+    expect(sql).toContain("subscription.test_activate");
+    expect(sql).toContain("Les seeds locaux ne sont pas exécutés automatiquement");
+    expect(sql).toContain("('essential', 'Essentiel', 4900");
+  });
 });

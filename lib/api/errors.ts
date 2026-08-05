@@ -66,6 +66,18 @@ const databaseErrorMap: Record<string, { status: number; message: string }> = {
     status: 422,
     message: "Le montant ne correspond pas au plan sélectionné.",
   },
+  MERCHANT_DOCUMENTS_NOT_APPROVED: {
+    status: 409,
+    message: "Validez d’abord les documents du commerçant avant d’activer son abonnement.",
+  },
+  SUBSCRIPTION_PLAN_NOT_FOUND: {
+    status: 404,
+    message: "Le plan d’abonnement sélectionné est indisponible.",
+  },
+  TEST_SUBSCRIPTION_DURATION_INVALID: {
+    status: 422,
+    message: "La durée de l’abonnement test doit être comprise entre 1 et 90 jours.",
+  },
   ORDER_TRANSITION_NOT_ALLOWED: {
     status: 409,
     message: "Ce changement de statut n’est pas autorisé.",

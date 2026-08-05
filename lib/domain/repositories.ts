@@ -14,10 +14,20 @@ export type CatalogItem = {
     id: string;
     sku: string;
     title: string | null;
+    attributes: Record<string, string>;
     priceXof: number;
     compareAtPriceXof: number | null;
     availableQuantity: number;
   };
+  variants: Array<{
+    id: string;
+    sku: string;
+    title: string | null;
+    attributes: Record<string, string>;
+    priceXof: number;
+    compareAtPriceXof: number | null;
+    availableQuantity: number;
+  }>;
   imageUrl: string | null;
 };
 
@@ -77,6 +87,14 @@ export interface CatalogRepository {
     category?: string;
     limit: number;
   }): Promise<CatalogItem[]>;
+  listPage(input: {
+    query?: string;
+    category?: string;
+    merchantSlug?: string;
+    page: number;
+    limit: number;
+  }): Promise<{ products: CatalogItem[]; total: number; page: number; limit: number }>;
+  findByVariantIds(variantIds: string[]): Promise<CatalogItem[]>;
   findShopBySlug(slug: string): Promise<PublicShop | null>;
   quote(groups: QuoteRequestGroup[]): Promise<QuoteGroup[]>;
 }

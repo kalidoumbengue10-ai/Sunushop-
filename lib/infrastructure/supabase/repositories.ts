@@ -2,6 +2,7 @@ import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { ApiError } from "@/lib/api/errors";
+import { highestCategoryDeliveryFee } from "@/lib/domain/delivery-pricing";
 import type {
   CatalogItem,
   CatalogRepository,
@@ -26,6 +27,8 @@ type RawProduct = {
     id: string;
     sku: string;
     title: string | null;
+    attributes: Record<string, string>;
+    active: boolean;
     price_xof: number;
     compare_at_price_xof: number | null;
     inventory_items:
@@ -46,6 +49,8 @@ const productSelection = `
     id,
     sku,
     title,
+    attributes,
+    active,
     price_xof,
     compare_at_price_xof,
     inventory_items!inner(available_quantity, reserved_quantity)
@@ -63,9 +68,22 @@ function mapProduct(
   client: SupabaseClient,
   product: RawProduct,
 ): CatalogItem | null {
-  const variant = product.product_variants[0];
+  const variants = product.product_variants
+    .filter((variant) => variant.active)
+    .map((variant) => {
+      const inventory = firstInventory(variant.inventory_items);
+      return {
+        id: variant.id,
+        sku: variant.sku,
+        title: variant.title,
+        attributes: variant.attributes ?? {},
+        priceXof: variant.price_xof,
+        compareAtPriceXof: variant.compare_at_price_xof,
+        availableQuantity: Math.max(0, (inventory?.available_quantity ?? 0) - (inventory?.reserved_quantity ?? 0)),
+      };
+    });
+  const variant = variants.find((item) => item.availableQuantity > 0) ?? variants[0];
   if (!variant) return null;
-  const inventory = firstInventory(variant.inventory_items);
   const media = [...(product.product_media ?? [])].sort(
     (a, b) => a.position - b.position,
   )[0];
@@ -90,14 +108,12 @@ function mapProduct(
       id: variant.id,
       sku: variant.sku,
       title: variant.title,
-      priceXof: variant.price_xof,
-      compareAtPriceXof: variant.compare_at_price_xof,
-      availableQuantity: Math.max(
-        0,
-        (inventory?.available_quantity ?? 0) -
-          (inventory?.reserved_quantity ?? 0),
-      ),
+      attributes: variant.attributes,
+      priceXof: variant.priceXof,
+      compareAtPriceXof: variant.compareAtPriceXof,
+      availableQuantity: variant.availableQuantity,
     },
+    variants,
     imageUrl: media
       ? client.storage.from(media.storage_bucket).getPublicUrl(media.storage_path)
           .data.publicUrl
@@ -113,22 +129,37 @@ export class SupabaseCatalogRepository implements CatalogRepository {
     category?: string;
     limit: number;
   }) {
+    const page = await this.listPage({ ...input, page: 1 });
+    return page.products;
+  }
+
+  async listPage(input: {
+    query?: string;
+    category?: string;
+    merchantSlug?: string;
+    page: number;
+    limit: number;
+  }) {
+    const page = Math.max(1, input.page);
+    const limit = Math.min(60, Math.max(1, input.limit));
+    const from = (page - 1) * limit;
     let request = this.client
       .from("products")
-      .select(productSelection)
+      .select(productSelection, { count: "exact" })
       .eq("status", "published")
       .eq("merchant_accounts.status", "active")
       .eq("merchant_accounts.verification_status", "approved")
       .in("merchant_accounts.subscription_status", ["active", "grace"])
       .order("published_at", { ascending: false })
-      .limit(input.limit);
+      .range(from, from + limit - 1);
 
     if (input.query) request = request.ilike("title", `%${input.query}%`);
     if (input.category) {
       request = request.eq("categories.slug", input.category);
     }
+    if (input.merchantSlug) request = request.eq("merchant_accounts.slug", input.merchantSlug);
 
-    const { data, error } = await request;
+    const { data, error, count } = await request;
     if (error) throw error;
     const mapped = ((data ?? []) as unknown as RawProduct[])
       .map((product) => mapProduct(this.client, product))
@@ -138,7 +169,7 @@ export class SupabaseCatalogRepository implements CatalogRepository {
           product.imageUrl !== null &&
           product.variant.availableQuantity > 0,
       );
-    if (!mapped.length) return [];
+    if (!mapped.length) return { products: [], total: count ?? 0, page, limit };
     const { data: zones, error: zonesError } = await this.client
       .from("delivery_zones")
       .select("merchant_id")
@@ -146,7 +177,39 @@ export class SupabaseCatalogRepository implements CatalogRepository {
       .eq("active", true);
     if (zonesError) throw zonesError;
     const orderable = new Set((zones ?? []).map((zone) => zone.merchant_id));
-    return mapped.filter((product) => orderable.has(product.merchant.id));
+    return {
+      products: mapped.filter((product) => orderable.has(product.merchant.id)),
+      total: count ?? mapped.length,
+      page,
+      limit,
+    };
+  }
+
+  async findByVariantIds(variantIds: string[]) {
+    if (!variantIds.length) return [];
+    const { data: variantRows, error: variantError } = await this.client
+      .from("product_variants")
+      .select("id, product_id")
+      .in("id", variantIds);
+    if (variantError) throw variantError;
+    const productIds = [...new Set((variantRows ?? []).map((row) => row.product_id))];
+    if (!productIds.length) return [];
+    const { data, error } = await this.client
+      .from("products")
+      .select(productSelection)
+      .in("id", productIds)
+      .eq("status", "published")
+      .eq("merchant_accounts.status", "active")
+      .eq("merchant_accounts.verification_status", "approved")
+      .in("merchant_accounts.subscription_status", ["active", "grace"]);
+    if (error) throw error;
+    const wanted = new Set(variantIds);
+    return ((data ?? []) as unknown as RawProduct[]).flatMap((raw) => {
+      const product = mapProduct(this.client, raw);
+      if (!product) return [];
+      const selected = product.variants.find((variant) => wanted.has(variant.id));
+      return selected ? [{ ...product, variant: selected }] : [];
+    });
   }
 
   async findShopBySlug(slug: string): Promise<PublicShop | null> {
@@ -238,7 +301,7 @@ export class SupabaseCatalogRepository implements CatalogRepository {
         this.client
           .from("delivery_zones")
           .select(
-            "id, merchant_id, label, fee_xof, min_delay_minutes, max_delay_minutes",
+            "id, merchant_id, label, fee_xof, min_delay_minutes, max_delay_minutes, delivery_category_rates(category_id, fee_xof)",
           )
           .eq("id", group.deliveryZoneId)
           .eq("merchant_id", group.merchantId)
@@ -247,7 +310,7 @@ export class SupabaseCatalogRepository implements CatalogRepository {
         this.client
           .from("product_variants")
           .select(
-            "id, merchant_id, sku, title, price_xof, active, products!inner(title, status), inventory_items!inner(available_quantity, reserved_quantity)",
+            "id, merchant_id, sku, title, price_xof, active, products!inner(title, status, category_id), inventory_items!inner(available_quantity, reserved_quantity)",
           )
           .in(
             "id",
@@ -281,7 +344,7 @@ export class SupabaseCatalogRepository implements CatalogRepository {
         sku: string;
         title: string | null;
         price_xof: number;
-        products: { title: string } | Array<{ title: string }>;
+        products: { title: string; category_id: string } | Array<{ title: string; category_id: string }>;
         inventory_items:
           | { available_quantity: number; reserved_quantity: number }
           | Array<{ available_quantity: number; reserved_quantity: number }>;
@@ -327,14 +390,23 @@ export class SupabaseCatalogRepository implements CatalogRepository {
         (total, item) => total + item.lineTotalXof,
         0,
       );
+      const categoryRates = (zone.delivery_category_rates ?? []) as Array<{ category_id: string; fee_xof: number }>;
+      const deliveryFeeXof = highestCategoryDeliveryFee(
+        zone.fee_xof,
+        rawVariants.map((variant) => {
+          const product = Array.isArray(variant.products) ? variant.products[0] : variant.products;
+          return product?.category_id ?? "";
+        }),
+        categoryRates.map((rate) => ({ categoryId: rate.category_id, feeXof: rate.fee_xof })),
+      );
       result.push({
         merchantId: merchant.id,
         merchantName: merchant.public_name,
         deliveryZoneId: zone.id,
         deliveryLabel: zone.label,
         subtotalXof,
-        deliveryFeeXof: zone.fee_xof,
-        totalXof: subtotalXof + zone.fee_xof,
+        deliveryFeeXof,
+        totalXof: subtotalXof + deliveryFeeXof,
         minDelayMinutes: zone.min_delay_minutes,
         maxDelayMinutes: zone.max_delay_minutes,
         items,

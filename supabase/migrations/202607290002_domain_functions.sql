@@ -1,10 +1,8 @@
 begin;
-
 alter table public.merchant_accounts
   add column representative_is_legal_owner boolean not null default true,
   add column wave_payment_number text,
   add column orange_money_payment_number text;
-
 create function public.is_merchant_member(
   p_merchant_id uuid,
   p_roles public.merchant_member_role[] default null
@@ -24,7 +22,6 @@ as $$
       and (p_roles is null or mm.role = any(p_roles))
   );
 $$;
-
 create function public.has_admin_role(
   p_roles public.admin_role_kind[] default null
 )
@@ -42,7 +39,6 @@ as $$
       and (p_roles is null or ar.role = any(p_roles))
   );
 $$;
-
 create function public.has_aal2()
 returns boolean
 language sql
@@ -51,7 +47,6 @@ set search_path = ''
 as $$
   select coalesce(auth.jwt() ->> 'aal', '') = 'aal2';
 $$;
-
 create function public.generate_public_code(p_prefix text)
 returns text
 language plpgsql
@@ -65,7 +60,6 @@ begin
   return v_code;
 end;
 $$;
-
 create function public.latest_verification_document_exists(
   p_case_id uuid,
   p_type public.verification_document_type
@@ -85,7 +79,6 @@ as $$
       and vd.storage_path is not null
   );
 $$;
-
 create function public.verification_case_is_complete(p_case_id uuid)
 returns boolean
 language plpgsql
@@ -135,7 +128,6 @@ begin
   return true;
 end;
 $$;
-
 create function public.submit_verification_case(p_case_id uuid)
 returns public.verification_cases
 language plpgsql
@@ -212,7 +204,6 @@ begin
   return v_case;
 end;
 $$;
-
 create function public.review_verification_case(
   p_case_id uuid,
   p_outcome public.verification_status,
@@ -342,7 +333,6 @@ begin
   return v_case;
 end;
 $$;
-
 create function public.review_subscription_payment(
   p_submission_id uuid,
   p_approved boolean,
@@ -485,7 +475,6 @@ begin
   return v_submission;
 end;
 $$;
-
 create function public.refresh_subscription_states()
 returns integer
 language plpgsql
@@ -558,7 +547,6 @@ begin
   return v_changed;
 end;
 $$;
-
 create function public.create_order_batch(
   p_idempotency_key text,
   p_recipient jsonb,
@@ -870,7 +858,6 @@ begin
   );
 end;
 $$;
-
 create function public.transition_order_status(
   p_order_id uuid,
   p_to_status public.order_status,
@@ -981,7 +968,6 @@ begin
   return v_order;
 end;
 $$;
-
 revoke all on function public.is_merchant_member(uuid, public.merchant_member_role[]) from public;
 revoke all on function public.has_admin_role(public.admin_role_kind[]) from public;
 revoke all on function public.submit_verification_case(uuid) from public;
@@ -989,11 +975,9 @@ revoke all on function public.review_verification_case(uuid, public.verification
 revoke all on function public.review_subscription_payment(uuid, boolean, text) from public;
 revoke all on function public.create_order_batch(text, jsonb, jsonb) from public;
 revoke all on function public.transition_order_status(uuid, public.order_status, text, text) from public;
-
 grant execute on function public.submit_verification_case(uuid) to authenticated;
 grant execute on function public.review_verification_case(uuid, public.verification_status, text, text, text) to authenticated;
 grant execute on function public.review_subscription_payment(uuid, boolean, text) to authenticated;
 grant execute on function public.create_order_batch(text, jsonb, jsonb) to authenticated;
 grant execute on function public.transition_order_status(uuid, public.order_status, text, text) to authenticated;
-
 commit;

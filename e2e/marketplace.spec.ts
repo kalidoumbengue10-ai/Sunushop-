@@ -8,9 +8,7 @@ test("l’accueil explique l’achat et oriente les commerçants sans formulaire
   await expect(page.getByRole("button", { name: /Envoyer ma candidature/i })).toHaveCount(0);
   await expect(page.getByText("Maison Awa")).toHaveCount(0);
   await expect(page.getByText("Dakar Tech")).toHaveCount(0);
-  await page.getByRole("button", { name: /Toutes les catégories/i }).click();
-  await expect(page.getByRole("menu")).toBeVisible();
-  await page.getByRole("menuitem", { name: /Toutes/ }).click();
+  await page.getByRole("group", { name: /Filtrer par catégorie/i }).getByRole("button", { name: "Toutes" }).click();
   await page.getByRole("link", { name: /Déposer ma candidature/i }).last().click();
   await expect(page).toHaveURL(/devenir-marchand/);
 });

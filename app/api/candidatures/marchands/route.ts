@@ -35,7 +35,7 @@ export async function POST(request: Request) {
       ? { data: existing, error: null }
       : await admin.from("crm_leads").insert(values).select("id, status").single();
     if (result.error) throw result.error;
-    const recipient = process.env.SUNUSHOP_CRM_NOTIFICATION_EMAIL?.trim();
+    const recipient = process.env.SUNUSHOP_OPERATIONS_NOTIFICATION_EMAIL?.trim() || process.env.SUNUSHOP_CRM_NOTIFICATION_EMAIL?.trim();
     if (recipient && !existing) {
       const { error } = await admin.from("notification_outbox").insert({
         dedupe_key: `merchant-application:${result.data.id}`, channel: "email",
