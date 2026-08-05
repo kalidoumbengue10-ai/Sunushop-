@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   cartQuoteSchema,
   crmLeadUpdateSchema,
+  intentLetterSubmissionSchema,
   merchantApplicationSchema,
   orderBatchSchema,
   productDetailsSchema,
@@ -44,6 +45,44 @@ describe("validation des entrées métier", () => {
         next: "//site-malveillant.example",
       }).success,
     ).toBe(false);
+  });
+
+  it("refuse la lettre d'intention sans certification sur l'honneur", () => {
+    const base = {
+      signatoryName: "Awa Diop",
+      signatoryBirthDate: "1990-05-12",
+      idType: "cni" as const,
+      idNumber: "1234567890123",
+      signatoryRole: "Propriétaire",
+      actingFor: "own_account" as const,
+      activityDescription: "Vente de vêtements traditionnels et accessoires.",
+      signaturePlace: "Dakar",
+    };
+    expect(intentLetterSubmissionSchema.safeParse({ ...base, certify: false }).success).toBe(false);
+    expect(intentLetterSubmissionSchema.safeParse(base).success).toBe(false);
+    expect(intentLetterSubmissionSchema.safeParse({ ...base, certify: true }).success).toBe(true);
+  });
+
+  it("refuse une description d'activité trop courte ou un numéro de pièce invalide", () => {
+    const base = {
+      signatoryName: "Awa Diop",
+      signatoryBirthDate: "1990-05-12",
+      idType: "cni" as const,
+      idNumber: "123",
+      signatoryRole: "Propriétaire",
+      actingFor: "own_account" as const,
+      activityDescription: "Trop court",
+      signaturePlace: "Dakar",
+      certify: true as const,
+    };
+    expect(intentLetterSubmissionSchema.safeParse(base).success).toBe(false);
+    expect(
+      intentLetterSubmissionSchema.safeParse({
+        ...base,
+        idNumber: "1234567890123",
+        activityDescription: "Vente de vêtements traditionnels et accessoires artisanaux.",
+      }).success,
+    ).toBe(true);
   });
 
   it("exige une raison sociale pour un marchand formel", () => {

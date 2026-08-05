@@ -137,6 +137,12 @@
 .checkout-confirmation{display:grid;gap:16px}
 .checkout-confirmation h2{margin:0;font:700 clamp(24px,3vw,32px)/1.1 Georgia,serif}
 
+/* Lettre d'intention en ligne */
+.intent-letter-modal{margin-top:14px;padding:20px;border:1px solid rgba(23,39,31,.14);border-radius:16px;background:#f9f7f0}
+.intent-letter-modal .mvp-document__heading{margin-bottom:10px}
+.intent-letter-certify{display:flex;align-items:flex-start;gap:9px;padding:12px 14px;border-radius:12px;background:#fff;font-size:12px;line-height:1.5}
+.intent-letter-certify input{margin-top:3px}
+
 /* Visibilité et publication des produits */
 .merchant-publication-blocker,.merchant-ready-products{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:18px 20px;border-radius:16px}.merchant-publication-blocker{border:1px solid #e2b15c;background:#fff4d9;color:#5b3b0a}.merchant-ready-products{border:1px solid #9fbea9;background:#edf7ef;color:#173f2e}.merchant-publication-blocker strong,.merchant-ready-products strong{font-size:16px}.merchant-publication-blocker p,.merchant-ready-products p{margin:5px 0 0;font-size:12px}.merchant-ready-products>.mvp-actions{justify-content:flex-end}
 @media(max-width:560px){.merchant-publication-blocker,.merchant-ready-products{align-items:stretch;flex-direction:column}.merchant-ready-products>.mvp-actions{justify-content:stretch}.merchant-ready-products .mvp-button{width:100%}}

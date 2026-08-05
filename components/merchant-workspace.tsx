@@ -21,6 +21,7 @@ import { MerchantMedia } from "@/components/merchant-media";
 import { MerchantDashboard } from "@/components/merchant-dashboard";
 import { MerchantProductWizard, type MerchantProductEditor } from "@/components/merchant-product-wizard";
 import { MerchantDeliverySettings, type MerchantDeliveryZone } from "@/components/merchant-delivery-settings";
+import { IntentLetterForm } from "@/components/intent-letter-form";
 import { formatMerchantOrderNumber, merchantStatusLabel } from "@/lib/domain/merchant-ui";
 import { getBrowserSupabase } from "@/lib/infrastructure/supabase/browser";
 import {
@@ -512,6 +513,7 @@ export function MerchantWorkspace(props: MerchantWorkspaceProps) {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [showIntentLetterForm, setShowIntentLetterForm] = useState(false);
 
   const submitJson = async (
     url: string,
@@ -796,14 +798,31 @@ export function MerchantWorkspace(props: MerchantWorkspaceProps) {
               La CNI recto-verso, la lettre d’intention remplie et la preuve
               d’activité sont obligatoires. Le passeport est facultatif.
             </p>
-            <p>
-              <Link
-                href="/documents/lettre-intention-sunushop.html"
-                download="Lettre-intention-SunuShop.html"
-              >
-                Télécharger le modèle de lettre d’intention
-              </Link>
-            </p>
+            {canEditDocuments && !showIntentLetterForm && (
+              <div className="mvp-actions">
+                <button type="button" className="mvp-button" onClick={() => setShowIntentLetterForm(true)}>
+                  Remplir la lettre d’intention en ligne
+                </button>
+                <Link
+                  className="mvp-button mvp-button--secondary"
+                  href="/documents/lettre-intention-sunushop.html"
+                  download="Lettre-intention-SunuShop.html"
+                >
+                  Télécharger le modèle PDF vierge
+                </Link>
+              </div>
+            )}
+            {canEditDocuments && showIntentLetterForm && (
+              <IntentLetterForm
+                caseId={props.verificationCase.id}
+                merchant={{
+                  publicName: props.merchant.public_name,
+                  kind: props.merchant.kind,
+                  representativeIsLegalOwner: props.merchant.representative_is_legal_owner,
+                }}
+                onClose={() => setShowIntentLetterForm(false)}
+              />
+            )}
             {canEditDocuments ? (
               <div className="mvp-document-grid">
                 {documentTypes.map((type) => (

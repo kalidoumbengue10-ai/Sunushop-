@@ -524,9 +524,34 @@ test.describe.serial("flux authentifiés marketplace", () => {
     const pdf = Buffer.from("%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\n%%EOF");
     await ownerPage.getByLabel("Ajouter CNI recto").setInputFiles({ name: "national_id_front.pdf", mimeType: "application/pdf", buffer: pdf });
     await expect(ownerPage.getByLabel("Remplacer CNI recto")).toHaveCount(1, { timeout: 20_000 });
-    for (const documentType of ["national_id_back", "intent_letter", "proof_activity"]) {
+    for (const documentType of ["national_id_back", "proof_activity"]) {
       await responseData(await ownerContext.request.post(`/api/merchant/verifications/${verificationCase.id}/documents`, { multipart: { documentType, file: { name: `${documentType}.pdf`, mimeType: "application/pdf", buffer: pdf } } }), 201);
     }
+
+    await test.step("le marchand remplit la lettre d’intention en ligne au lieu de scanner un document papier", async () => {
+      await ownerPage.getByRole("button", { name: "Remplir la lettre d’intention en ligne" }).click();
+      await ownerPage.getByLabel("Nom complet du signataire").fill("Fatou Test");
+      await ownerPage.getByLabel("Date de naissance").fill("1990-01-15");
+      await ownerPage.getByLabel("Numéro de pièce").fill("1234567890123");
+      await ownerPage.getByLabel("Qualité (ex. Propriétaire, Gérant)").fill("Propriétaire");
+      await ownerPage.getByLabel("Activité principale et catégories de produits proposées").fill("Vente de vêtements traditionnels et accessoires artisanaux.");
+      await ownerPage.getByLabel("Fait à (lieu de signature)").fill("Dakar");
+      await ownerPage.getByLabel("Je certifie sur l’honneur l’exactitude des déclarations ci-dessus.").check();
+      await ownerPage.getByRole("button", { name: "Générer et enregistrer ma lettre d’intention" }).click();
+      await expect(ownerPage.getByText("Lettre d’intention enregistrée")).toBeVisible({ timeout: 15_000 });
+    });
+
+    const { data: intentLetterDocument, error: intentLetterError } = await admin
+      .from("verification_documents")
+      .select("mime_type")
+      .eq("case_id", verificationCase.id)
+      .eq("document_type", "intent_letter")
+      .order("version", { ascending: false })
+      .limit(1)
+      .single();
+    if (intentLetterError) throw intentLetterError;
+    expect(intentLetterDocument.mime_type).toBe("application/pdf");
+
     const { data: storedDocuments } = await admin.from("verification_documents").select("storage_path").eq("case_id", verificationCase.id);
     created.verificationPaths.push(...(storedDocuments ?? []).map((document) => document.storage_path));
     await responseData(await ownerContext.request.post(`/api/merchant/verifications/${verificationCase.id}/submit`, { data: {} }), 200);

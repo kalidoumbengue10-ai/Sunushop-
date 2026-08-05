@@ -97,6 +97,20 @@ export const verificationDocumentFinalizeSchema = z.object({
   storagePath: z.string().trim().min(20).max(800),
 });
 
+export const intentLetterSubmissionSchema = z.object({
+  signatoryName: z.string().trim().min(2).max(120),
+  signatoryBirthDate: z.iso.date(),
+  idType: z.enum(["cni", "passeport"]),
+  idNumber: z.string().trim().min(4).max(40),
+  signatoryRole: z.string().trim().min(2).max(120),
+  actingFor: z.enum(["own_account", "company_account"]),
+  activityDescription: z.string().trim().min(10).max(600),
+  signaturePlace: z.string().trim().min(2).max(120),
+  certify: z.literal(true, {
+    error: "Vous devez certifier l’exactitude de vos déclarations.",
+  }),
+});
+
 export const verificationDecisionSchema = z
   .object({
     outcome: z.enum([
