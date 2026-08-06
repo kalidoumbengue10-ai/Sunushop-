@@ -236,23 +236,23 @@ export function MerchantSignupWizard({
               <div className="mvp-form__grid">
                 <label className="mvp-field">
                   Nom et prénom
-                  <input autoComplete="name" required value={draft.contactName} onChange={(e) => setDraft({ ...draft, contactName: e.target.value })} />
+                  <input id="signup-contact-name" name="contactName" autoComplete="name" required value={draft.contactName} onChange={(e) => setDraft({ ...draft, contactName: e.target.value })} />
                 </label>
                 <label className="mvp-field">
                   Nom du commerce
-                  <input required value={draft.shopName} onChange={(e) => setDraft({ ...draft, shopName: e.target.value })} />
+                  <input id="signup-shop-name" name="shopName" required value={draft.shopName} onChange={(e) => setDraft({ ...draft, shopName: e.target.value })} />
                 </label>
                 <label className="mvp-field">
                   Téléphone
-                  <input type="tel" inputMode="tel" placeholder="+221 77 000 00 00" required value={draft.phone} onChange={(e) => setDraft({ ...draft, phone: e.target.value })} />
+                  <input id="signup-phone" name="phone" type="tel" inputMode="tel" autoComplete="tel" placeholder="+221 77 000 00 00" required value={draft.phone} onChange={(e) => setDraft({ ...draft, phone: e.target.value })} />
                 </label>
                 <label className="mvp-field">
                   Ville
-                  <input autoComplete="address-level2" value={draft.city} onChange={(e) => setDraft({ ...draft, city: e.target.value })} />
+                  <input id="signup-city" name="city" autoComplete="address-level2" value={draft.city} onChange={(e) => setDraft({ ...draft, city: e.target.value })} />
                 </label>
                 <label className="mvp-field">
                   Statut de l’activité
-                  <select required value={draft.businessType} onChange={(e) => setDraft({ ...draft, businessType: e.target.value as Draft["businessType"] })}>
+                  <select id="signup-business-type" name="businessType" required value={draft.businessType} onChange={(e) => setDraft({ ...draft, businessType: e.target.value as Draft["businessType"] })}>
                     <option value="">Choisir</option>
                     <option value="informal">Commerçant individuel / activité informelle</option>
                     <option value="formal">Entreprise enregistrée</option>
@@ -261,13 +261,13 @@ export function MerchantSignupWizard({
                 {draft.businessType === "formal" && (
                   <label className="mvp-field">
                     Raison sociale
-                    <input required value={draft.legalName} onChange={(e) => setDraft({ ...draft, legalName: e.target.value })} />
+                    <input id="signup-legal-name" name="legalName" required value={draft.legalName} onChange={(e) => setDraft({ ...draft, legalName: e.target.value })} />
                   </label>
                 )}
               </div>
               <label className="mvp-field">
                 Comment vendez-vous aujourd’hui ?
-                <input placeholder="En boutique, WhatsApp, Instagram…" required value={draft.salesChannel} onChange={(e) => setDraft({ ...draft, salesChannel: e.target.value })} />
+                <input id="signup-sales-channel" name="salesChannel" placeholder="En boutique, WhatsApp, Instagram…" required value={draft.salesChannel} onChange={(e) => setDraft({ ...draft, salesChannel: e.target.value })} />
               </label>
               {categories.length > 0 && (
                 <fieldset className="application-category-fieldset">
@@ -276,6 +276,7 @@ export function MerchantSignupWizard({
                     {categories.map((category) => (
                       <label key={category.name}>
                         <input
+                          name="categories"
                           type="checkbox"
                           checked={draft.categories.includes(category.name)}
                           onChange={(e) =>
@@ -305,11 +306,11 @@ export function MerchantSignupWizard({
             <form className="mvp-form" onSubmit={submitAcces}>
               <label className="mvp-field">
                 Adresse email
-                <input type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
+                <input id="signup-email" name="email" type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
               </label>
               <label className="mvp-field">
                 Mot de passe
-                <input type="password" autoComplete="new-password" required minLength={10} value={password} onChange={(e) => setPassword(e.target.value)} />
+                <input id="signup-password" name="password" type="password" autoComplete="new-password" required minLength={10} value={password} onChange={(e) => setPassword(e.target.value)} />
               </label>
               {turnstileSiteKey && (
                 <div className="merchant-captcha">

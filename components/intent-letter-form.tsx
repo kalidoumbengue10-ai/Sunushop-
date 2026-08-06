@@ -108,30 +108,30 @@ export function IntentLetterForm({
         <div className="mvp-form__grid">
           <label className="mvp-field">
             Nom complet du signataire
-            <input value={signatoryName} onChange={(event) => setSignatoryName(event.target.value)} required minLength={2} maxLength={120} />
+            <input id="intent-signatory-name" name="signatoryName" value={signatoryName} onChange={(event) => setSignatoryName(event.target.value)} required minLength={2} maxLength={120} />
           </label>
           <label className="mvp-field">
             Date de naissance
-            <input type="date" value={signatoryBirthDate} onChange={(event) => setSignatoryBirthDate(event.target.value)} required />
+            <input id="intent-signatory-birth-date" name="signatoryBirthDate" type="date" value={signatoryBirthDate} onChange={(event) => setSignatoryBirthDate(event.target.value)} required />
           </label>
           <label className="mvp-field">
             Type de pièce
-            <select value={idType} onChange={(event) => setIdType(event.target.value as "cni" | "passeport")}>
+            <select id="intent-id-type" name="idType" value={idType} onChange={(event) => setIdType(event.target.value as "cni" | "passeport")}>
               <option value="cni">CNI</option>
               <option value="passeport">Passeport</option>
             </select>
           </label>
           <label className="mvp-field">
             Numéro de pièce
-            <input value={idNumber} onChange={(event) => setIdNumber(event.target.value)} required minLength={4} maxLength={40} />
+            <input id="intent-id-number" name="idNumber" value={idNumber} onChange={(event) => setIdNumber(event.target.value)} required minLength={4} maxLength={40} />
           </label>
           <label className="mvp-field">
             Qualité (ex. Propriétaire, Gérant)
-            <input value={signatoryRole} onChange={(event) => setSignatoryRole(event.target.value)} required minLength={2} maxLength={120} />
+            <input id="intent-signatory-role" name="signatoryRole" value={signatoryRole} onChange={(event) => setSignatoryRole(event.target.value)} required minLength={2} maxLength={120} />
           </label>
           <label className="mvp-field">
             Vous agissez
-            <select value={actingFor} onChange={(event) => setActingFor(event.target.value as "own_account" | "company_account")}>
+            <select id="intent-acting-for" name="actingFor" value={actingFor} onChange={(event) => setActingFor(event.target.value as "own_account" | "company_account")}>
               <option value="own_account">Pour mon propre compte</option>
               <option value="company_account">Pour le compte de l’entreprise</option>
             </select>
@@ -141,6 +141,8 @@ export function IntentLetterForm({
         <label className="mvp-field">
           Activité principale et catégories de produits proposées
           <textarea
+            id="intent-activity-description"
+            name="activityDescription"
             value={activityDescription}
             onChange={(event) => setActivityDescription(event.target.value)}
             required
@@ -152,11 +154,11 @@ export function IntentLetterForm({
 
         <label className="mvp-field">
           Fait à (lieu de signature)
-          <input value={signaturePlace} onChange={(event) => setSignaturePlace(event.target.value)} required minLength={2} maxLength={120} />
+          <input id="intent-signature-place" name="signaturePlace" value={signaturePlace} onChange={(event) => setSignaturePlace(event.target.value)} required minLength={2} maxLength={120} />
         </label>
 
         <label className="intent-letter-certify">
-          <input type="checkbox" checked={certify} onChange={(event) => setCertify(event.target.checked)} required />
+          <input id="intent-certify" name="certify" type="checkbox" checked={certify} onChange={(event) => setCertify(event.target.checked)} required />
           Je certifie sur l’honneur l’exactitude des déclarations ci-dessus.
         </label>
 
