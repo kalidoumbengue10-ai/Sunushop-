@@ -375,6 +375,13 @@ export function MerchantSignupWizard({
                     Remplir la lettre d’intention
                   </button>
                 </div>
+                <p className="small">
+                  Vous préférez la remplir à la main ?{" "}
+                  <a href="/documents/lettre-intention-sunushop.html" download="Lettre-intention-SunuShop.html">
+                    Télécharger le modèle vierge
+                  </a>
+                  , puis déposez-la depuis l’étape « Ma pièce d’identité » de votre espace marchand.
+                </p>
               </>
             )}
             {showIntentLetter && (
