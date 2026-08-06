@@ -441,7 +441,7 @@ export const merchantFastTrackSignupSchema = z.object({
   consent: z.literal(true, {
     error: "Votre accord est nécessaire pour être recontacté.",
   }),
-  captchaToken: z.string().min(10),
+  captchaToken: z.string().min(10).optional(),
   businessType: z.enum(["informal", "formal"]),
   legalName: z.string().trim().min(2).max(180).optional(),
   salesChannel: z.string().trim().min(2).max(240),

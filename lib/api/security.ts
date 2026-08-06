@@ -58,13 +58,9 @@ export async function verifyCaptcha(
 ) {
   const secret = process.env.TURNSTILE_SECRET_KEY?.trim();
   if (!secret) {
-    if (process.env.NODE_ENV === "production") {
-      throw new ApiError(
-        503,
-        "CAPTCHA_NOT_CONFIGURED",
-        "La protection CAPTCHA n’est pas configurée.",
-      );
-    }
+    // Le CAPTCHA est désactivable en retirant TURNSTILE_SECRET_KEY (et la
+    // clé publique côté client) : dans ce cas on laisse passer plutôt que
+    // de bloquer tout le monde, en s'appuyant sur le rate-limiting restant.
     return;
   }
   if (!token) {
