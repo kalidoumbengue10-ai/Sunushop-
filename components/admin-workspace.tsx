@@ -2,7 +2,6 @@
 
 import {
   ArrowRight,
-  CalendarClock,
   CheckCircle2,
   FileCheck2,
   LayoutDashboard,
@@ -119,10 +118,6 @@ export function AdminWorkspace({ initialTab = "overview" }: { initialTab?: Admin
     });
   }, []);
 
-  const followUps = useMemo(
-    () => leads.filter((lead) => lead.next_follow_up_at && !lead.converted_at && new Date(lead.next_follow_up_at) <= new Date()).length,
-    [leads],
-  );
   const qualified = leads.filter((lead) => ["qualified", "onboarding"].includes(lead.status)).length;
 
   const openCase = async (id: string) => {
@@ -256,7 +251,6 @@ export function AdminWorkspace({ initialTab = "overview" }: { initialTab?: Admin
             <AdminCrmMetrics />
             <section className="admin-stat-grid">
               <article><span className="admin-stat-icon admin-stat-icon--orange"><UsersRound /></span><div><small>NOUVEAUX PROSPECTS</small><strong>{leads.filter((lead) => lead.status === "new").length}</strong><button onClick={() => setTab("crm")}>Ouvrir le suivi</button></div></article>
-              <article><span className="admin-stat-icon admin-stat-icon--blue"><CalendarClock /></span><div><small>RELANCES À FAIRE</small><strong>{followUps}</strong><button onClick={() => setTab("crm")}>Voir les échéances</button></div></article>
               <article><span className="admin-stat-icon admin-stat-icon--green"><FileCheck2 /></span><div><small>DOSSIERS À ÉTUDIER</small><strong>{queue.length}</strong><button onClick={() => setTab("verifications")}>Étudier les dossiers</button></div></article>
               <article><span className="admin-stat-icon admin-stat-icon--purple"><ReceiptText /></span><div><small>PAIEMENTS À CONFIRMER</small><strong>{payments.length}</strong><button onClick={() => setTab("subscriptions")}>Vérifier les paiements</button></div></article>
             </section>

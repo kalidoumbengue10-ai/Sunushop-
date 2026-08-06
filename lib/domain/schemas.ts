@@ -396,7 +396,6 @@ export const crmLeadUpdateSchema = z
   .object({
     status: crmLeadStatusSchema.optional(),
     priority: crmLeadPrioritySchema.optional(),
-    nextFollowUpAt: z.iso.datetime().nullable().optional(),
   })
   .refine((value) => Object.keys(value).length > 0, {
     message: "Aucune modification reçue.",
@@ -404,15 +403,6 @@ export const crmLeadUpdateSchema = z
 
 export const crmLeadNoteSchema = z.object({
   body: z.string().trim().min(2).max(3000),
-});
-
-export const crmTaskSchema = z.object({
-  title: z.string().trim().min(2).max(240),
-  dueAt: z.iso.datetime().nullable().optional(),
-});
-
-export const crmTaskUpdateSchema = z.object({
-  completed: z.boolean(),
 });
 
 export const prelaunchLeadSchema = z.object({
@@ -430,6 +420,28 @@ export const prelaunchLeadSchema = z.object({
 });
 
 export const merchantLeadApplicationSchema = prelaunchLeadSchema.extend({
+  businessType: z.enum(["informal", "formal"]),
+  legalName: z.string().trim().min(2).max(180).optional(),
+  salesChannel: z.string().trim().min(2).max(240),
+}).superRefine((value, context) => {
+  if (value.businessType === "formal" && !value.legalName) {
+    context.addIssue({ code: "custom", path: ["legalName"], message: "La raison sociale est obligatoire pour une entreprise enregistrée." });
+  }
+});
+
+export const merchantFastTrackSignupSchema = z.object({
+  contactName: z.string().trim().min(2).max(120),
+  shopName: z.string().trim().min(2).max(120),
+  email: authEmail,
+  password: authPassword,
+  phone: z.string().trim().min(8).max(24),
+  city: z.string().trim().min(2).max(120).optional(),
+  categories: z.array(z.string().trim().min(2).max(80)).max(12).default([]),
+  message: z.string().trim().max(1000).optional(),
+  consent: z.literal(true, {
+    error: "Votre accord est nécessaire pour être recontacté.",
+  }),
+  captchaToken: z.string().min(10),
   businessType: z.enum(["informal", "formal"]),
   legalName: z.string().trim().min(2).max(180).optional(),
   salesChannel: z.string().trim().min(2).max(240),

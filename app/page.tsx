@@ -66,8 +66,8 @@ export default async function Home() {
           </section>
 
           <section className="merchant-bottom-cta">
-            <div><span className="mvp-eyebrow">Commerçants</span><h2>Vous aussi, vous souhaitez vendre sur SunuShop ?</h2><p>Présentez votre activité. Après étude, nous vous invitons à compléter votre dossier et à ouvrir votre boutique.</p></div>
-            <div><Link className="mvp-button" href="/devenir-marchand">Déposer ma candidature</Link><small>Aucun compte marchand n’est créé sans validation.</small></div>
+            <div><span className="mvp-eyebrow">Commerçants</span><h2>Vous aussi, vous souhaitez vendre sur SunuShop ?</h2><p>Créez votre boutique en une seule fois, sans email à confirmer.</p></div>
+            <div><Link className="mvp-button" href="/creer-ma-boutique">Créer ma boutique</Link><small>Ouvrez votre boutique aujourd’hui. Vous vendez dès votre premier paiement d’abonnement.</small></div>
           </section>
         </div>
       </main>

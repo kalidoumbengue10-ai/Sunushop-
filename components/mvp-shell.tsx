@@ -46,7 +46,7 @@ function ShellChrome({ children }: { children: React.ReactNode }) {
             <Link href="/">Accueil</Link>
             <Link href="/#catalogue">Produits</Link>
             <Link href="/#boutiques">Boutiques</Link>
-            <Link href="/devenir-marchand">Vendre sur SunuShop</Link>
+            <Link href="/creer-ma-boutique" className="mvp-nav__cta">Créer ma boutique</Link>
             <Link href={isAuth ? "/marche" : area.href} className="mvp-nav__cta">{isAuth ? "Retour au marché" : area.label}</Link>
           </nav>
           <CartTrigger />

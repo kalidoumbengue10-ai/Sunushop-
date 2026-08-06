@@ -196,18 +196,10 @@
 .crm-follow-up-form > div { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .crm-detail-card__heading { display: flex; align-items: center; justify-content: space-between; }
 .crm-detail-card__heading svg { width: 18px; color: var(--admin-green-2); }
-.crm-task-list { display: grid; gap: 7px; margin-bottom: 12px; }
-.crm-task-list button { display: grid; grid-template-columns: 28px 1fr; align-items: center; gap: 8px; padding: 8px; border: 0; border-radius: 9px; color: var(--admin-ink); background: #f6f5f0; text-align: left; }
-.crm-task-list button > span:first-child { width: 26px; height: 26px; display: grid; place-items: center; border-radius: 8px; color: var(--admin-clay); background: #f7e6dd; }
-.crm-task-list svg { width: 13px; }
-.crm-task-list button > span:last-child { display: grid; gap: 3px; }
-.crm-task-list b { font-size: 9px; }
-.crm-task-list small { color: var(--admin-muted); font-size: 8px; }
-.crm-task-list button.is-complete { opacity: .58; }
-.crm-task-list button.is-complete b { text-decoration: line-through; }
-.crm-inline-form { display: grid; grid-template-columns: 1fr 155px auto; gap: 7px; }
-.crm-inline-form button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 0 11px; border: 0; border-radius: 9px; color: white; background: var(--admin-green); font-size: 9px; font-weight: 900; }
-.crm-inline-form svg { width: 14px; }
+.crm-document-list { display: grid; gap: 6px; margin: 10px 0; padding: 0; list-style: none; }
+.crm-document-list li { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 11px; border-radius: 9px; background: #f6f5f0; font-size: 10px; font-weight: 800; }
+.crm-danger-zone { border-color: #eecfc6; background: #fff9f7; }
+.crm-danger-zone p { margin: 0 0 12px; }
 .crm-note-form { display: grid; gap: 8px; }
 .crm-note-form textarea { resize: vertical; }
 .crm-note-list { display: grid; gap: 8px; margin-top: 14px; }

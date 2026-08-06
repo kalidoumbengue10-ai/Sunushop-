@@ -30,6 +30,18 @@ const databaseErrorMap: Record<string, { status: number; message: string }> = {
     status: 403,
     message: "Votre dossier doit être validé avant d’accéder aux outils de la boutique.",
   },
+  MERCHANT_SUSPENDED: {
+    status: 403,
+    message: "Cette boutique est suspendue par SunuShop.",
+  },
+  MERCHANT_APPLICATION_ALREADY_EXISTS: {
+    status: 409,
+    message: "Vous avez déjà une boutique associée à ce compte.",
+  },
+  MERCHANT_NOT_PUBLISHABLE: {
+    status: 409,
+    message: "Votre abonnement doit être actif pour publier vos produits.",
+  },
   REVIEWER_MFA_REQUIRED: {
     status: 403,
     message: "Une authentification renforcée est requise.",

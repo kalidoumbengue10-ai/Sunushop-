@@ -1,5 +1,5 @@
 import { requireAdminClient } from "@/lib/api/auth";
-import { requireApprovedMerchantAccess } from "@/lib/api/merchant-access";
+import { requireActiveMerchantAccess } from "@/lib/api/merchant-access";
 import { apiFailure, apiSuccess } from "@/lib/api/response";
 import { subscriptionPaymentSchema } from "@/lib/domain/schemas";
 import { enqueueEmail } from "@/lib/notifications/outbox";
@@ -8,7 +8,7 @@ export async function POST(request: Request) {
   const requestId = crypto.randomUUID();
   try {
     const input = subscriptionPaymentSchema.parse(await request.json());
-    const { supabase } = await requireApprovedMerchantAccess(input.merchantId, ["owner", "manager"]);
+    const { supabase } = await requireActiveMerchantAccess(input.merchantId, ["owner", "manager"]);
     const { data, error } = await supabase.rpc(
       "submit_subscription_payment",
       {

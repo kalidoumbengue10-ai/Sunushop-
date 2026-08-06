@@ -5,7 +5,7 @@ import { ApiError } from "@/lib/api/errors";
 
 export type MerchantWorkspaceRole = "owner" | "manager" | "catalog" | "fulfillment" | "finance";
 
-export async function requireApprovedMerchantAccess(
+export async function requireActiveMerchantAccess(
   merchantId: string,
   allowedRoles: MerchantWorkspaceRole[],
 ) {
@@ -17,17 +17,17 @@ export async function requireApprovedMerchantAccess(
     await Promise.all([
       admin.from("merchant_members").select("role").eq("merchant_id", merchantId)
         .eq("user_id", user.id).eq("active", true).in("role", allowedRoles).maybeSingle(),
-      admin.from("merchant_accounts").select("verification_status").eq("id", merchantId).maybeSingle(),
+      admin.from("merchant_accounts").select("status").eq("id", merchantId).maybeSingle(),
     ]);
 
   if (membershipError) throw membershipError;
   if (merchantError) throw merchantError;
   if (!membership) throw new ApiError(403, "FORBIDDEN", "Accès marchand requis.");
-  if (merchant?.verification_status !== "approved") {
+  if (merchant?.status === "suspended") {
     throw new ApiError(
       403,
-      "KYC_APPROVAL_REQUIRED",
-      "Votre dossier doit être validé avant d’accéder aux outils de la boutique.",
+      "MERCHANT_SUSPENDED",
+      "Cette boutique est suspendue par SunuShop.",
     );
   }
   return { user, supabase, admin };

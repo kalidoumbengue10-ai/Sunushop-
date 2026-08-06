@@ -1,6 +1,6 @@
 import { requireUser } from "@/lib/api/auth";
 import { ApiError } from "@/lib/api/errors";
-import { requireApprovedMerchantAccess } from "@/lib/api/merchant-access";
+import { requireActiveMerchantAccess } from "@/lib/api/merchant-access";
 import { apiFailure, apiSuccess } from "@/lib/api/response";
 import {
   productInputSchema,
@@ -35,7 +35,7 @@ export async function POST(request: Request) {
     const body = await request.json();
     const draftOnly = body.draftOnly === true;
     const input = draftOnly ? productDraftSchema.parse(body) : productInputSchema.parse(body);
-    const { supabase } = await requireApprovedMerchantAccess(input.merchantId, ["owner", "manager", "catalog"]);
+    const { supabase } = await requireActiveMerchantAccess(input.merchantId, ["owner", "manager", "catalog"]);
     const automaticSku = `AUTO-${crypto.randomUUID().replaceAll("-", "").slice(0, 12).toUpperCase()}`;
     const { data, error } = await supabase.rpc("create_merchant_product", {
       p_merchant_id: input.merchantId,
@@ -69,7 +69,7 @@ export async function PATCH(request: Request) {
       .maybeSingle();
     if (productError) throw productError;
     if (!product) throw new Error("PRODUCT_NOT_FOUND");
-    await requireApprovedMerchantAccess(product.merchant_id, ["owner", "manager", "catalog"]);
+    await requireActiveMerchantAccess(product.merchant_id, ["owner", "manager", "catalog"]);
     if (input.publish) {
       const { data: merchantState } = await supabase.from("merchant_accounts").select("subscription_status").eq("id", product.merchant_id).maybeSingle();
       if (!merchantState || !["active", "grace"].includes(merchantState.subscription_status)) {

@@ -10,12 +10,41 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
     const { supabase } = await requireAdminRole(["support", "admin"]);
     const { data, error } = await supabase
       .from("crm_leads")
-      .select("id, source, full_name, business_name, email, phone, city, business_type, sales_channel, message, status, priority, owner_user_id, merchant_id, last_contacted_at, next_follow_up_at, converted_at, created_at, updated_at, crm_lead_notes(id, body, author_id, created_at), crm_tasks(id, title, assigned_to, due_at, completed_at, created_at), crm_lead_events(id, event_type, from_status, to_status, summary, created_at)")
+      .select("id, source, full_name, business_name, email, phone, city, business_type, sales_channel, message, status, priority, owner_user_id, merchant_id, last_contacted_at, next_follow_up_at, converted_at, created_at, updated_at, crm_lead_notes(id, body, author_id, created_at), crm_lead_events(id, event_type, from_status, to_status, summary, created_at)")
       .eq("id", id)
       .maybeSingle();
     if (error) throw error;
     if (!data) throw new ApiError(404, "CRM_LEAD_NOT_FOUND", "Prospect introuvable.");
-    return apiSuccess(data, { requestId });
+
+    let merchant: { status: string; verification_status: string; subscription_status: string } | null = null;
+    let documents: Array<{ document_type: string; status: string; version: number }> = [];
+    let caseId: string | null = null;
+    if (data.merchant_id) {
+      const [{ data: merchantRow }, { data: documentRows }, { data: caseRow }] = await Promise.all([
+        supabase
+          .from("merchant_accounts")
+          .select("status, verification_status, subscription_status")
+          .eq("id", data.merchant_id)
+          .maybeSingle(),
+        supabase
+          .from("verification_documents")
+          .select("document_type, status, version")
+          .eq("merchant_id", data.merchant_id)
+          .order("version", { ascending: false }),
+        supabase
+          .from("verification_cases")
+          .select("id")
+          .eq("merchant_id", data.merchant_id)
+          .order("submission_version", { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+      ]);
+      merchant = merchantRow ?? null;
+      documents = documentRows ?? [];
+      caseId = caseRow?.id ?? null;
+    }
+
+    return apiSuccess({ ...data, merchant, documents, caseId }, { requestId });
   } catch (error) {
     return apiFailure(error, requestId);
   }
@@ -43,13 +72,12 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
       if (current.status === "converted" && input.status !== "converted") values.converted_at = null;
     }
     if (input.priority) values.priority = input.priority;
-    if (input.nextFollowUpAt !== undefined) values.next_follow_up_at = input.nextFollowUpAt;
 
     const { data, error } = await supabase
       .from("crm_leads")
       .update(values)
       .eq("id", id)
-      .select("id, status, priority, next_follow_up_at, updated_at")
+      .select("id, status, priority, updated_at")
       .single();
     if (error) throw error;
     const { error: eventError } = await supabase.from("crm_lead_events").insert({
@@ -64,6 +92,43 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
     });
     if (eventError) throw eventError;
     return apiSuccess(data, { requestId });
+  } catch (error) {
+    return apiFailure(error, requestId);
+  }
+}
+
+export async function DELETE(_request: Request, context: { params: Promise<{ id: string }> }) {
+  const requestId = crypto.randomUUID();
+  try {
+    const { id } = await context.params;
+    const { user, supabase } = await requireAdminRole(["admin"]);
+    const { data: lead, error: leadError } = await supabase
+      .from("crm_leads")
+      .select("id, business_name, merchant_id")
+      .eq("id", id)
+      .maybeSingle();
+    if (leadError) throw leadError;
+    if (!lead) throw new ApiError(404, "CRM_LEAD_NOT_FOUND", "Prospect introuvable.");
+    if (lead.merchant_id) {
+      throw new ApiError(
+        409,
+        "CRM_LEAD_LINKED_TO_MERCHANT",
+        "Ce prospect a une boutique associée. Suspendez la boutique plutôt que de supprimer la fiche.",
+      );
+    }
+
+    await supabase.from("audit_events").insert({
+      actor_id: user.id,
+      action: "crm.lead.delete",
+      entity_type: "crm_lead",
+      entity_id: id,
+      request_id: requestId,
+      metadata: { business_name: lead.business_name },
+    });
+
+    const { error: deleteError } = await supabase.from("crm_leads").delete().eq("id", id);
+    if (deleteError) throw deleteError;
+    return apiSuccess({ id }, { requestId });
   } catch (error) {
     return apiFailure(error, requestId);
   }

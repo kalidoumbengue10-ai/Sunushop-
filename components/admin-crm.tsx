@@ -3,10 +3,7 @@
 import {
   ArrowUpRight,
   BadgeCheck,
-  CalendarClock,
-  Check,
   ChevronRight,
-  ClipboardCheck,
   Copy,
   Download,
   Mail,
@@ -14,7 +11,9 @@ import {
   Phone,
   Search,
   Send,
+  ShieldAlert,
   Sparkles,
+  Trash2,
   UserRoundCheck,
   X,
 } from "lucide-react";
@@ -57,14 +56,6 @@ type CrmLeadDetail = CrmLead & {
     author_id: string;
     created_at: string;
   }>;
-  crm_tasks: Array<{
-    id: string;
-    title: string;
-    assigned_to: string | null;
-    due_at: string | null;
-    completed_at: string | null;
-    created_at: string;
-  }>;
   crm_lead_events: Array<{
     id: string;
     event_type: string;
@@ -73,7 +64,22 @@ type CrmLeadDetail = CrmLead & {
     summary: string | null;
     created_at: string;
   }>;
+  merchant: {
+    status: string;
+    verification_status: string;
+    subscription_status: string;
+  } | null;
+  documents: Array<{ document_type: string; status: string; version: number }>;
+  caseId: string | null;
 };
+
+// Pipeline minimal : deux étapes visibles, adapté à un marché où il faut
+// être direct. "rejected"/"archived" restent accessibles via le filtre mais
+// n'apparaissent pas dans le pipeline visuel.
+const pipelineGroups: Array<{ id: "a_traiter" | "boutique_ouverte"; label: string; statuses: LeadStatus[] }> = [
+  { id: "a_traiter", label: "À traiter", statuses: ["new", "contacted", "qualified", "onboarding"] },
+  { id: "boutique_ouverte", label: "Boutique ouverte", statuses: ["converted"] },
+];
 
 const statusOptions: Array<{ value: LeadStatus; label: string }> = [
   { value: "new", label: "Nouveau" },
@@ -91,12 +97,23 @@ const priorityLabels = {
   high: "Prioritaire",
 } as const;
 
+const documentTypeLabels: Record<string, string> = {
+  national_id_front: "CNI recto",
+  national_id_back: "CNI verso",
+  passport_identity: "Passeport",
+  intent_letter: "Lettre d’intention",
+  proof_activity: "Preuve d’activité",
+  ninea: "NINEA",
+  rccm: "RCCM",
+  representative_mandate: "Mandat du représentant",
+};
+
 function statusLabel(status: LeadStatus) {
   return statusOptions.find((option) => option.value === status)?.label ?? status;
 }
 
 function formatDate(value: string | null, includeTime = false) {
-  if (!value) return "Non planifié";
+  if (!value) return "Non renseigné";
   return new Intl.DateTimeFormat("fr-FR", {
     dateStyle: "medium",
     ...(includeTime ? { timeStyle: "short" as const } : {}),
@@ -134,8 +151,11 @@ export function AdminCrm({
     });
   }, [leads, query, status]);
 
-  const counts = useMemo(
-    () => Object.fromEntries(statusOptions.map((option) => [option.value, leads.filter((lead) => lead.status === option.value).length])) as Record<LeadStatus, number>,
+  const pipelineCounts = useMemo(
+    () =>
+      Object.fromEntries(
+        pipelineGroups.map((group) => [group.id, leads.filter((lead) => group.statuses.includes(lead.status)).length]),
+      ) as Record<string, number>,
     [leads],
   );
 
@@ -143,6 +163,7 @@ export function AdminCrm({
     setBusy(true);
     setError("");
     setInvitationLink("");
+    setActionMessage("");
     try {
       const response = await fetch(`/api/admin/crm/leads/${id}`);
       const payload = await response.json();
@@ -164,7 +185,6 @@ export function AdminCrm({
     event.preventDefault();
     if (!selected) return;
     const form = new FormData(event.currentTarget);
-    const followUp = String(form.get("nextFollowUpAt") || "");
     setBusy(true);
     setError("");
     try {
@@ -174,7 +194,6 @@ export function AdminCrm({
         body: JSON.stringify({
           status: form.get("status"),
           priority: form.get("priority"),
-          nextFollowUpAt: followUp ? new Date(followUp).toISOString() : null,
         }),
       });
       const payload = await response.json();
@@ -202,51 +221,6 @@ export function AdminCrm({
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error?.message ?? "Note non enregistrée.");
       form.reset();
-      await refreshSelected();
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Une erreur est survenue.");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const addTask = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (!selected) return;
-    const form = event.currentTarget;
-    const values = new FormData(form);
-    const dueAt = String(values.get("dueAt") || "");
-    setBusy(true);
-    try {
-      const response = await fetch(`/api/admin/crm/leads/${selected.id}/tasks`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          title: values.get("title"),
-          dueAt: dueAt ? new Date(dueAt).toISOString() : null,
-        }),
-      });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error?.message ?? "Relance non enregistrée.");
-      form.reset();
-      await refreshSelected();
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Une erreur est survenue.");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const toggleTask = async (taskId: string, completed: boolean) => {
-    setBusy(true);
-    try {
-      const response = await fetch(`/api/admin/crm/tasks/${taskId}`, {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ completed }),
-      });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error?.message ?? "Relance non mise à jour.");
       await refreshSelected();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Une erreur est survenue.");
@@ -292,7 +266,7 @@ export function AdminCrm({
 
   const activateTestSubscription = async () => {
     if (!selected?.merchant_id) return;
-    const confirmed = window.confirm("Activer le premier plan SunuShop disponible pendant 30 jours pour ce commerce ? Cette action ouvrira immédiatement la publication des produits si le dossier est validé.");
+    const confirmed = window.confirm("Activer le premier plan SunuShop disponible pendant 30 jours pour ce commerce ? Cette action ouvrira immédiatement la publication des produits.");
     if (!confirmed) return;
     setBusy(true); setError(""); setActionMessage("");
     try {
@@ -312,9 +286,50 @@ export function AdminCrm({
     }
   };
 
+  const suspendMerchant = async () => {
+    if (!selected?.caseId) return;
+    const confirmed = window.confirm(`Suspendre la boutique « ${selected.business_name} » ? Elle disparaîtra immédiatement du marché et ne pourra plus vendre.`);
+    if (!confirmed) return;
+    setBusy(true); setError(""); setActionMessage("");
+    try {
+      const response = await fetch(`/api/admin/verifications/${selected.caseId}/decision`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ outcome: "suspended", reasonCode: "crm_manual_suspend" }),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error?.message ?? "Suspension impossible.");
+      setActionMessage("La boutique est suspendue. Elle n’est plus visible sur le marché.");
+      await refreshSelected();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Suspension impossible.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const deleteLead = async () => {
+    if (!selected) return;
+    const confirmed = window.confirm(`Supprimer définitivement la fiche « ${selected.business_name} » ? Cette action est irréversible.`);
+    if (!confirmed) return;
+    setBusy(true);
+    setError("");
+    try {
+      const response = await fetch(`/api/admin/crm/leads/${selected.id}`, { method: "DELETE" });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error?.message ?? "Suppression impossible.");
+      setSelected(null);
+      await reload();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Une erreur est survenue.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const exportCsv = () => {
     const rows = [
-      ["Commerce", "Contact", "Email", "Téléphone", "Ville", "Activité", "Étape", "Priorité", "Prochaine relance"],
+      ["Commerce", "Contact", "Email", "Téléphone", "Ville", "Activité", "Étape", "Priorité", "Reçu le"],
       ...filtered.map((lead) => [
         lead.business_name,
         lead.full_name,
@@ -324,10 +339,10 @@ export function AdminCrm({
         lead.business_type,
         statusLabel(lead.status),
         priorityLabels[lead.priority],
-        lead.next_follow_up_at ? formatDate(lead.next_follow_up_at, true) : "",
+        formatDate(lead.created_at, true),
       ]),
     ];
-    const blob = new Blob([`\uFEFF${rows.map((row) => row.map(csvCell).join(";")).join("\n")}`], { type: "text/csv;charset=utf-8" });
+    const blob = new Blob([`﻿${rows.map((row) => row.map(csvCell).join(";")).join("\n")}`], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
     anchor.href = url;
@@ -339,15 +354,15 @@ export function AdminCrm({
   return (
     <div className="crm-workspace">
       <section className="crm-pipeline" aria-label="Étapes du suivi commercial">
-        {statusOptions.slice(0, 5).map((option) => (
+        {pipelineGroups.map((group) => (
           <button
-            key={option.value}
+            key={group.id}
             type="button"
-            className={status === option.value ? "is-active" : ""}
-            onClick={() => setStatus(status === option.value ? "all" : option.value)}
+            className={group.statuses.includes(status as LeadStatus) ? "is-active" : ""}
+            onClick={() => setStatus(status !== "all" && group.statuses.includes(status as LeadStatus) ? "all" : group.statuses[0])}
           >
-            <span>{option.label}</span>
-            <strong>{counts[option.value]}</strong>
+            <span>{group.label}</span>
+            <strong>{pipelineCounts[group.id]}</strong>
           </button>
         ))}
       </section>
@@ -379,14 +394,14 @@ export function AdminCrm({
         {error && <p className="admin-feedback admin-feedback--error">{error}</p>}
         <div className="crm-table" role="table" aria-label="Liste des prospects">
           <div className="crm-table__head" role="row">
-            <span>Commerce</span><span>Contact</span><span>Étape</span><span>Relance</span><span />
+            <span>Commerce</span><span>Contact</span><span>Étape</span><span>Reçu le</span><span />
           </div>
           {filtered.map((lead) => (
             <button key={lead.id} type="button" className="crm-table__row" onClick={() => openLead(lead.id)} disabled={busy} role="row">
               <span data-label="Commerce"><b>{lead.business_name}</b><small>{lead.business_type || "Activité à préciser"} · {lead.city || "Ville à préciser"}</small></span>
               <span data-label="Contact"><b>{lead.full_name}</b><small>{lead.email}</small></span>
               <span data-label="Étape"><i className="crm-status" data-status={lead.status}>{statusLabel(lead.status)}</i><small>{priorityLabels[lead.priority]}</small></span>
-              <span data-label="Relance"><b>{lead.next_follow_up_at ? formatDate(lead.next_follow_up_at) : "À planifier"}</b><small>Mis à jour {formatDate(lead.updated_at)}</small></span>
+              <span data-label="Reçu le"><b>{formatDate(lead.created_at)}</b><small>Mis à jour {formatDate(lead.updated_at)}</small></span>
               <ChevronRight />
             </button>
           ))}
@@ -413,8 +428,39 @@ export function AdminCrm({
             <div className="crm-drawer__body">
               {actionMessage && <p className="admin-feedback">{actionMessage}</p>}
               {invitationLink && <section className="crm-invitation-fallback" aria-label="Lien d’accès aux documents"><div><strong>Lien sécurisé valable 7 jours</strong><small>À transmettre uniquement au commerçant concerné.</small></div><button type="button" onClick={async () => { await navigator.clipboard.writeText(invitationLink); setActionMessage("Lien sécurisé copié. Vous pouvez maintenant le transmettre au commerçant par WhatsApp."); }}><Copy /> Copier le lien</button>{selected.phone && <a href={`https://wa.me/${selected.phone.replace(/\D/g, "")}?text=${encodeURIComponent(`Bonjour, voici votre lien sécurisé SunuShop pour déposer vos documents : ${invitationLink}`)}`} target="_blank" rel="noreferrer"><MessageCircle /> Envoyer par WhatsApp</a>}</section>}
-              {!['converted', 'rejected', 'archived'].includes(selected.status) && <section className="crm-detail-card crm-onboarding-action"><div><span className="admin-kicker">Accès sécurisé</span><h3>Espace de dépôt des documents</h3><p>Envoie ou renvoie le lien permettant de créer le mot de passe. Avant validation KYC, le commerçant ne verra que son dossier.</p></div><button type="button" className="admin-primary-button" onClick={inviteToDocuments} disabled={busy}><Send /> {selected.status === "onboarding" ? "Renvoyer l’accès documents" : "Envoyer l’accès documents"}</button></section>}
-              {selected.merchant_id && <section className="crm-detail-card crm-test-subscription"><div><span className="admin-kicker">Test du parcours marchand</span><h3>Ouvrir la publication pendant 30 jours</h3><p>Cette activation est réservée aux tests. Elle fonctionne uniquement après validation des documents et reste enregistrée dans l’historique d’audit.</p></div><button type="button" className="admin-primary-button" onClick={activateTestSubscription} disabled={busy}><BadgeCheck /> Activer l’abonnement test</button></section>}
+
+              {selected.merchant_id && (
+                <section className="crm-detail-card">
+                  <div className="crm-detail-card__heading"><h3>Documents déposés</h3><BadgeCheck /></div>
+                  <p className="crm-muted">
+                    Dossier : <i className="crm-status" data-status={selected.merchant?.verification_status ?? "draft"}>{selected.merchant?.verification_status ?? "draft"}</i>
+                    {" · "}Abonnement : <i className="crm-status" data-status={selected.merchant?.subscription_status ?? "pending"}>{selected.merchant?.subscription_status ?? "pending"}</i>
+                  </p>
+                  {selected.documents.length > 0 ? (
+                    <ul className="crm-document-list">
+                      {selected.documents.map((doc) => (
+                        <li key={`${doc.document_type}-${doc.version}`}>
+                          <span>{documentTypeLabels[doc.document_type] ?? doc.document_type}</span>
+                          <i className="crm-status" data-status={doc.status}>{doc.status}</i>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="crm-muted">Aucun document déposé pour le moment.</p>
+                  )}
+                  {selected.merchant?.status !== "suspended" ? (
+                    <button type="button" className="admin-danger-button" onClick={suspendMerchant} disabled={busy || !selected.caseId}>
+                      <ShieldAlert /> Suspendre cette boutique
+                    </button>
+                  ) : (
+                    <p className="admin-feedback admin-feedback--error">Cette boutique est suspendue.</p>
+                  )}
+                </section>
+              )}
+
+              {!['converted', 'rejected', 'archived'].includes(selected.status) && <section className="crm-detail-card crm-onboarding-action"><div><span className="admin-kicker">Accès sécurisé</span><h3>Espace de dépôt des documents</h3><p>Envoie ou renvoie le lien permettant de créer le mot de passe.</p></div><button type="button" className="admin-primary-button" onClick={inviteToDocuments} disabled={busy}><Send /> {selected.status === "onboarding" ? "Renvoyer l’accès documents" : "Envoyer l’accès documents"}</button></section>}
+              {selected.merchant_id && <section className="crm-detail-card crm-test-subscription"><div><span className="admin-kicker">Test du parcours marchand</span><h3>Ouvrir la publication pendant 30 jours</h3><p>Cette activation est réservée aux tests. Elle reste enregistrée dans l’historique d’audit.</p></div><button type="button" className="admin-primary-button" onClick={activateTestSubscription} disabled={busy}><BadgeCheck /> Activer l’abonnement test</button></section>}
+
               <section className="crm-detail-card">
                 <h3>Informations</h3>
                 <dl>
@@ -426,26 +472,13 @@ export function AdminCrm({
               </section>
 
               <form className="crm-detail-card crm-follow-up-form" onSubmit={updateLead}>
-                <h3>Prochaine étape</h3>
+                <h3>Étape</h3>
                 <div>
                   <label>Étape<select name="status" defaultValue={selected.status}>{statusOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
                   <label>Priorité<select name="priority" defaultValue={selected.priority}><option value="low">À suivre</option><option value="normal">Normale</option><option value="high">Prioritaire</option></select></label>
                 </div>
-                <label>Prochaine relance<input name="nextFollowUpAt" type="datetime-local" defaultValue={selected.next_follow_up_at?.slice(0, 16) ?? ""} /></label>
-                <button className="admin-primary-button" disabled={busy}>Enregistrer le suivi <ArrowUpRight /></button>
+                <button className="admin-primary-button" disabled={busy}>Enregistrer <ArrowUpRight /></button>
               </form>
-
-              <section className="crm-detail-card">
-                <div className="crm-detail-card__heading"><h3>Relances</h3><CalendarClock /></div>
-                <div className="crm-task-list">
-                  {selected.crm_tasks?.map((task) => (
-                    <button key={task.id} type="button" className={task.completed_at ? "is-complete" : ""} onClick={() => toggleTask(task.id, !task.completed_at)} disabled={busy}>
-                      <span>{task.completed_at ? <Check /> : <CalendarClock />}</span><span><b>{task.title}</b><small>{task.due_at ? formatDate(task.due_at, true) : "Sans échéance"}</small></span>
-                    </button>
-                  ))}
-                </div>
-                <form className="crm-inline-form" onSubmit={addTask}><input name="title" required minLength={2} placeholder="Ex. Appeler pour présenter l’offre" /><input name="dueAt" type="datetime-local" /><button disabled={busy}><ClipboardCheck /> Planifier</button></form>
-              </section>
 
               <section className="crm-detail-card">
                 <div className="crm-detail-card__heading"><h3>Notes de suivi</h3><UserRoundCheck /></div>
@@ -454,6 +487,18 @@ export function AdminCrm({
                   {[...(selected.crm_lead_notes ?? [])].sort((a, b) => b.created_at.localeCompare(a.created_at)).map((note) => <article key={note.id}><p>{note.body}</p><small>{formatDate(note.created_at, true)}</small></article>)}
                   {!selected.crm_lead_notes?.length && <p className="crm-muted">Aucune note pour le moment.</p>}
                 </div>
+              </section>
+
+              <section className="crm-detail-card crm-danger-zone">
+                <h3>Supprimer ce prospect</h3>
+                {selected.merchant_id ? (
+                  <p className="crm-muted">Ce prospect a une boutique — suspendez-la plutôt que de supprimer la fiche.</p>
+                ) : (
+                  <p className="crm-muted">Action définitive : la fiche, ses notes et son historique seront supprimés.</p>
+                )}
+                <button type="button" className="admin-danger-button" onClick={deleteLead} disabled={busy || Boolean(selected.merchant_id)}>
+                  <Trash2 /> Supprimer ce prospect
+                </button>
               </section>
             </div>
           </aside>

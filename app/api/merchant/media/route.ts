@@ -2,7 +2,7 @@ import { requireAdminClient, requireUser } from "@/lib/api/auth";
 import { ApiError } from "@/lib/api/errors";
 import { apiFailure, apiSuccess } from "@/lib/api/response";
 import { validateProductMediaFile } from "@/lib/domain/product-media-file";
-import { requireApprovedMerchantAccess } from "@/lib/api/merchant-access";
+import { requireActiveMerchantAccess } from "@/lib/api/merchant-access";
 
 export const runtime = "nodejs";
 
@@ -17,7 +17,7 @@ export async function POST(request: Request) {
     if (kind !== "logo" && kind !== "cover") {
       throw new ApiError(400, "MEDIA_KIND_INVALID", "Type d’image invalide.");
     }
-    await requireApprovedMerchantAccess(merchantId, ["owner", "manager", "catalog"]);
+    await requireActiveMerchantAccess(merchantId, ["owner", "manager", "catalog"]);
     const { data: membership } = await supabase
       .from("merchant_members")
       .select("role")

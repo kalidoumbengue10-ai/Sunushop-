@@ -1,6 +1,6 @@
 import { requireAdminClient } from "@/lib/api/auth";
 import { ApiError } from "@/lib/api/errors";
-import { requireApprovedMerchantAccess } from "@/lib/api/merchant-access";
+import { requireActiveMerchantAccess } from "@/lib/api/merchant-access";
 import { apiFailure, apiSuccess } from "@/lib/api/response";
 import { SENEGAL_REGIONS } from "@/lib/domain/merchant-ui";
 import { deliveryRegionInputSchema } from "@/lib/domain/schemas";
@@ -12,7 +12,7 @@ export async function PUT(request: Request) {
     if (!(SENEGAL_REGIONS as readonly string[]).includes(input.region)) {
       throw new ApiError(400, "DELIVERY_REGION_INVALID", "Choisissez une région du Sénégal.");
     }
-    const { supabase } = await requireApprovedMerchantAccess(input.merchantId, ["owner", "manager", "fulfillment"]);
+    const { supabase } = await requireActiveMerchantAccess(input.merchantId, ["owner", "manager", "fulfillment"]);
     const admin = requireAdminClient();
     const { data: existing, error: existingError } = await admin
       .from("delivery_zones")

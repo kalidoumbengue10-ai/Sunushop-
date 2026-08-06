@@ -107,8 +107,8 @@ export default async function MarchandPage() {
             <section className="mvp-card mvp-card--full access-required-card">
               <span className="mvp-eyebrow">Accès sur invitation</span>
               <h1 className="mvp-title">Aucun commerce ni mission ne vous est encore associé.</h1>
-              <p className="mvp-lede">Un compte commerçant est ouvert seulement après étude du dossier. Un accès livreur est créé par le commerçant qui vous confie ses livraisons.</p>
-              <div className="mvp-actions"><Link className="mvp-button" href="/devenir-marchand">Déposer une candidature</Link><Link className="mvp-button mvp-button--secondary" href="/">Retour à l’accueil</Link></div>
+              <p className="mvp-lede">Créez votre boutique en une seule fois. Un accès livreur est créé par le commerçant qui vous confie ses livraisons.</p>
+              <div className="mvp-actions"><Link className="mvp-button" href="/creer-ma-boutique">Créer ma boutique</Link><Link className="mvp-button mvp-button--secondary" href="/">Retour à l’accueil</Link></div>
             </section>
           </div>
         </main>

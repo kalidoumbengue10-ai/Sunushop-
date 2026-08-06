@@ -1,5 +1,5 @@
 import { requireAdminClient } from "@/lib/api/auth";
-import { requireApprovedMerchantAccess } from "@/lib/api/merchant-access";
+import { requireActiveMerchantAccess } from "@/lib/api/merchant-access";
 import { apiFailure, apiSuccess } from "@/lib/api/response";
 import { merchantAnalyticsQuerySchema } from "@/lib/domain/schemas";
 
@@ -29,7 +29,7 @@ export async function GET(request: Request) {
       to: url.searchParams.get("to"),
       granularity: url.searchParams.get("granularity") ?? "day",
     });
-    await requireApprovedMerchantAccess(input.merchantId, ["owner", "manager"]);
+    await requireActiveMerchantAccess(input.merchantId, ["owner", "manager"]);
     const admin = requireAdminClient();
     const duration = new Date(input.to).getTime() - new Date(input.from).getTime();
     const previousFrom = new Date(new Date(input.from).getTime() - duration).toISOString();

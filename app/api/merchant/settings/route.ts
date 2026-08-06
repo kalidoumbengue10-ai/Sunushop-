@@ -1,4 +1,4 @@
-import { requireApprovedMerchantAccess } from "@/lib/api/merchant-access";
+import { requireActiveMerchantAccess } from "@/lib/api/merchant-access";
 import { apiFailure, apiSuccess } from "@/lib/api/response";
 import { merchantSettingsSchema } from "@/lib/domain/schemas";
 
@@ -6,7 +6,7 @@ export async function PATCH(request: Request) {
   const requestId = crypto.randomUUID();
   try {
     const input = merchantSettingsSchema.parse(await request.json());
-    const { user, admin } = await requireApprovedMerchantAccess(input.merchantId, ["owner", "manager"]);
+    const { user, admin } = await requireActiveMerchantAccess(input.merchantId, ["owner", "manager"]);
     const { error } = await admin
       .from("merchant_accounts")
       .update({

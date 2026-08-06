@@ -1,6 +1,6 @@
 import { requireAdminClient, requireUser } from "@/lib/api/auth";
 import { ApiError } from "@/lib/api/errors";
-import { requireApprovedMerchantAccess } from "@/lib/api/merchant-access";
+import { requireActiveMerchantAccess } from "@/lib/api/merchant-access";
 import { apiFailure, apiSuccess } from "@/lib/api/response";
 
 async function requireMedia(productId: string, mediaId: string) {
@@ -13,7 +13,7 @@ async function requireMedia(productId: string, mediaId: string) {
     .maybeSingle();
   if (error) throw error;
   if (!data) throw new ApiError(404, "PRODUCT_MEDIA_NOT_FOUND", "Photo introuvable.");
-  await requireApprovedMerchantAccess(data.merchant_id, ["owner", "manager", "catalog"]);
+  await requireActiveMerchantAccess(data.merchant_id, ["owner", "manager", "catalog"]);
   return data;
 }
 
