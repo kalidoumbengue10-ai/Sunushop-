@@ -101,14 +101,17 @@ export function CheckoutFlow() {
           setSelectedZones((current) =>
             current[group.merchantId] ? current : { ...current, [group.merchantId]: shop.deliveryZones[0]?.id ?? "" },
           );
-          setMethodKinds((current) =>
-            current[group.merchantId]
-              ? current
-              : {
-                  ...current,
-                  [group.merchantId]: shop.deliveryZones.length > 0 ? "merchant_delivery" : "pickup",
-                },
-          );
+          setMethodKinds((current) => {
+            const wanted = current[group.merchantId];
+            // Le brouillon restauré (readCheckoutDraft) peut pointer vers "pickup" pour une
+            // boutique dont le retrait n'est plus activé : on retombe alors sur la livraison
+            // pour éviter d'envoyer un methodKind invalide et de rendre des champs pickup absents.
+            if (wanted === "pickup" && !shop.pickup?.enabled) {
+              return { ...current, [group.merchantId]: "merchant_delivery" };
+            }
+            if (wanted) return current;
+            return { ...current, [group.merchantId]: shop.pickup?.enabled ? "pickup" : "merchant_delivery" };
+          });
           setPaymentMethods((current) =>
             current[group.merchantId]
               ? current
@@ -150,39 +153,56 @@ export function CheckoutFlow() {
   }, []);
 
   // Reprise après retour d'email de confirmation : ré-hydrate le brouillon puis avance à la Confirmation (sans soumettre).
+  // Attend que le panier soit hydraté (cart.ready) avant de fusionner : sinon cart.merge()
+  // fusionne un panier local encore vide avec le serveur et écrase le vrai panier (écran vide).
   useEffect(() => {
-    if (resumedRef.done || authenticated !== true) return;
+    if (resumedRef.done || authenticated !== true || !cart.ready) return;
     resumedRef.done = true;
     const draft = readCheckoutDraft();
     if (!draft) return;
+    const draftZones = Object.fromEntries(draft.groups.filter((group) => group.deliveryZoneId).map((group) => [group.merchantId, group.deliveryZoneId as string]));
+    const draftMethodKinds = Object.fromEntries(draft.groups.map((group) => [group.merchantId, group.methodKind]));
     setRecipient(draft.recipient);
-    setSelectedZones(Object.fromEntries(draft.groups.filter((group) => group.deliveryZoneId).map((group) => [group.merchantId, group.deliveryZoneId as string])));
-    setMethodKinds(Object.fromEntries(draft.groups.map((group) => [group.merchantId, group.methodKind])));
+    setSelectedZones(draftZones);
+    setMethodKinds(draftMethodKinds);
     setPaymentMethods(Object.fromEntries(draft.groups.map((group) => [group.merchantId, group.paymentMethod])));
     setPayOnline(draft.groups.some((group) => group.paymentMethod === "paytech"));
-    void cart.merge().then(() => setStep("confirmation"));
+    void cart.merge().then(() => requestQuote(draftMethodKinds, draftZones)).then(() => setStep("confirmation"));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authenticated]);
+  }, [authenticated, cart.ready]);
 
-  const buildQuoteGroups = () =>
-    groups.map((group) => {
-      const methodKind = methodKinds[group.merchantId] ?? "merchant_delivery";
+  const buildQuoteGroups = (
+    methodKindsOverride?: Record<string, "pickup" | "merchant_delivery">,
+    selectedZonesOverride?: Record<string, string>,
+  ) => {
+    const kinds = methodKindsOverride ?? methodKinds;
+    const zones = selectedZonesOverride ?? selectedZones;
+    return groups.map((group) => {
+      const methodKind = kinds[group.merchantId] ?? "merchant_delivery";
       return {
         merchantId: group.merchantId,
         methodKind,
-        deliveryZoneId: methodKind === "pickup" ? undefined : selectedZones[group.merchantId],
+        deliveryZoneId: methodKind === "pickup" ? undefined : zones[group.merchantId],
         items: group.lines.map((line) => ({ variantId: line.product.variant.id, quantity: line.quantity })),
       };
     });
+  };
 
-  const requestQuote = async () => {
+  // methodKindsOverride/selectedZonesOverride permettent d'appeler le devis avec des valeurs
+  // qui viennent d'être calculées (ex. juste après setMethodKinds) sans attendre le prochain
+  // render : setState est asynchrone, donc lire methodKinds/selectedZones ici pourrait encore
+  // renvoyer l'état précédent.
+  const requestQuote = async (
+    methodKindsOverride?: Record<string, "pickup" | "merchant_delivery">,
+    selectedZonesOverride?: Record<string, string>,
+  ) => {
     setError("");
     setBusy(true);
     try {
       const response = await fetch("/api/cart/quote", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ groups: buildQuoteGroups() }),
+        body: JSON.stringify({ groups: buildQuoteGroups(methodKindsOverride, selectedZonesOverride) }),
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload?.error?.message ?? "Le devis n’a pas pu être calculé.");
@@ -373,9 +393,9 @@ export function CheckoutFlow() {
                   <ShopContact
                     phone={shop.phone}
                     email={shop.email}
-                    addressLine={shop.pickup.addressLine}
-                    latitude={shop.pickup.latitude}
-                    longitude={shop.pickup.longitude}
+                    addressLine={shop.pickup?.addressLine}
+                    latitude={shop.pickup?.latitude}
+                    longitude={shop.pickup?.longitude}
                   />
                 )}
               </div>
