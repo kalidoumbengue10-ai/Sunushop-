@@ -103,6 +103,34 @@
 .quantity-stepper output{min-width:24px;text-align:center;font-size:13px;font-weight:800}
 .product-add-button{width:100%;margin-top:10px}
 
+/* Carte produit — déclencheur photo/titre vers la modale de détail */
+.mvp-product__image-trigger{position:relative;display:block;width:100%;padding:0;border:0;background:transparent;cursor:pointer}
+.mvp-product__photo-count{position:absolute;right:10px;bottom:10px;padding:4px 9px;border-radius:999px;background:rgba(23,39,31,.75);color:#fff;font-size:11px;font-weight:800}
+.mvp-product__title-trigger{padding:0;border:0;background:transparent;text-align:left;cursor:pointer}
+.mvp-product__title-trigger h3{margin:0}
+.mvp-product__description-preview{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+
+/* Modale de détail produit — galerie photo, description complète */
+.product-modal-backdrop{position:fixed;inset:0;z-index:50;display:grid;place-items:center;padding:20px;background:rgba(15,26,20,.55)}
+.product-modal{position:relative;display:grid;grid-template-columns:1fr 1fr;gap:0;width:min(920px,100%);max-height:min(720px,90vh);overflow:hidden;border-radius:22px;background:#fffdfa;box-shadow:0 30px 80px rgba(15,26,20,.35)}
+.product-modal__close{position:absolute;top:14px;right:14px;z-index:2;display:grid;place-items:center;width:36px;height:36px;border:0;border-radius:50%;background:rgba(255,253,250,.9);color:#173f2e}
+.product-modal__close svg{width:16px}
+.product-modal__gallery{position:relative;background:#e9e6dc}
+.product-modal__main-image{width:100%;height:100%;min-height:280px;object-fit:cover}
+.product-modal__placeholder{display:grid;place-items:center;color:#a7b2ac}
+.product-modal__placeholder svg{width:40px;height:40px}
+.product-modal__nav{position:absolute;top:50%;transform:translateY(-50%);display:grid;place-items:center;width:36px;height:36px;border:0;border-radius:50%;background:rgba(255,253,250,.9);color:#173f2e}
+.product-modal__nav svg{width:16px}
+.product-modal__nav--prev{left:12px}
+.product-modal__nav--next{right:12px}
+.product-modal__thumbnails{position:absolute;left:0;right:0;bottom:0;display:flex;gap:6px;padding:10px;overflow-x:auto;background:linear-gradient(transparent,rgba(15,26,20,.35))}
+.product-modal__thumbnails img{width:48px;height:48px;flex:none;border-radius:9px;object-fit:cover;cursor:pointer;opacity:.65;border:2px solid transparent}
+.product-modal__thumbnails img.is-active{opacity:1;border-color:#fff}
+.product-modal__body{display:grid;align-content:start;gap:8px;padding:26px;overflow-y:auto}
+.product-modal__body h2{margin:0;font:700 26px/1.1 Georgia,serif}
+.product-modal__description{color:#42564c;line-height:1.7;white-space:pre-wrap}
+@media(max-width:720px){.product-modal{grid-template-columns:1fr;max-height:92vh}.product-modal__gallery{min-height:220px}}
+
 /* Tiroir panier */
 .cart-drawer-backdrop{position:fixed;inset:0;z-index:39;background:rgba(15,26,20,.4);opacity:0;pointer-events:none;transition:opacity .2s ease}
 .cart-drawer-backdrop.is-open{opacity:1;pointer-events:auto}

@@ -84,9 +84,13 @@ function mapProduct(
     });
   const variant = variants.find((item) => item.availableQuantity > 0) ?? variants[0];
   if (!variant) return null;
-  const media = [...(product.product_media ?? [])].sort(
+  const sortedMedia = [...(product.product_media ?? [])].sort(
     (a, b) => a.position - b.position,
-  )[0];
+  );
+  const media = sortedMedia[0];
+  const imageUrls = sortedMedia.map(
+    (item) => client.storage.from(item.storage_bucket).getPublicUrl(item.storage_path).data.publicUrl,
+  );
 
   return {
     id: product.id,
@@ -118,6 +122,7 @@ function mapProduct(
       ? client.storage.from(media.storage_bucket).getPublicUrl(media.storage_path)
           .data.publicUrl
       : null,
+    imageUrls,
   };
 }
 

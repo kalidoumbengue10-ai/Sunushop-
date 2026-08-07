@@ -29,6 +29,7 @@ export type CatalogItem = {
     availableQuantity: number;
   }>;
   imageUrl: string | null;
+  imageUrls: string[];
 };
 
 export type PublicShop = {
