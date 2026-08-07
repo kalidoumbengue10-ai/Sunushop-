@@ -37,7 +37,7 @@ function PaiementSuccesContent() {
 
   useEffect(() => {
     if (!ref) {
-      setError("Référence de paiement manquante dans le lien de retour. Si le paiement a été débité, retrouvez-le dans « Mes commandes ».");
+      setError("Référence de paiement manquante dans le lien de retour. Si le paiement a été débité, retrouvez-le dans « Mon espace ».");
     }
   }, [ref]);
 
@@ -113,7 +113,7 @@ function PaiementSuccesContent() {
           SunuShop jusqu’à ce que vous confirmiez avoir reçu votre commande.
         </p>
         {payload.orderBatchId && (
-          <Link className="mvp-button" href="/commandes">
+          <Link className="mvp-button" href="/client">
             Voir mes commandes
           </Link>
         )}
@@ -135,7 +135,7 @@ function PaiementSuccesContent() {
           <button type="button" className="mvp-button" onClick={() => window.location.reload()}>
             Actualiser
           </button>
-          <Link href="/commandes" className="mvp-button mvp-button--secondary">
+          <Link href="/client" className="mvp-button mvp-button--secondary">
             Voir mes commandes
           </Link>
         </div>
