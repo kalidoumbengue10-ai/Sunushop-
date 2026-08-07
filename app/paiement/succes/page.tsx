@@ -26,6 +26,7 @@ export default function PaiementSuccesPage({
     if (!ref) return;
     let cancelled = false;
     let attempts = 0;
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
 
     const poll = async () => {
       try {
@@ -35,17 +36,34 @@ export default function PaiementSuccesPage({
         if (cancelled) return;
         setPayload(body.data as StatusPayload);
         attempts += 1;
+        // Sur mobile, le paiement se termine dans l'app Wave/OM via deep
+        // link : le navigateur passe en arrière-plan et les setTimeout y
+        // sont ralentis ou suspendus. On complète le comptage par tentatives
+        // avec une reprise explicite au retour au premier plan (visibilitychange).
         if (body.data.status === "pending" && attempts < 20) {
-          setTimeout(poll, 3000);
+          timeoutId = setTimeout(poll, 3000);
         }
       } catch (caught) {
         if (!cancelled) setError(caught instanceof Error ? caught.message : "Statut indisponible.");
       }
     };
 
+    const onVisible = () => {
+      if (document.visibilityState !== "visible" || cancelled) return;
+      // Retour au premier plan (ex. après le paiement dans l'app Wave) :
+      // on relance immédiatement une vérification et on réinitialise le
+      // compteur de tentatives, sans attendre le prochain setTimeout.
+      if (timeoutId) clearTimeout(timeoutId);
+      attempts = 0;
+      poll();
+    };
+
     poll();
+    document.addEventListener("visibilitychange", onVisible);
     return () => {
       cancelled = true;
+      if (timeoutId) clearTimeout(timeoutId);
+      document.removeEventListener("visibilitychange", onVisible);
     };
   }, [ref]);
 
@@ -90,10 +108,18 @@ export default function PaiementSuccesPage({
         <h1 className="mvp-title">Paiement en cours de confirmation</h1>
         <p>
           Nous attendons la confirmation définitive de PayTech. Cette page se
-          mettra à jour automatiquement — vous pouvez aussi retrouver votre
-          commande plus tard depuis votre espace.
+          met à jour automatiquement — si vous avez terminé le paiement dans
+          l’application Wave ou Orange Money, revenez sur cet onglet ou
+          actualisez pour voir le résultat.
         </p>
-        <Link href="/commandes">Voir mes commandes</Link>
+        <div className="mvp-actions">
+          <button type="button" className="mvp-button" onClick={() => window.location.reload()}>
+            Actualiser
+          </button>
+          <Link href="/commandes" className="mvp-button mvp-button--secondary">
+            Voir mes commandes
+          </Link>
+        </div>
       </div>
     );
   }
