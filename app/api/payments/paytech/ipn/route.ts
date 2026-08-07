@@ -23,12 +23,31 @@ export async function POST(request: Request) {
   // 1. Corps brut AVANT tout parse : le hash d'idempotence et, en théorie,
   // une vérification de signature au format brut dépendent de ce texte.
   const rawBody = await request.text();
+  const contentType = request.headers.get("content-type") ?? "";
 
+  // Le PDF officiel PayTech (page 9, IpnController.java) lit l'IPN via
+  // req.getParameter(...) — c'est-à-dire du application/x-www-form-urlencoded,
+  // pas du JSON, malgré les exemples JSON affichés ailleurs dans la doc web.
+  // On se fie au contenu réel plutôt qu'au header Content-Type (potentiellement
+  // absent/incorrect) : on tente JSON d'abord (si le corps commence par '{'),
+  // sinon form-urlencoded, qui est le format confirmé par le SDK officiel.
   let payload: PaytechIpnPayload;
   try {
-    payload = JSON.parse(rawBody);
-  } catch {
+    const trimmed = rawBody.trim();
+    if (trimmed.startsWith("{")) {
+      payload = JSON.parse(trimmed);
+    } else {
+      payload = Object.fromEntries(new URLSearchParams(rawBody)) as PaytechIpnPayload;
+    }
+  } catch (parseError) {
+    console.error("[paytech_ipn] unparseable body", { contentType, bodyPreview: rawBody.slice(0, 500), parseError });
     return jsonError(400);
+  }
+
+  if (!payload.type_event && !payload.ref_command) {
+    // Corps vide/inattendu : on log intégralement pour diagnostiquer sans
+    // jamais faire confiance à un format supposé.
+    console.error("[paytech_ipn] empty or unrecognized payload", { contentType, bodyPreview: rawBody.slice(0, 500) });
   }
 
   // 2. Signature HMAC-SHA256 constant-time -> 400 si KO. Aucun effet de
@@ -106,7 +125,9 @@ type AdminClient = ReturnType<typeof requireAdminClient>;
 async function handleEvent(admin: AdminClient, typeEvent: string, payload: PaytechIpnPayload) {
   const refCommand = String(payload.ref_command ?? "");
   const token = String(payload.token ?? "");
-  const itemPrice = Number(payload.item_price ?? payload.final_item_price ?? 0);
+  // Priorité à final_item_price (prix après promotion éventuelle), cohérent
+  // avec le calcul HMAC officiel PayTech (final_item_price || item_price).
+  const itemPrice = Number(payload.final_item_price ?? payload.item_price ?? 0);
 
   switch (typeEvent) {
     case "sale_complete": {

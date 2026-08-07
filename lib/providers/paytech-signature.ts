@@ -51,7 +51,10 @@ export function verifyPaytechSignature(payload: PaytechIpnPayload): boolean {
   const config = getPaytechConfig();
   if (!config) return false;
 
-  const amount = String(payload.item_price ?? "");
+  // L'exemple officiel PayTech calcule le HMAC avec `final_item_price ||
+  // item_price` — final_item_price prime s'il est présent (cas des
+  // promotions), sinon on retombe sur item_price.
+  const amount = String(payload.final_item_price ?? payload.item_price ?? "");
   const refCommand = String(payload.ref_command ?? "");
 
   if (payload.hmac_compute) {
