@@ -71,13 +71,14 @@ export function MerchantProductWizard({ merchantId, categories, products, delive
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [confirmNoVariants, setConfirmNoVariants] = useState(false);
 
   const sellableStock = useMemo(() => variants.reduce((sum, variant) => sum + Math.max(0, variant.stock - variant.reserved), 0), [variants]);
 
   const reset = () => {
     setStep(0); setProductId(undefined); setCategoryId(categories[0]?.id ?? "");
     setTitle(""); setDescription(""); setVariants([emptyVariant()]); setPhotos([]);
-    setOptionOneValues(""); setOptionTwoValues(""); setMessage(""); setError("");
+    setOptionOneValues(""); setOptionTwoValues(""); setMessage(""); setError(""); setConfirmNoVariants(false);
   };
 
   const editProduct = (product: MerchantProductEditor) => {
@@ -99,7 +100,7 @@ export function MerchantProductWizard({ merchantId, categories, products, delive
         lowStockThreshold: inventory?.low_stock_threshold ?? 5, active: true,
       };
     }));
-    setStep(1); setMessage(""); setError("");
+    setStep(1); setMessage(""); setError(""); setConfirmNoVariants(false);
   };
 
   const createDraft = async (event: FormEvent) => {
@@ -111,6 +112,7 @@ export function MerchantProductWizard({ merchantId, categories, products, delive
   };
 
   const generateMatrix = () => {
+    setConfirmNoVariants(false);
     const first = optionOneValues.split(",").map((value) => value.trim()).filter(Boolean);
     const second = optionTwoValues.split(",").map((value) => value.trim()).filter(Boolean);
     const base = variants[0] ?? emptyVariant();
@@ -123,8 +125,16 @@ export function MerchantProductWizard({ merchantId, categories, products, delive
 
   const updateVariant = (index: number, patch: Partial<VariantEditor>) => setVariants((current) => current.map((variant, position) => position === index ? { ...variant, ...patch } : variant));
 
+  const hasNoAttributes = variants.every((variant) => Object.keys(variant.attributes).length === 0);
+
   const saveVariants = async () => {
     if (!productId) return;
+    if (hasNoAttributes && !confirmNoVariants) {
+      setError("Aucune taille, couleur ou autre option définie pour ce produit. Si c’est volontaire (produit sans variante), cliquez à nouveau sur « Enregistrer » pour confirmer.");
+      setConfirmNoVariants(true);
+      return;
+    }
+    setConfirmNoVariants(false);
     setBusy(true); setError("");
     const response = await fetch(`/api/merchant/products/${productId}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({
       categoryId, title, description,
@@ -251,7 +261,7 @@ export function MerchantProductWizard({ merchantId, categories, products, delive
       <div className="merchant-wizard-steps">{["Informations", "Variantes et stock", "Photos", "Vérification"].map((label, index) => <span className={step === index + 1 ? "is-active" : step > index + 1 ? "is-complete" : ""} key={label}><b>{index + 1}</b>{label}</span>)}</div>
       {message && <p className="mvp-alert">{message}</p>}{error && <p className="mvp-alert mvp-alert--error">{error}</p>}
       {step === 1 && <form className="mvp-form" onSubmit={productId ? (event) => { event.preventDefault(); setStep(2); } : createDraft}><div className="mvp-form__grid"><label className="mvp-field">Nom du produit<input value={title} onChange={(event) => setTitle(event.target.value)} required /></label><label className="mvp-field">Catégorie<select value={categoryId} onChange={(event) => setCategoryId(event.target.value)} required>{categories.map((category) => <option value={category.id} key={category.id}>{category.name}</option>)}</select></label></div><label className="mvp-field">Description<textarea rows={5} value={description} onChange={(event) => setDescription(event.target.value)} minLength={10} required /></label><button className="mvp-button" disabled={busy}>{busy ? "Enregistrement…" : "Continuer vers les variantes"}</button></form>}
-      {step === 2 && <div className="mvp-form"><div className="variant-builder"><h3>Générer les combinaisons</h3><p>Définissez jusqu’à deux axes d’attributs (ex. Taille et Couleur), laissez les valeurs vides pour un produit sans option.</p><div className="mvp-form__grid"><label className="mvp-field">Axe 1 (ex. Taille)<input value={optionOne} onChange={(event) => setOptionOne(event.target.value)} /></label><label className="mvp-field">Valeurs de l’axe 1, séparées par des virgules<input value={optionOneValues} onChange={(event) => setOptionOneValues(event.target.value)} placeholder="S, M, L" /></label><label className="mvp-field">Axe 2 (ex. Couleur)<input value={optionTwo} onChange={(event) => setOptionTwo(event.target.value)} /></label><label className="mvp-field">Valeurs de l’axe 2, séparées par des virgules<input value={optionTwoValues} onChange={(event) => setOptionTwoValues(event.target.value)} placeholder="Noir, Blanc" /></label></div><button className="mvp-button mvp-button--secondary" onClick={generateMatrix}>Générer la matrice</button></div><div className="variant-table-wrap"><table className="mvp-table variant-table"><thead><tr><th>Variante</th><th>Prix</th><th>Stock physique</th><th>Réservé</th><th>Seuil d’alerte</th><th>SKU facultatif</th></tr></thead><tbody>{variants.map((variant, index) => <tr key={`${variant.title}-${index}`}><td data-label="Variante"><strong>{variant.title}</strong></td><td data-label="Prix"><input aria-label={`Prix ${variant.title}`} type="number" min="0" value={variant.priceXof} onChange={(event) => updateVariant(index, { priceXof: Number(event.target.value) })} /></td><td data-label="Stock physique"><input aria-label={`Stock ${variant.title}`} type="number" min={variant.reserved} value={variant.stock} onChange={(event) => updateVariant(index, { stock: Number(event.target.value) })} /></td><td data-label="Réservé">{variant.reserved}</td><td data-label="Seuil d’alerte"><input aria-label={`Seuil ${variant.title}`} type="number" min="0" value={variant.lowStockThreshold} onChange={(event) => updateVariant(index, { lowStockThreshold: Number(event.target.value) })} /></td><td data-label="SKU facultatif"><input aria-label={`SKU ${variant.title}`} value={variant.sku} placeholder="Généré automatiquement" onChange={(event) => updateVariant(index, { sku: event.target.value })} /></td></tr>)}</tbody></table></div><p><strong>{sellableStock}</strong> unité(s) disponibles à la vente, après réservations.</p><button className="mvp-button" disabled={busy} onClick={saveVariants}>{busy ? "Enregistrement…" : "Enregistrer et ajouter les photos"}</button></div>}
+      {step === 2 && <div className="mvp-form"><div className="variant-builder"><h3>Générer les combinaisons</h3><p>Définissez jusqu’à deux axes d’attributs (ex. Taille et Couleur), laissez les valeurs vides pour un produit sans option.</p><div className="mvp-form__grid"><label className="mvp-field">Axe 1 (ex. Taille)<input value={optionOne} onChange={(event) => setOptionOne(event.target.value)} /></label><label className="mvp-field">Valeurs de l’axe 1, séparées par des virgules<input value={optionOneValues} onChange={(event) => setOptionOneValues(event.target.value)} placeholder="S, M, L" /></label><label className="mvp-field">Axe 2 (ex. Couleur)<input value={optionTwo} onChange={(event) => setOptionTwo(event.target.value)} /></label><label className="mvp-field">Valeurs de l’axe 2, séparées par des virgules<input value={optionTwoValues} onChange={(event) => setOptionTwoValues(event.target.value)} placeholder="Noir, Blanc" /></label></div><button className="mvp-button mvp-button--secondary" onClick={generateMatrix}>Générer la matrice</button></div><div className="variant-table-wrap"><table className="mvp-table variant-table"><thead><tr><th>Variante</th><th>Prix</th><th>Stock physique</th><th>Réservé</th><th>Seuil d’alerte</th><th>SKU facultatif</th></tr></thead><tbody>{variants.map((variant, index) => <tr key={`${variant.title}-${index}`}><td data-label="Variante"><strong>{variant.title}</strong></td><td data-label="Prix"><input aria-label={`Prix ${variant.title}`} type="number" min="0" value={variant.priceXof} onChange={(event) => updateVariant(index, { priceXof: Number(event.target.value) })} /></td><td data-label="Stock physique"><input aria-label={`Stock ${variant.title}`} type="number" min={variant.reserved} value={variant.stock} onChange={(event) => updateVariant(index, { stock: Number(event.target.value) })} /></td><td data-label="Réservé">{variant.reserved}</td><td data-label="Seuil d’alerte"><input aria-label={`Seuil ${variant.title}`} type="number" min="0" value={variant.lowStockThreshold} onChange={(event) => updateVariant(index, { lowStockThreshold: Number(event.target.value) })} /></td><td data-label="SKU facultatif"><input aria-label={`SKU ${variant.title}`} value={variant.sku} placeholder="Généré automatiquement" onChange={(event) => updateVariant(index, { sku: event.target.value })} /></td></tr>)}</tbody></table></div><p><strong>{sellableStock}</strong> unité(s) disponibles à la vente, après réservations.</p><button className="mvp-button" disabled={busy} onClick={saveVariants}>{busy ? "Enregistrement…" : confirmNoVariants ? "Confirmer sans taille/couleur" : "Enregistrer et ajouter les photos"}</button></div>}
       {step === 3 && <div className="merchant-photo-step">
         <div className="merchant-photo-intro"><span><Images /></span><div><h3>Ajoutez les photos du produit</h3><p>La première photo devient l’image principale visible dans la boutique. Ajoutez jusqu’à 8 photos.</p></div><strong>{photos.length}/8</strong></div>
         <button
