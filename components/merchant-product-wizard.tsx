@@ -111,16 +111,30 @@ export function MerchantProductWizard({ merchantId, categories, products, delive
     setProductId(payload.data.productId); setVariants([{ ...emptyVariant(), id: payload.data.variantId }]); setStep(2); setMessage("Brouillon enregistré automatiquement.");
   };
 
-  const generateMatrix = () => {
-    setConfirmNoVariants(false);
+  // Combinaisons attendues d'après les champs Taille/Couleur actuels — utilisé à la
+  // fois par le bouton "Générer la matrice" (aperçu explicite) et par saveVariants
+  // (garde-fou : évite d'enregistrer une variante "Standard" vide si l'utilisateur a
+  // rempli les axes sans avoir cliqué sur "Générer").
+  const computeMatrix = () => {
     const first = optionOneValues.split(",").map((value) => value.trim()).filter(Boolean);
     const second = optionTwoValues.split(",").map((value) => value.trim()).filter(Boolean);
-    const base = variants[0] ?? emptyVariant();
-    if (!first.length) return setVariants([{ ...base, id: undefined, title: "Standard", attributes: {} }]);
+    if (!first.length) return null;
     const combinations = second.length ? first.flatMap((left) => second.map((right) => ({ [optionOne]: left, [optionTwo]: right }))) : first.map((left) => ({ [optionOne]: left }));
+    return combinations;
+  };
+
+  const applyMatrix = (combinations: Array<Record<string, string>>) => {
+    const base = variants[0] ?? emptyVariant();
+    setVariants(combinations.map((attributes) => ({ ...base, id: undefined, sku: "", title: Object.values(attributes).join(" · "), attributes })));
+  };
+
+  const generateMatrix = () => {
+    setConfirmNoVariants(false);
+    const combinations = computeMatrix();
+    if (!combinations) return setVariants([{ ...(variants[0] ?? emptyVariant()), id: undefined, title: "Standard", attributes: {} }]);
     if (combinations.length > 50) return setError("La matrice ne peut pas dépasser 50 variantes.");
     setError("");
-    setVariants(combinations.map((attributes) => ({ ...base, id: undefined, sku: "", title: Object.values(attributes).join(" · "), attributes })));
+    applyMatrix(combinations);
   };
 
   const updateVariant = (index: number, patch: Partial<VariantEditor>) => setVariants((current) => current.map((variant, position) => position === index ? { ...variant, ...patch } : variant));
@@ -129,7 +143,23 @@ export function MerchantProductWizard({ merchantId, categories, products, delive
 
   const saveVariants = async () => {
     if (!productId) return;
-    if (hasNoAttributes && !confirmNoVariants) {
+
+    // Les axes ont été remplis mais jamais appliqués (bouton "Générer la matrice"
+    // jamais cliqué) : on applique automatiquement plutôt que d'enregistrer la
+    // variante "Standard" vide encore présente dans le tableau.
+    let variantsToSave = variants;
+    if (hasNoAttributes) {
+      const combinations = computeMatrix();
+      if (combinations) {
+        if (combinations.length > 50) { setError("La matrice ne peut pas dépasser 50 variantes."); return; }
+        const base = variants[0] ?? emptyVariant();
+        variantsToSave = combinations.map((attributes) => ({ ...base, id: undefined, sku: "", title: Object.values(attributes).join(" · "), attributes }));
+        setVariants(variantsToSave);
+      }
+    }
+
+    const stillNoAttributes = variantsToSave.every((variant) => Object.keys(variant.attributes).length === 0);
+    if (stillNoAttributes && !confirmNoVariants) {
       setError("Aucune taille, couleur ou autre option définie pour ce produit. Si c’est volontaire (produit sans variante), cliquez à nouveau sur « Enregistrer » pour confirmer.");
       setConfirmNoVariants(true);
       return;
@@ -139,7 +169,7 @@ export function MerchantProductWizard({ merchantId, categories, products, delive
     const response = await fetch(`/api/merchant/products/${productId}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({
       categoryId, title, description,
       optionNames: [optionOneValues && optionOne, optionTwoValues && optionTwo].filter(Boolean),
-      variants: variants.map((variant) => ({ ...variant, compareAtPriceXof: variant.compareAtPriceXof || undefined })),
+      variants: variantsToSave.map((variant) => ({ ...variant, compareAtPriceXof: variant.compareAtPriceXof || undefined })),
     }) });
     const payload = await response.json(); setBusy(false);
     if (!response.ok) return setError(payload.error?.message ?? "Les variantes n’ont pas pu être enregistrées.");
