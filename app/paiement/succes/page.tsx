@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useState } from "react";
 
 type StatusPayload = {
   status: string;
@@ -9,32 +10,36 @@ type StatusPayload = {
   kind: string;
 };
 
-export default function PaiementSuccesPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ ref?: string }>;
-}) {
-  const [ref, setRef] = useState<string>();
-  const [refResolved, setRefResolved] = useState(false);
+export default function PaiementSuccesPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="mvp-card">
+          <h1 className="mvp-title">Confirmation du paiement</h1>
+          <p>Vérification de votre paiement en cours…</p>
+        </div>
+      }
+    >
+      <PaiementSuccesContent />
+    </Suspense>
+  );
+}
+
+function PaiementSuccesContent() {
+  // Page cliente : searchParams se lit via useSearchParams (next/navigation),
+  // pas via une prop "searchParams" en Promise — ce contrat n'existe que pour
+  // les Server Components et vaut toujours undefined ici, ce qui faisait
+  // échouer la lecture de ?ref= alors qu'il était bien présent dans l'URL.
+  const searchParams = useSearchParams();
+  const ref = searchParams.get("ref") ?? undefined;
   const [payload, setPayload] = useState<StatusPayload>();
   const [error, setError] = useState("");
 
   useEffect(() => {
-    searchParams.then((params) => {
-      setRef(params.ref);
-      setRefResolved(true);
-    });
-  }, [searchParams]);
-
-  // Le lien de retour PayTech peut arriver sans le paramètre ref (redirection
-  // tronquée par un navigateur in-app Wave/Orange Money, config PayTech, etc.) :
-  // sans ce garde, la page resterait bloquée indéfiniment sur "Vérification en
-  // cours" puisque aucune requête ne serait jamais lancée (ref manquant).
-  useEffect(() => {
-    if (refResolved && !ref) {
+    if (!ref) {
       setError("Référence de paiement manquante dans le lien de retour. Si le paiement a été débité, retrouvez-le dans « Mes commandes ».");
     }
-  }, [refResolved, ref]);
+  }, [ref]);
 
   useEffect(() => {
     if (!ref) return;
