@@ -79,6 +79,7 @@ export function CheckoutFlow() {
   const [selectedZones, setSelectedZones] = useState<Record<string, string>>({});
   const [methodKinds, setMethodKinds] = useState<Record<string, "pickup" | "merchant_delivery">>({});
   const [paymentMethods, setPaymentMethods] = useState<Record<string, CheckoutGroupDraft["paymentMethod"]>>({});
+  const [payOnline, setPayOnline] = useState(false);
   const [recipient, setRecipient] = useState<CheckoutRecipient>(emptyRecipient);
   const [quote, setQuote] = useState<{ groups: QuoteGroupResult[]; totalXof: number } | null>(null);
   const [authenticated, setAuthenticated] = useState<boolean | null>(null);
@@ -158,6 +159,7 @@ export function CheckoutFlow() {
     setSelectedZones(Object.fromEntries(draft.groups.filter((group) => group.deliveryZoneId).map((group) => [group.merchantId, group.deliveryZoneId as string])));
     setMethodKinds(Object.fromEntries(draft.groups.map((group) => [group.merchantId, group.methodKind])));
     setPaymentMethods(Object.fromEntries(draft.groups.map((group) => [group.merchantId, group.paymentMethod])));
+    setPayOnline(draft.groups.some((group) => group.paymentMethod === "paytech"));
     void cart.merge().then(() => setStep("confirmation"));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authenticated]);
@@ -198,6 +200,11 @@ export function CheckoutFlow() {
     if (await requestQuote()) setStep("livraison");
   };
 
+  // Paiement en ligne PayTech : un seul paiement pour tout le panier, prioritaire
+  // sur les moyens déclaratifs par boutique (espèces/Wave/OM) le temps qu'il est actif.
+  const effectivePaymentMethod = (merchantId: string): CheckoutGroupDraft["paymentMethod"] =>
+    payOnline ? "paytech" : paymentMethods[merchantId];
+
   const confirmLivraison = async () => {
     if (!recipient.name || !recipient.phone || !recipient.region || !recipient.city || !recipient.addressHint) {
       setError("Merci de renseigner toutes les informations de livraison.");
@@ -212,7 +219,7 @@ export function CheckoutFlow() {
           merchantId: group.merchantId,
           methodKind,
           deliveryZoneId: methodKind === "pickup" ? undefined : selectedZones[group.merchantId],
-          paymentMethod: paymentMethods[group.merchantId],
+          paymentMethod: effectivePaymentMethod(group.merchantId),
         };
       }),
     });
@@ -235,7 +242,7 @@ export function CheckoutFlow() {
               merchantId: group.merchantId,
               methodKind,
               deliveryZoneId: methodKind === "pickup" ? undefined : selectedZones[group.merchantId],
-              paymentMethod: paymentMethods[group.merchantId],
+              paymentMethod: effectivePaymentMethod(group.merchantId),
               items: group.lines.map((line) => ({ variantId: line.product.variant.id, quantity: line.quantity })),
             };
           }),
@@ -251,6 +258,26 @@ export function CheckoutFlow() {
         }
         throw new Error(payload?.error?.message ?? "La commande n’a pas pu être créée.");
       }
+
+      if (payOnline) {
+        // Un seul paiement PayTech pour tout le lot : on redirige vers la
+        // page de paiement PayTech au lieu d'afficher la confirmation statique.
+        const batchId = payload.data.batchId as string;
+        const checkoutResponse = await fetch("/api/payments/paytech/checkout", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ orderBatchId: batchId }),
+        });
+        const checkoutPayload = await checkoutResponse.json();
+        if (!checkoutResponse.ok || !checkoutPayload?.data?.redirectUrl) {
+          throw new Error(checkoutPayload?.error?.message ?? "Le paiement en ligne n’a pas pu être initié.");
+        }
+        clearCheckoutDraft();
+        cart.clear();
+        window.location.href = checkoutPayload.data.redirectUrl as string;
+        return;
+      }
+
       clearCheckoutDraft();
       cart.clear();
       const merchantNames = Object.fromEntries(groups.map((group) => [group.merchantId, group.merchantName]));
@@ -390,7 +417,24 @@ export function CheckoutFlow() {
             </label>
           </div>
 
-          {groups.map((group) => {
+          <div className="mvp-card">
+            <h3>Paiement</h3>
+            <div className="mvp-actions">
+              <label>
+                <input type="radio" checked={payOnline} onChange={() => setPayOnline(true)} /> Payer en ligne maintenant (Carte, Wave, Orange Money via PayTech)
+              </label>
+              <label>
+                <input type="radio" checked={!payOnline} onChange={() => setPayOnline(false)} /> Choisir un moyen de paiement par boutique
+              </label>
+            </div>
+            {payOnline && (
+              <p className="mvp-lede">
+                Un seul paiement sécurisé pour l’ensemble du panier. Les fonds sont conservés jusqu’à votre confirmation de réception.
+              </p>
+            )}
+          </div>
+
+          {!payOnline && groups.map((group) => {
             const shop = shops[group.merchantId];
             if (!shop) return null;
             return (

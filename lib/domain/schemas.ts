@@ -222,6 +222,7 @@ export const orderBatchSchema = z
             "cash_on_delivery",
             "wave_direct",
             "orange_money_direct",
+            "paytech",
           ]),
         }),
       )

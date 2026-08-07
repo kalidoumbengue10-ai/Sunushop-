@@ -10,7 +10,7 @@ export type CheckoutGroupDraft = {
   merchantId: string;
   deliveryZoneId?: string;
   methodKind: "pickup" | "merchant_delivery";
-  paymentMethod: "cash_on_delivery" | "wave_direct" | "orange_money_direct";
+  paymentMethod: "cash_on_delivery" | "wave_direct" | "orange_money_direct" | "paytech";
 };
 
 export type CheckoutDraft = {
@@ -41,7 +41,8 @@ function isCheckoutGroupDraft(value: unknown): value is CheckoutGroupDraft {
     (group.methodKind === "pickup" || group.methodKind === "merchant_delivery") &&
     (group.paymentMethod === "cash_on_delivery" ||
       group.paymentMethod === "wave_direct" ||
-      group.paymentMethod === "orange_money_direct")
+      group.paymentMethod === "orange_money_direct" ||
+      group.paymentMethod === "paytech")
   );
 }
 
