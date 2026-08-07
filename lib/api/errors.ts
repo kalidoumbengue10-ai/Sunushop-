@@ -96,7 +96,7 @@ const databaseErrorMap: Record<string, { status: number; message: string }> = {
   },
   PRODUCT_PUBLICATION_LOCKED: {
     status: 409,
-    message: "Le KYC et l’abonnement doivent être actifs avant publication.",
+    message: "Votre abonnement doit être actif pour publier vos produits.",
   },
   PRODUCT_NOT_FOUND: {
     status: 404,
@@ -137,6 +137,62 @@ const databaseErrorMap: Record<string, { status: number; message: string }> = {
   DELIVERY_CODE_LOCKED: {
     status: 429,
     message: "Trop de tentatives. Contactez le commerçant.",
+  },
+  PAYTECH_NOT_CONFIGURED: {
+    status: 503,
+    message: "Le paiement en ligne n’est pas encore disponible.",
+  },
+  PAYTECH_UNAVAILABLE: {
+    status: 502,
+    message: "Le service de paiement est momentanément indisponible. Réessayez dans un instant.",
+  },
+  PAYMENT_INTENT_NOT_FOUND: {
+    status: 404,
+    message: "Cette intention de paiement est introuvable.",
+  },
+  PAYMENT_ALREADY_CAPTURED: {
+    status: 409,
+    message: "Ce paiement a déjà été enregistré.",
+  },
+  ESCROW_NOT_HELD: {
+    status: 409,
+    message: "Les fonds de cette commande ne sont pas retenus.",
+  },
+  ESCROW_NOT_RELEASABLE: {
+    status: 409,
+    message: "Les fonds de cette commande ne peuvent pas encore être libérés.",
+  },
+  ESCROW_DISPUTED: {
+    status: 409,
+    message: "Un litige est en cours sur cette commande.",
+  },
+  ORDER_NOT_DELIVERED: {
+    status: 409,
+    message: "La commande doit être livrée avant cette action.",
+  },
+  DISPUTE_ALREADY_OPEN: {
+    status: 409,
+    message: "Un litige est déjà ouvert pour cette commande.",
+  },
+  DISPUTE_WINDOW_CLOSED: {
+    status: 409,
+    message: "Le délai pour signaler un problème est dépassé.",
+  },
+  PAYOUT_ALREADY_SENT: {
+    status: 409,
+    message: "Ce reversement a déjà été envoyé.",
+  },
+  MERCHANT_PAYOUT_NUMBER_MISSING: {
+    status: 409,
+    message: "Le commerçant n’a renseigné aucun numéro Wave ou Orange Money pour être payé.",
+  },
+  PICKUP_NOT_AVAILABLE: {
+    status: 409,
+    message: "Le retrait en boutique n’est pas disponible pour cette boutique.",
+  },
+  SHOP_ADDRESS_REQUIRED: {
+    status: 422,
+    message: "L’adresse de la boutique est requise pour activer le retrait.",
   },
 };
 

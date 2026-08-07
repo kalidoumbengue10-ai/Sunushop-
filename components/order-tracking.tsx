@@ -49,12 +49,27 @@ type OrderPayload = {
     pickup_verified_at: string | null;
     delivered_at: string | null;
   } | null;
+  escrow: {
+    id: string;
+    status: string;
+    releasable_at: string | null;
+    dispute_opened_at: string | null;
+    dispute_reason: string | null;
+    dispute_resolved_at: string | null;
+    dispute_resolution: string | null;
+  } | null;
 };
+
+function formatDateTime(value: string) {
+  return new Intl.DateTimeFormat("fr-SN", { dateStyle: "long", timeStyle: "short", timeZone: "Africa/Dakar" }).format(new Date(value));
+}
 
 export function OrderTracking({ orderId }: { orderId: string }) {
   const [payload, setPayload] = useState<OrderPayload>();
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [showDisputeForm, setShowDisputeForm] = useState(false);
+  const [savMessage, setSavMessage] = useState("");
 
   const loadOrder = () =>
     fetch(`/api/orders/${orderId}`).then(async (response) => {
@@ -103,6 +118,48 @@ export function OrderTracking({ orderId }: { orderId: string }) {
     }
     event.currentTarget.reset();
     await loadOrder();
+  };
+
+  const confirmReception = async () => {
+    if (!window.confirm("Confirmer que vous avez bien reçu une commande conforme ? Le marchand sera payé.")) return;
+    setBusy(true);
+    setError("");
+    setSavMessage("");
+    try {
+      const response = await fetch(`/api/orders/${orderId}/reception`, { method: "POST" });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error?.message ?? "Confirmation impossible.");
+      setSavMessage("Merci ! La réception est confirmée et le marchand va être payé.");
+      await loadOrder();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Confirmation impossible.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const submitDispute = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setBusy(true);
+    setError("");
+    setSavMessage("");
+    const form = new FormData(event.currentTarget);
+    try {
+      const response = await fetch(`/api/orders/${orderId}/dispute`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ reason: form.get("reason") }),
+      });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error?.message ?? "Signalement impossible.");
+      setSavMessage("Votre signalement est transmis à l’équipe SunuShop. Les fonds sont gelés en attendant l’arbitrage.");
+      setShowDisputeForm(false);
+      await loadOrder();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Signalement impossible.");
+    } finally {
+      setBusy(false);
+    }
   };
 
   if (error) {
@@ -180,6 +237,79 @@ export function OrderTracking({ orderId }: { orderId: string }) {
                   : "en attente de confirmation"}
               </p>
             )}
+          </>
+        )}
+        {savMessage && <p className="mvp-alert">{savMessage}</p>}
+        {payload.escrow?.status === "held" && payload.order.status === "delivered" && (
+          <>
+            <div className="mvp-divider" />
+            <h2>Réception de la commande</h2>
+            {payload.escrow.releasable_at && (
+              <p>
+                Sans action de votre part, la commande sera validée
+                automatiquement le{" "}
+                <strong>{formatDateTime(payload.escrow.releasable_at)}</strong>{" "}
+                et le marchand sera payé.
+              </p>
+            )}
+            {!showDisputeForm ? (
+              <div className="mvp-actions">
+                <button className="mvp-button" onClick={confirmReception} disabled={busy}>
+                  J’ai bien reçu ma commande, elle est conforme
+                </button>
+                <button
+                  type="button"
+                  className="mvp-button mvp-button--secondary"
+                  onClick={() => setShowDisputeForm(true)}
+                  disabled={busy}
+                >
+                  Signaler un problème
+                </button>
+              </div>
+            ) : (
+              <form className="mvp-form" onSubmit={submitDispute}>
+                <label className="mvp-field">
+                  Décrivez le problème rencontré (20 caractères minimum)
+                  <textarea name="reason" required minLength={20} maxLength={1000} rows={4} />
+                </label>
+                <div className="mvp-actions">
+                  <button className="mvp-button mvp-button--danger" disabled={busy}>
+                    {busy ? "Envoi…" : "Envoyer le signalement"}
+                  </button>
+                  <button
+                    type="button"
+                    className="mvp-button mvp-button--secondary"
+                    onClick={() => setShowDisputeForm(false)}
+                    disabled={busy}
+                  >
+                    Annuler
+                  </button>
+                </div>
+              </form>
+            )}
+          </>
+        )}
+        {payload.escrow?.status === "disputed" && (
+          <>
+            <div className="mvp-divider" />
+            <h2>Litige en cours</h2>
+            <p className="mvp-alert">
+              Un litige est ouvert sur cette commande depuis le{" "}
+              {payload.escrow.dispute_opened_at && formatDateTime(payload.escrow.dispute_opened_at)}
+              . Les fonds sont gelés en attendant l’arbitrage de l’équipe
+              SunuShop.
+            </p>
+          </>
+        )}
+        {payload.escrow?.dispute_resolution && (
+          <>
+            <div className="mvp-divider" />
+            <p className="mvp-alert">
+              Litige résolu —{" "}
+              {payload.escrow.dispute_resolution === "refund"
+                ? "vous avez été remboursé."
+                : "le marchand a été payé."}
+            </p>
           </>
         )}
       </section>

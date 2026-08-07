@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  AlertTriangle,
   ArrowRight,
   CheckCircle2,
   FileCheck2,
@@ -19,7 +20,7 @@ import { CategoryAdmin } from "@/components/category-admin";
 import { MerchantInvitationPanel } from "@/components/merchant-invitation-panel";
 import { formatPrice } from "@/lib/marketplace";
 
-type AdminTab = "overview" | "crm" | "verifications" | "subscriptions" | "categories";
+type AdminTab = "overview" | "crm" | "verifications" | "subscriptions" | "litiges" | "categories";
 
 type VerificationQueueItem = {
   id: string;
@@ -44,6 +45,37 @@ type PaymentItem = {
   amount_xof: number;
   paid_at: string;
   status: string;
+  merchant_accounts: { public_name: string } | Array<{ public_name: string }>;
+};
+
+type MerchantSearchResult = {
+  id: string;
+  public_name: string;
+  slug: string;
+  status: string;
+  subscription_status: string;
+};
+
+type SubscriptionGrantItem = {
+  id: string;
+  merchant_id: string;
+  plan_id: string;
+  days: number;
+  reason: string;
+  current_period_ends_at: string;
+  created_at: string;
+  merchant_accounts: { public_name: string } | Array<{ public_name: string }>;
+};
+
+type DisputeItem = {
+  id: string;
+  order_id: string;
+  merchant_id: string;
+  amount_xof: number;
+  status: string;
+  dispute_opened_at: string | null;
+  dispute_reason: string | null;
+  orders: { public_code: string; buyer_id: string } | Array<{ public_code: string; buyer_id: string }>;
   merchant_accounts: { public_name: string } | Array<{ public_name: string }>;
 };
 
@@ -82,7 +114,12 @@ export function AdminWorkspace({ initialTab = "overview" }: { initialTab?: Admin
   const [tab, setTab] = useState<AdminTab>(initialTab);
   const [queue, setQueue] = useState<VerificationQueueItem[]>([]);
   const [payments, setPayments] = useState<PaymentItem[]>([]);
+  const [disputes, setDisputes] = useState<DisputeItem[]>([]);
   const [leads, setLeads] = useState<CrmLead[]>([]);
+  const [grants, setGrants] = useState<SubscriptionGrantItem[]>([]);
+  const [merchantResults, setMerchantResults] = useState<MerchantSearchResult[]>([]);
+  const [merchantQuery, setMerchantQuery] = useState("");
+  const [grantMerchant, setGrantMerchant] = useState<MerchantSearchResult>();
   const [selected, setSelected] = useState<VerificationDetail>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -106,11 +143,23 @@ export function AdminWorkspace({ initialTab = "overview" }: { initialTab?: Admin
     if (!response.ok) throw new Error(payload.error?.message ?? "Prospects indisponibles.");
     setLeads(payload.data.items as CrmLead[]);
   };
+  const loadDisputes = async () => {
+    const response = await fetch("/api/admin/disputes");
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error?.message ?? "Litiges indisponibles.");
+    setDisputes(payload.data.items as DisputeItem[]);
+  };
+  const loadGrants = async () => {
+    const response = await fetch("/api/admin/subscriptions/grants");
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error?.message ?? "Historique indisponible.");
+    setGrants(payload.data.items as SubscriptionGrantItem[]);
+  };
 
   useEffect(() => {
     // Chaque module se charge indépendamment pour préserver les accès plus restreints.
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    Promise.allSettled([loadQueue(), loadPayments(), loadLeads()]).then((results) => {
+    Promise.allSettled([loadQueue(), loadPayments(), loadLeads(), loadDisputes(), loadGrants()]).then((results) => {
       const failures = results.filter((result) => result.status === "rejected");
       if (failures.length === results.length) {
         setError("Votre espace ne peut pas être chargé pour le moment.");
@@ -200,11 +249,87 @@ export function AdminWorkspace({ initialTab = "overview" }: { initialTab?: Admin
     }
   };
 
+  const resolveDispute = async (orderId: string, resolution: "release" | "refund") => {
+    const confirmed = window.confirm(
+      resolution === "release"
+        ? "Payer le marchand et clôturer ce litige ?"
+        : "Rembourser le client et clôturer ce litige ?",
+    );
+    if (!confirmed) return;
+    setBusy(true);
+    setError("");
+    try {
+      const response = await fetch(`/api/admin/disputes/${orderId}/resolve`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ resolution }),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error?.message ?? "Résolution impossible.");
+      setMessage(resolution === "release" ? "Le marchand a été payé, le litige est clos." : "Le client a été remboursé, le litige est clos.");
+      await loadDisputes();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Résolution impossible.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const searchMerchants = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setBusy(true);
+    setError("");
+    try {
+      const response = await fetch(`/api/admin/merchants/search?q=${encodeURIComponent(merchantQuery)}`);
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error?.message ?? "Recherche impossible.");
+      setMerchantResults(payload.data.items as MerchantSearchResult[]);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Recherche impossible.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const submitGrant = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!grantMerchant) return;
+    setBusy(true);
+    setError("");
+    setMessage("");
+    const form = new FormData(event.currentTarget);
+    try {
+      const response = await fetch("/api/admin/subscriptions/grant", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          merchantId: grantMerchant.id,
+          planId: form.get("planId"),
+          days: Number(form.get("days")),
+          reason: form.get("reason"),
+        }),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error?.message ?? "Octroi impossible.");
+      setMessage(`Abonnement activé pour ${grantMerchant.public_name}.`);
+      event.currentTarget.reset();
+      setGrantMerchant(undefined);
+      setMerchantResults([]);
+      setMerchantQuery("");
+      await loadGrants();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Octroi impossible.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const navItems = [
     { id: "overview" as const, label: "Vue d’ensemble", icon: LayoutDashboard },
     { id: "crm" as const, label: "Prospects", icon: UsersRound, badge: leads.filter((lead) => lead.status === "new").length },
     { id: "verifications" as const, label: "Dossiers commerçants", icon: FileCheck2, badge: queue.length },
     { id: "subscriptions" as const, label: "Abonnements", icon: ReceiptText, badge: payments.length },
+    { id: "litiges" as const, label: "Litiges", icon: AlertTriangle, badge: disputes.length },
     { id: "categories" as const, label: "Catégories", icon: Store },
   ];
 
@@ -213,6 +338,7 @@ export function AdminWorkspace({ initialTab = "overview" }: { initialTab?: Admin
     crm: ["Prospects", "Transformez chaque demande en prochaine étape claire."],
     verifications: ["Dossiers commerçants", "Validez les informations avec un parcours lisible et traçable."],
     subscriptions: ["Abonnements", "Activez les accès après confirmation des paiements."],
+    litiges: ["Litiges", "Arbitrez les commandes signalées et débloquez les fonds gelés."],
     categories: ["Catégories", "Organisez la navigation et le classement des boutiques."],
   }[tab];
 
@@ -288,6 +414,86 @@ export function AdminWorkspace({ initialTab = "overview" }: { initialTab?: Admin
           <section className="admin-panel admin-operation-panel">
             <div className="admin-panel__heading"><div><span className="admin-kicker">Accès commerçants</span><h2>Paiements à confirmer</h2><p>Validez le règlement avant d’activer les services du commerce.</p></div><span className="admin-count">{payments.length} en attente</span></div>
             <div className="admin-record-list">{payments.map((payment) => { const merchant = relationOne(payment.merchant_accounts); return <div className="admin-payment-row" key={payment.id}><span className="admin-avatar"><ReceiptText /></span><span><b>{merchant?.public_name}</b><small>{payment.plan_id} · {payment.channel === "wave" ? "Wave" : "Orange Money"} · {payment.external_reference}</small></span><strong>{formatPrice(payment.amount_xof)}</strong><div><button className="admin-primary-button" onClick={() => decidePayment(payment.id, true)} disabled={busy}>Confirmer</button><button className="admin-danger-button" onClick={() => decidePayment(payment.id, false)} disabled={busy}>Refuser</button></div></div>; })}{!payments.length && <div className="admin-empty"><CheckCircle2 /><h3>Aucun paiement en attente</h3><p>Les prochaines demandes apparaîtront ici.</p></div>}</div>
+
+            <div className="admin-panel__heading"><div><span className="admin-kicker">Geste commercial</span><h2>Octroyer un abonnement manuellement</h2><p>Paiement espèces, partenariat, geste commercial… le motif est conservé dans l’historique.</p></div></div>
+            <form className="admin-decision-form" onSubmit={searchMerchants}>
+              <label className="admin-field-wide">
+                Rechercher une boutique
+                <input value={merchantQuery} onChange={(event) => setMerchantQuery(event.target.value)} placeholder="Nom de la boutique" />
+              </label>
+              <div className="admin-field-wide"><button className="admin-secondary-button" disabled={busy}>Rechercher</button></div>
+            </form>
+            {merchantResults.length > 0 && !grantMerchant && (
+              <div className="admin-compact-list">
+                {merchantResults.map((merchant) => (
+                  <button key={merchant.id} onClick={() => { setGrantMerchant(merchant); setMerchantResults([]); }}>
+                    <span className="admin-avatar">{merchant.public_name.slice(0, 2).toUpperCase()}</span>
+                    <span><b>{merchant.public_name}</b><small>{merchant.status} · {merchant.subscription_status}</small></span>
+                  </button>
+                ))}
+              </div>
+            )}
+            {grantMerchant && (
+              <form className="admin-decision-form" onSubmit={submitGrant}>
+                <p className="admin-merchant-note">Boutique sélectionnée : <strong>{grantMerchant.public_name}</strong> <button type="button" className="admin-text-button" onClick={() => setGrantMerchant(undefined)}>Changer</button></p>
+                <label>Plan
+                  <select name="planId" defaultValue="essential">
+                    <option value="essential">Essentiel</option>
+                    <option value="pro">Pro</option>
+                    <option value="network">Réseau</option>
+                  </select>
+                </label>
+                <label>Durée (jours)
+                  <input name="days" type="number" min={1} max={365} defaultValue={30} required />
+                </label>
+                <label className="admin-field-wide">Motif (obligatoire)
+                  <textarea name="reason" rows={2} minLength={4} maxLength={500} required placeholder="Ex. paiement espèces confirmé par téléphone" />
+                </label>
+                <div className="admin-field-wide"><button className="admin-primary-button" disabled={busy}>Activer l’abonnement <ArrowRight /></button></div>
+              </form>
+            )}
+
+            <div className="admin-panel__heading"><div><span className="admin-kicker">Traçabilité</span><h2>Historique des octrois</h2></div></div>
+            <div className="admin-record-list">
+              {grants.map((grant) => {
+                const merchant = relationOne(grant.merchant_accounts);
+                return (
+                  <div className="admin-payment-row" key={grant.id}>
+                    <span className="admin-avatar"><ReceiptText /></span>
+                    <span><b>{merchant?.public_name}</b><small>{grant.plan_id} · {grant.days} jours · {formatDate(grant.created_at)}</small><small>Motif : {grant.reason}</small></span>
+                  </div>
+                );
+              })}
+              {!grants.length && <div className="admin-empty"><CheckCircle2 /><h3>Aucun octroi manuel</h3><p>Les activations manuelles apparaîtront ici avec leur motif.</p></div>}
+            </div>
+          </section>
+        )}
+
+        {tab === "litiges" && (
+          <section className="admin-panel admin-operation-panel">
+            <div className="admin-panel__heading"><div><span className="admin-kicker">Service après-vente</span><h2>Commandes en litige</h2><p>Les fonds sont gelés tant qu’aucune décision n’est prise.</p></div><span className="admin-count">{disputes.length} en attente</span></div>
+            <div className="admin-record-list">
+              {disputes.map((dispute) => {
+                const merchant = relationOne(dispute.merchant_accounts);
+                const order = relationOne(dispute.orders);
+                return (
+                  <div className="admin-payment-row" key={dispute.id}>
+                    <span className="admin-avatar"><AlertTriangle /></span>
+                    <span>
+                      <b>{order?.public_code}</b>
+                      <small>{merchant?.public_name} · {dispute.dispute_opened_at ? formatDate(dispute.dispute_opened_at) : "Date inconnue"}</small>
+                      {dispute.dispute_reason && <small>Motif : {dispute.dispute_reason}</small>}
+                    </span>
+                    <strong>{formatPrice(dispute.amount_xof)}</strong>
+                    <div>
+                      <button className="admin-primary-button" onClick={() => resolveDispute(dispute.order_id, "release")} disabled={busy}>Payer le marchand</button>
+                      <button className="admin-danger-button" onClick={() => resolveDispute(dispute.order_id, "refund")} disabled={busy}>Rembourser le client</button>
+                    </div>
+                  </div>
+                );
+              })}
+              {!disputes.length && <div className="admin-empty"><CheckCircle2 /><h3>Aucun litige en cours</h3><p>Les commandes signalées par les acheteurs apparaîtront ici.</p></div>}
+            </div>
           </section>
         )}
       </main>

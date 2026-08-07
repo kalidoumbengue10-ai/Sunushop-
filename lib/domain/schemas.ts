@@ -165,7 +165,8 @@ const quoteItemSchema = z.object({
 export const quoteGroupSchema = z
   .object({
     merchantId: uuid,
-    deliveryZoneId: uuid,
+    deliveryZoneId: uuid.optional(),
+    methodKind: z.enum(["pickup", "merchant_delivery"]).default("merchant_delivery"),
     items: z.array(quoteItemSchema).min(1).max(50),
   })
   .superRefine((value, context) => {
@@ -180,6 +181,13 @@ export const quoteGroupSchema = z
       }
       variants.add(item.variantId);
     });
+    if (value.methodKind === "merchant_delivery" && !value.deliveryZoneId) {
+      context.addIssue({
+        code: "custom",
+        path: ["deliveryZoneId"],
+        message: "Une zone de livraison est requise.",
+      });
+    }
   });
 
 export const cartQuoteSchema = z.object({
@@ -504,6 +512,56 @@ export const deliveryStatusSchema = z.object({
 
 export const deliveryCodeSchema = z.object({
   code: z.string().regex(/^\d{6}$/, "Le code doit contenir six chiffres."),
+});
+
+export const paytechOrderCheckoutSchema = z.object({
+  orderBatchId: uuid,
+});
+
+export const paytechSubscriptionCheckoutSchema = z.object({
+  merchantId: uuid,
+  planId: z.enum(["essential", "pro", "network"]),
+});
+
+export const orderDisputeSchema = z.object({
+  reason: z.string().trim().min(20).max(1000),
+});
+
+export const disputeResolutionSchema = z.object({
+  resolution: z.enum(["release", "refund"]),
+  note: z.string().trim().max(1000).optional(),
+});
+
+export const merchantPickupSettingsSchema = z.object({
+  merchantId: uuid,
+  pickupEnabled: z.boolean(),
+  pickupAddressLine: z.string().trim().min(4).max(300).nullable(),
+  pickupLatitude: z.number().min(-90).max(90).nullable().optional(),
+  pickupLongitude: z.number().min(-180).max(180).nullable().optional(),
+  pickupHours: z.string().trim().max(200).nullable().optional(),
+  pickupInstructions: z.string().trim().max(500).nullable().optional(),
+}).superRefine((value, context) => {
+  if (value.pickupEnabled && !value.pickupAddressLine) {
+    context.addIssue({
+      code: "custom",
+      path: ["pickupAddressLine"],
+      message: "L’adresse de la boutique est requise pour activer le retrait.",
+    });
+  }
+  if ((value.pickupLatitude == null) !== (value.pickupLongitude == null)) {
+    context.addIssue({
+      code: "custom",
+      path: ["pickupLatitude"],
+      message: "Latitude et longitude doivent être renseignées ensemble.",
+    });
+  }
+});
+
+export const subscriptionGrantSchema = z.object({
+  merchantId: uuid,
+  planId: z.enum(["essential", "pro", "network"]),
+  days: z.int().min(1).max(365),
+  reason: z.string().trim().min(4).max(500),
 });
 
 export const categoryInputSchema = z.object({

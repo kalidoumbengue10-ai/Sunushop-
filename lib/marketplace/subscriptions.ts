@@ -1,4 +1,9 @@
-export type SubscriptionPlanId = "trial" | "essential" | "pro" | "network";
+// Le plan "trial" a été retiré : il n'était pas semé dans subscription_plans
+// et était rejeté par subscriptionPaymentSchema (lib/domain/schemas.ts).
+// L'essai gratuit est couvert par l'activation manuelle CRM
+// (admin_grant_subscription / admin_activate_test_subscription), pas par un
+// plan payant fictif à 0 F.
+export type SubscriptionPlanId = "essential" | "pro" | "network";
 
 export type SubscriptionPlan = {
   id: SubscriptionPlanId;
@@ -10,14 +15,6 @@ export type SubscriptionPlan = {
 };
 
 export const SUBSCRIPTION_PLANS: SubscriptionPlan[] = [
-  {
-    id: "trial",
-    name: "Essai accompagné",
-    monthlyPrice: 0,
-    productLimit: 20,
-    positioning: "Valider le catalogue et une première zone pendant 30 jours.",
-    zeroCommission: true,
-  },
   {
     id: "essential",
     name: "Essentiel",

@@ -17,7 +17,7 @@ function createMemoryStorage(): Storage {
 
 const draft = {
   recipient: { name: "Awa Diop", phone: "+221771234567", region: "Dakar", city: "Dakar", addressHint: "Villa 12" },
-  groups: [{ merchantId: "m-1", deliveryZoneId: "z-1", paymentMethod: "cash_on_delivery" as const }],
+  groups: [{ merchantId: "m-1", deliveryZoneId: "z-1", methodKind: "merchant_delivery" as const, paymentMethod: "cash_on_delivery" as const }],
 };
 
 describe("checkout draft persistence", () => {

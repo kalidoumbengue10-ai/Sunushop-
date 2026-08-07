@@ -16,6 +16,7 @@ export async function GET(
       { data: events, error: eventsError },
       { data: paymentDeclarations, error: paymentDeclarationsError },
       { data: delivery, error: deliveryError },
+      { data: escrow, error: escrowError },
     ] = await Promise.all([
       supabase
         .from("orders")
@@ -49,12 +50,18 @@ export async function GET(
         .select("id, status, pickup_verified_at, delivered_at")
         .eq("order_id", id)
         .maybeSingle(),
+      supabase
+        .from("payment_escrows")
+        .select("id, status, releasable_at, dispute_opened_at, dispute_reason, dispute_resolved_at, dispute_resolution")
+        .eq("order_id", id)
+        .maybeSingle(),
     ]);
     if (orderError) throw orderError;
     if (itemsError) throw itemsError;
     if (eventsError) throw eventsError;
     if (paymentDeclarationsError) throw paymentDeclarationsError;
     if (deliveryError) throw deliveryError;
+    if (escrowError) throw escrowError;
     return apiSuccess(
       {
         order,
@@ -70,6 +77,7 @@ export async function GET(
                   : null,
             }
           : null,
+        escrow,
       },
       { requestId },
     );

@@ -8,7 +8,8 @@ export type CheckoutRecipient = {
 
 export type CheckoutGroupDraft = {
   merchantId: string;
-  deliveryZoneId: string;
+  deliveryZoneId?: string;
+  methodKind: "pickup" | "merchant_delivery";
   paymentMethod: "cash_on_delivery" | "wave_direct" | "orange_money_direct";
 };
 
@@ -36,7 +37,8 @@ function isCheckoutGroupDraft(value: unknown): value is CheckoutGroupDraft {
   const group = value as Partial<CheckoutGroupDraft>;
   return (
     typeof group.merchantId === "string" &&
-    typeof group.deliveryZoneId === "string" &&
+    (group.deliveryZoneId === undefined || typeof group.deliveryZoneId === "string") &&
+    (group.methodKind === "pickup" || group.methodKind === "merchant_delivery") &&
     (group.paymentMethod === "cash_on_delivery" ||
       group.paymentMethod === "wave_direct" ||
       group.paymentMethod === "orange_money_direct")

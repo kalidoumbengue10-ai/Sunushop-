@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { MarketplaceClient } from "@/components/marketplace-client";
 import { MvpShell } from "@/components/mvp-shell";
+import { ShopContact } from "@/components/shop-contact";
 import { getAdminSupabase } from "@/lib/infrastructure/supabase/server";
 import { SupabaseCatalogRepository } from "@/lib/infrastructure/supabase/repositories";
 import { formatPrice } from "@/lib/marketplace";
@@ -59,7 +60,22 @@ export default async function BoutiquePage({
                 </small>
               </div>
             ))}
+            {shop.pickup.enabled && (
+              <div className="mvp-row">
+                <strong>Retrait en boutique</strong>
+                <small>0 F de livraison</small>
+              </div>
+            )}
           </div>
+          {shop.pickup.enabled && (
+            <ShopContact
+              phone={shop.phone}
+              email={shop.email}
+              addressLine={shop.pickup.addressLine}
+              latitude={shop.pickup.latitude}
+              longitude={shop.pickup.longitude}
+            />
+          )}
           <MarketplaceClient initialProducts={page.products} initialTotal={page.total} merchantSlug={shop.slug} groupByCategory />
         </div>
       </main>

@@ -53,3 +53,25 @@ export const pilotConfig = {
     process.env.SUNUSHOP_KYC_CLOSED_RETENTION_DAYS ?? 365,
   ),
 } as const;
+
+const paytechSchema = z.object({
+  PAYTECH_API_KEY: z.string().min(10),
+  PAYTECH_API_SECRET: z.string().min(10),
+  PAYTECH_ENV: z.enum(["test", "prod"]).default("test"),
+  PAYTECH_ESCROW_RELEASE_DAYS: z.coerce.number().int().min(1).max(30).default(3),
+  SUNUSHOP_SAV_EMAIL: z.email().default("sunushop1@gmail.com"),
+});
+
+export type PaytechConfig = z.infer<typeof paytechSchema>;
+
+export function getPaytechConfig(): PaytechConfig | null {
+  const result = paytechSchema.safeParse({
+    PAYTECH_API_KEY: process.env.PAYTECH_API_KEY,
+    PAYTECH_API_SECRET: process.env.PAYTECH_API_SECRET,
+    PAYTECH_ENV: process.env.PAYTECH_ENV,
+    PAYTECH_ESCROW_RELEASE_DAYS: process.env.PAYTECH_ESCROW_RELEASE_DAYS,
+    SUNUSHOP_SAV_EMAIL: process.env.SUNUSHOP_SAV_EMAIL,
+  });
+
+  return result.success ? result.data : null;
+}

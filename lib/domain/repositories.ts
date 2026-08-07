@@ -38,6 +38,8 @@ export type PublicShop = {
   description: string | null;
   region: string | null;
   city: string | null;
+  phone: string | null;
+  email: string | null;
   paymentMethods: {
     cashOnDelivery: boolean;
     wave: boolean;
@@ -52,20 +54,30 @@ export type PublicShop = {
     minDelayMinutes: number;
     maxDelayMinutes: number;
   }>;
+  pickup: {
+    enabled: boolean;
+    addressLine: string | null;
+    latitude: number | null;
+    longitude: number | null;
+    hours: string | null;
+    instructions: string | null;
+  };
   products: CatalogItem[];
 };
 
 export type QuoteRequestGroup = {
   merchantId: string;
-  deliveryZoneId: string;
+  deliveryZoneId?: string | null;
+  methodKind?: "pickup" | "merchant_delivery";
   items: Array<{ variantId: string; quantity: number }>;
 };
 
 export type QuoteGroup = {
   merchantId: string;
   merchantName: string;
-  deliveryZoneId: string;
+  deliveryZoneId: string | null;
   deliveryLabel: string;
+  methodKind: "pickup" | "merchant_delivery";
   subtotalXof: number;
   deliveryFeeXof: number;
   totalXof: number;

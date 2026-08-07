@@ -82,7 +82,7 @@ export default async function MarchandPage() {
       ? await admin
           .from("merchant_accounts")
           .select(
-            "id, kind, public_name, slug, status, verification_status, subscription_status, representative_is_legal_owner, wave_payment_number, orange_money_payment_number",
+            "id, kind, public_name, slug, status, verification_status, subscription_status, representative_is_legal_owner, wave_payment_number, orange_money_payment_number, pickup_enabled, pickup_address_line, pickup_latitude, pickup_longitude, pickup_hours, pickup_instructions",
           )
           .eq("id", membership.merchant_id)
           .single()

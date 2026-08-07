@@ -41,6 +41,12 @@ type Merchant = {
   representative_is_legal_owner: boolean;
   wave_payment_number: string | null;
   orange_money_payment_number: string | null;
+  pickup_enabled?: boolean;
+  pickup_address_line?: string | null;
+  pickup_latitude?: number | null;
+  pickup_longitude?: number | null;
+  pickup_hours?: string | null;
+  pickup_instructions?: string | null;
 };
 
 type VerificationCase = {
@@ -323,6 +329,26 @@ export function MerchantWorkspace(props: MerchantWorkspaceProps) {
     );
   };
 
+  const payWithPaytech = async (planId: string) => {
+    if (!props.merchant) return;
+    setBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const response = await fetch("/api/merchant/subscriptions/paytech", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ merchantId: props.merchant.id, planId }),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error?.message ?? "Paiement impossible.");
+      window.location.href = payload.data.redirectUrl;
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Paiement impossible.");
+      setBusy(false);
+    }
+  };
+
   const saveRecoveryEmail = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
@@ -356,6 +382,37 @@ export function MerchantWorkspace(props: MerchantWorkspaceProps) {
       return;
     }
     setMessage("Coordonnées de paiement mises à jour.");
+    router.refresh();
+  };
+
+  const savePickupSettings = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!props.merchant) return;
+    setBusy(true);
+    setError("");
+    const form = new FormData(event.currentTarget);
+    const latitude = form.get("pickupLatitude");
+    const longitude = form.get("pickupLongitude");
+    const response = await fetch("/api/merchant/settings", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        merchantId: props.merchant.id,
+        pickupEnabled: form.get("pickupEnabled") === "on",
+        pickupAddressLine: form.get("pickupAddressLine") || null,
+        pickupLatitude: latitude ? Number(latitude) : null,
+        pickupLongitude: longitude ? Number(longitude) : null,
+        pickupHours: form.get("pickupHours") || null,
+        pickupInstructions: form.get("pickupInstructions") || null,
+      }),
+    });
+    const payload = await response.json();
+    setBusy(false);
+    if (!response.ok) {
+      setError(payload.error?.message ?? "Paramètres non enregistrés.");
+      return;
+    }
+    setMessage("Retrait en boutique mis à jour.");
     router.refresh();
   };
 
@@ -607,6 +664,74 @@ export function MerchantWorkspace(props: MerchantWorkspaceProps) {
               </button>
             </form>
             <div className="mvp-divider" />
+            <form className="mvp-form" onSubmit={savePickupSettings}>
+              <h3>Retrait en boutique</h3>
+              <p>
+                Le client peut venir chercher sa commande directement à votre
+                adresse, sans frais de livraison.
+              </p>
+              <label className="mvp-field mvp-field--checkbox">
+                <input
+                  type="checkbox"
+                  name="pickupEnabled"
+                  defaultChecked={props.merchant.pickup_enabled ?? false}
+                />
+                Activer le retrait en boutique (0 F)
+              </label>
+              <div className="mvp-form__grid">
+                <label className="mvp-field mvp-field--wide">
+                  Adresse complète
+                  <input
+                    name="pickupAddressLine"
+                    defaultValue={props.merchant.pickup_address_line ?? ""}
+                    placeholder="Ex. Marché Sandaga, Avenue Blaise Diagne, Dakar"
+                  />
+                </label>
+                <label className="mvp-field">
+                  Latitude (optionnel)
+                  <input
+                    name="pickupLatitude"
+                    type="number"
+                    step="0.000001"
+                    min={-90}
+                    max={90}
+                    defaultValue={props.merchant.pickup_latitude ?? ""}
+                  />
+                </label>
+                <label className="mvp-field">
+                  Longitude (optionnel)
+                  <input
+                    name="pickupLongitude"
+                    type="number"
+                    step="0.000001"
+                    min={-180}
+                    max={180}
+                    defaultValue={props.merchant.pickup_longitude ?? ""}
+                  />
+                </label>
+                <label className="mvp-field">
+                  Horaires
+                  <input
+                    name="pickupHours"
+                    defaultValue={props.merchant.pickup_hours ?? ""}
+                    placeholder="Lun–Sam, 9h–19h"
+                  />
+                </label>
+                <label className="mvp-field mvp-field--wide">
+                  Consignes pour le client
+                  <textarea
+                    name="pickupInstructions"
+                    rows={2}
+                    defaultValue={props.merchant.pickup_instructions ?? ""}
+                    placeholder="Ex. Demander la boutique SunuShop au 2e étage."
+                  />
+                </label>
+              </div>
+              <button className="mvp-button mvp-button--secondary" disabled={busy}>
+                Enregistrer le retrait en boutique
+              </button>
+            </form>
+            <div className="mvp-divider" />
             <MerchantDeliverySettings merchantId={props.merchant.id} categories={props.categories} zones={props.zones} />
           </div>
         )}
@@ -624,9 +749,34 @@ export function MerchantWorkspace(props: MerchantWorkspaceProps) {
                   ).toLocaleDateString("fr-SN")}`}
               </p>
             )}
+            <div className="mvp-form__grid">
+              <label className="mvp-field">
+                Payer en ligne (carte, Wave, Orange Money)
+                <select id="paytech-plan-select" defaultValue={props.plans[0]?.id}>
+                  {props.plans.map((plan) => (
+                    <option value={plan.id} key={plan.id}>
+                      {plan.name} · {formatPrice(plan.monthly_price_xof)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button
+                type="button"
+                className="mvp-button"
+                disabled={busy}
+                onClick={() => {
+                  const select = document.getElementById("paytech-plan-select") as HTMLSelectElement | null;
+                  if (select?.value) payWithPaytech(select.value);
+                }}
+              >
+                Payer mon abonnement par carte / Wave / Orange Money
+              </button>
+            </div>
+            <div className="mvp-divider" />
             <p>
-              Envoyez le montant du plan au numéro SunuShop correspondant,
-              puis transmettez la référence du paiement pour validation.
+              Vous pouvez aussi envoyer le montant du plan directement au
+              numéro SunuShop correspondant, puis transmettre la référence du
+              paiement pour validation manuelle.
             </p>
             <div className="mvp-list">
               {props.subscriptionPaymentNumbers.wave && (

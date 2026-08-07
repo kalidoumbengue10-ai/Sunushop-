@@ -143,12 +143,18 @@ export class SupabaseCatalogRepository implements CatalogRepository {
     const page = Math.max(1, input.page);
     const limit = Math.min(60, Math.max(1, input.limit));
     const from = (page - 1) * limit;
+    // NOTE (chantier 6.2) : la RLS et le prédicat canonique de vente sont
+    // status='active' AND subscription_status IN ('active','grace') — le
+    // KYC (verification_status) a été délibérément découplé du droit de
+    // vendre depuis la migration 202608060001_merchant_fast_track_gates.sql.
+    // Ce filtre .eq("merchant_accounts.verification_status", "approved") a
+    // été retiré : il masquait des boutiques payantes mais non-KYC alors que
+    // la RLS elle-même ne l'exige plus (voir merchant_accounts_public_read).
     let request = this.client
       .from("products")
       .select(productSelection, { count: "exact" })
       .eq("status", "published")
       .eq("merchant_accounts.status", "active")
-      .eq("merchant_accounts.verification_status", "approved")
       .in("merchant_accounts.subscription_status", ["active", "grace"])
       .order("published_at", { ascending: false })
       .range(from, from + limit - 1);
@@ -170,13 +176,28 @@ export class SupabaseCatalogRepository implements CatalogRepository {
           product.variant.availableQuantity > 0,
       );
     if (!mapped.length) return { products: [], total: count ?? 0, page, limit };
-    const { data: zones, error: zonesError } = await this.client
-      .from("delivery_zones")
-      .select("merchant_id")
-      .in("merchant_id", [...new Set(mapped.map((item) => item.merchant.id))])
-      .eq("active", true);
+    const merchantIds = [...new Set(mapped.map((item) => item.merchant.id))];
+    const [{ data: zones, error: zonesError }, { data: pickupMerchants, error: pickupError }] =
+      await Promise.all([
+        this.client
+          .from("delivery_zones")
+          .select("merchant_id")
+          .in("merchant_id", merchantIds)
+          .eq("active", true),
+        this.client
+          .from("merchant_accounts")
+          .select("id")
+          .in("id", merchantIds)
+          .eq("pickup_enabled", true),
+      ]);
     if (zonesError) throw zonesError;
-    const orderable = new Set((zones ?? []).map((zone) => zone.merchant_id));
+    if (pickupError) throw pickupError;
+    // Une boutique en retrait seul (pickup_enabled, sans zone de livraison)
+    // reste commandable — elle ne doit pas être invisible du catalogue.
+    const orderable = new Set([
+      ...(zones ?? []).map((zone) => zone.merchant_id),
+      ...(pickupMerchants ?? []).map((merchant) => merchant.id),
+    ]);
     return {
       products: mapped.filter((product) => orderable.has(product.merchant.id)),
       total: count ?? mapped.length,
@@ -200,7 +221,6 @@ export class SupabaseCatalogRepository implements CatalogRepository {
       .in("id", productIds)
       .eq("status", "published")
       .eq("merchant_accounts.status", "active")
-      .eq("merchant_accounts.verification_status", "approved")
       .in("merchant_accounts.subscription_status", ["active", "grace"]);
     if (error) throw error;
     const wanted = new Set(variantIds);
@@ -213,14 +233,19 @@ export class SupabaseCatalogRepository implements CatalogRepository {
   }
 
   async findShopBySlug(slug: string): Promise<PublicShop | null> {
+    // Chantier 6.2 (CRITIQUE) : ne plus filtrer sur verification_status —
+    // le KYC ne conditionne plus le droit de vendre depuis
+    // 202608060001_merchant_fast_track_gates.sql. Une boutique payée mais
+    // non-KYC était listée par la RLS/catalogue puis renvoyait 404 ici :
+    // écart corrigé en alignant strictement sur le prédicat canonique
+    // status='active' AND subscription_status IN ('active','grace').
     const { data: merchant, error: merchantError } = await this.client
       .from("merchant_accounts")
       .select(
-        "id, public_name, slug, description, region, city, wave_payment_number, orange_money_payment_number",
+        "id, public_name, slug, description, region, city, phone, email, wave_payment_number, orange_money_payment_number, pickup_enabled, pickup_address_line, pickup_latitude, pickup_longitude, pickup_hours, pickup_instructions",
       )
       .eq("slug", slug)
       .eq("status", "active")
-      .eq("verification_status", "approved")
       .in("subscription_status", ["active", "grace"])
       .maybeSingle();
 
@@ -247,7 +272,9 @@ export class SupabaseCatalogRepository implements CatalogRepository {
 
     if (productsError) throw productsError;
     if (zonesError) throw zonesError;
-    if (!zones?.length) return null;
+    // Chantier 4.3 : une boutique en retrait seul (pickup_enabled = true)
+    // n'a besoin d'aucune zone de livraison pour être visible/commandable.
+    if (!zones?.length && !merchant.pickup_enabled) return null;
 
     return {
       id: merchant.id,
@@ -256,6 +283,8 @@ export class SupabaseCatalogRepository implements CatalogRepository {
       description: merchant.description,
       region: merchant.region,
       city: merchant.city,
+      phone: merchant.phone,
+      email: merchant.email,
       paymentMethods: {
         cashOnDelivery: true,
         wave: Boolean(merchant.wave_payment_number),
@@ -270,6 +299,14 @@ export class SupabaseCatalogRepository implements CatalogRepository {
         minDelayMinutes: zone.min_delay_minutes,
         maxDelayMinutes: zone.max_delay_minutes,
       })),
+      pickup: {
+        enabled: merchant.pickup_enabled,
+        addressLine: merchant.pickup_address_line,
+        latitude: merchant.pickup_latitude,
+        longitude: merchant.pickup_longitude,
+        hours: merchant.pickup_hours,
+        instructions: merchant.pickup_instructions,
+      },
       products: ((products ?? []) as unknown as RawProduct[])
         .map((product) => mapProduct(this.client, product))
         .filter(
@@ -285,6 +322,8 @@ export class SupabaseCatalogRepository implements CatalogRepository {
     const result: QuoteGroup[] = [];
 
     for (const group of groups) {
+      const isPickup = group.methodKind === "pickup";
+
       const [
         { data: merchant, error: merchantError },
         { data: zone, error: zoneError },
@@ -292,21 +331,22 @@ export class SupabaseCatalogRepository implements CatalogRepository {
       ] = await Promise.all([
         this.client
           .from("merchant_accounts")
-          .select("id, public_name")
+          .select("id, public_name, pickup_enabled")
           .eq("id", group.merchantId)
           .eq("status", "active")
-          .eq("verification_status", "approved")
           .in("subscription_status", ["active", "grace"])
           .maybeSingle(),
-        this.client
-          .from("delivery_zones")
-          .select(
-            "id, merchant_id, label, fee_xof, min_delay_minutes, max_delay_minutes, delivery_category_rates(category_id, fee_xof)",
-          )
-          .eq("id", group.deliveryZoneId)
-          .eq("merchant_id", group.merchantId)
-          .eq("active", true)
-          .maybeSingle(),
+        isPickup
+          ? Promise.resolve({ data: null, error: null })
+          : this.client
+              .from("delivery_zones")
+              .select(
+                "id, merchant_id, label, fee_xof, min_delay_minutes, max_delay_minutes, delivery_category_rates(category_id, fee_xof)",
+              )
+              .eq("id", group.deliveryZoneId ?? "")
+              .eq("merchant_id", group.merchantId)
+              .eq("active", true)
+              .maybeSingle(),
         this.client
           .from("product_variants")
           .select(
@@ -331,7 +371,20 @@ export class SupabaseCatalogRepository implements CatalogRepository {
           "Cette boutique ne reçoit pas de commandes.",
         );
       }
-      if (!zone) {
+      // Le frais de livraison à 0 F du retrait en boutique est TOUJOURS
+      // recalculé côté serveur : un client qui poste deliveryFeeXof: 0 sur
+      // une livraison classique ne doit rien pouvoir changer (voir la
+      // branche merchant_delivery ci-dessous, qui continue d'exiger une
+      // zone valide en base).
+      if (isPickup) {
+        if (!merchant.pickup_enabled) {
+          throw new ApiError(
+            409,
+            "PICKUP_NOT_AVAILABLE",
+            "Le retrait en boutique n’est pas disponible pour cette boutique.",
+          );
+        }
+      } else if (!zone) {
         throw new ApiError(
           409,
           "DELIVERY_ZONE_UNAVAILABLE",
@@ -390,9 +443,27 @@ export class SupabaseCatalogRepository implements CatalogRepository {
         (total, item) => total + item.lineTotalXof,
         0,
       );
-      const categoryRates = (zone.delivery_category_rates ?? []) as Array<{ category_id: string; fee_xof: number }>;
+
+      if (isPickup) {
+        result.push({
+          merchantId: merchant.id,
+          merchantName: merchant.public_name,
+          deliveryZoneId: null,
+          deliveryLabel: "Retrait en boutique",
+          methodKind: "pickup",
+          subtotalXof,
+          deliveryFeeXof: 0,
+          totalXof: subtotalXof,
+          minDelayMinutes: 0,
+          maxDelayMinutes: 0,
+          items,
+        });
+        continue;
+      }
+
+      const categoryRates = (zone!.delivery_category_rates ?? []) as Array<{ category_id: string; fee_xof: number }>;
       const deliveryFeeXof = highestCategoryDeliveryFee(
-        zone.fee_xof,
+        zone!.fee_xof,
         rawVariants.map((variant) => {
           const product = Array.isArray(variant.products) ? variant.products[0] : variant.products;
           return product?.category_id ?? "";
@@ -402,13 +473,14 @@ export class SupabaseCatalogRepository implements CatalogRepository {
       result.push({
         merchantId: merchant.id,
         merchantName: merchant.public_name,
-        deliveryZoneId: zone.id,
-        deliveryLabel: zone.label,
+        deliveryZoneId: zone!.id,
+        deliveryLabel: zone!.label,
+        methodKind: "merchant_delivery",
         subtotalXof,
         deliveryFeeXof,
         totalXof: subtotalXof + deliveryFeeXof,
-        minDelayMinutes: zone.min_delay_minutes,
-        maxDelayMinutes: zone.max_delay_minutes,
+        minDelayMinutes: zone!.min_delay_minutes,
+        maxDelayMinutes: zone!.max_delay_minutes,
         items,
       });
     }

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useCart } from "@/components/cart-provider";
 import { OrderBatchConfirmation, type ConfirmedOrder } from "@/components/order-batch-confirmation";
+import { ShopContact } from "@/components/shop-contact";
 import {
   clearCheckoutDraft,
   readCheckoutDraft,
@@ -20,6 +21,8 @@ type ShopInfo = {
   id: string;
   name: string;
   slug: string;
+  phone?: string | null;
+  email?: string | null;
   paymentMethods: { cashOnDelivery: boolean; wave: boolean; orangeMoney: boolean };
   deliveryZones: Array<{
     id: string;
@@ -28,13 +31,22 @@ type ShopInfo = {
     minDelayMinutes: number;
     maxDelayMinutes: number;
   }>;
+  pickup?: {
+    enabled: boolean;
+    addressLine: string | null;
+    latitude: number | null;
+    longitude: number | null;
+    hours: string | null;
+    instructions: string | null;
+  };
 };
 
 type QuoteGroupResult = {
   merchantId: string;
   merchantName: string;
-  deliveryZoneId: string;
+  deliveryZoneId: string | null;
   deliveryLabel: string;
+  methodKind: "pickup" | "merchant_delivery";
   subtotalXof: number;
   deliveryFeeXof: number;
   totalXof: number;
@@ -65,6 +77,7 @@ export function CheckoutFlow() {
   const [step, setStep] = useState<Step>("panier");
   const [shops, setShops] = useState<Record<string, ShopInfo>>({});
   const [selectedZones, setSelectedZones] = useState<Record<string, string>>({});
+  const [methodKinds, setMethodKinds] = useState<Record<string, "pickup" | "merchant_delivery">>({});
   const [paymentMethods, setPaymentMethods] = useState<Record<string, CheckoutGroupDraft["paymentMethod"]>>({});
   const [recipient, setRecipient] = useState<CheckoutRecipient>(emptyRecipient);
   const [quote, setQuote] = useState<{ groups: QuoteGroupResult[]; totalXof: number } | null>(null);
@@ -86,6 +99,14 @@ export function CheckoutFlow() {
           setShops((current) => ({ ...current, [group.merchantId]: shop }));
           setSelectedZones((current) =>
             current[group.merchantId] ? current : { ...current, [group.merchantId]: shop.deliveryZones[0]?.id ?? "" },
+          );
+          setMethodKinds((current) =>
+            current[group.merchantId]
+              ? current
+              : {
+                  ...current,
+                  [group.merchantId]: shop.deliveryZones.length > 0 ? "merchant_delivery" : "pickup",
+                },
           );
           setPaymentMethods((current) =>
             current[group.merchantId]
@@ -134,18 +155,23 @@ export function CheckoutFlow() {
     const draft = readCheckoutDraft();
     if (!draft) return;
     setRecipient(draft.recipient);
-    setSelectedZones(Object.fromEntries(draft.groups.map((group) => [group.merchantId, group.deliveryZoneId])));
+    setSelectedZones(Object.fromEntries(draft.groups.filter((group) => group.deliveryZoneId).map((group) => [group.merchantId, group.deliveryZoneId as string])));
+    setMethodKinds(Object.fromEntries(draft.groups.map((group) => [group.merchantId, group.methodKind])));
     setPaymentMethods(Object.fromEntries(draft.groups.map((group) => [group.merchantId, group.paymentMethod])));
     void cart.merge().then(() => setStep("confirmation"));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authenticated]);
 
   const buildQuoteGroups = () =>
-    groups.map((group) => ({
-      merchantId: group.merchantId,
-      deliveryZoneId: selectedZones[group.merchantId],
-      items: group.lines.map((line) => ({ variantId: line.product.variant.id, quantity: line.quantity })),
-    }));
+    groups.map((group) => {
+      const methodKind = methodKinds[group.merchantId] ?? "merchant_delivery";
+      return {
+        merchantId: group.merchantId,
+        methodKind,
+        deliveryZoneId: methodKind === "pickup" ? undefined : selectedZones[group.merchantId],
+        items: group.lines.map((line) => ({ variantId: line.product.variant.id, quantity: line.quantity })),
+      };
+    });
 
   const requestQuote = async () => {
     setError("");
@@ -180,11 +206,15 @@ export function CheckoutFlow() {
     if (!(await requestQuote())) return;
     saveCheckoutDraft({
       recipient,
-      groups: groups.map((group) => ({
-        merchantId: group.merchantId,
-        deliveryZoneId: selectedZones[group.merchantId],
-        paymentMethod: paymentMethods[group.merchantId],
-      })),
+      groups: groups.map((group) => {
+        const methodKind = methodKinds[group.merchantId] ?? "merchant_delivery";
+        return {
+          merchantId: group.merchantId,
+          methodKind,
+          deliveryZoneId: methodKind === "pickup" ? undefined : selectedZones[group.merchantId],
+          paymentMethod: paymentMethods[group.merchantId],
+        };
+      }),
     });
     setStep(authenticated ? "confirmation" : "compte");
   };
@@ -199,12 +229,16 @@ export function CheckoutFlow() {
         headers: { "content-type": "application/json", "idempotency-key": idempotencyKey },
         body: JSON.stringify({
           recipient,
-          groups: groups.map((group) => ({
-            merchantId: group.merchantId,
-            deliveryZoneId: selectedZones[group.merchantId],
-            paymentMethod: paymentMethods[group.merchantId],
-            items: group.lines.map((line) => ({ variantId: line.product.variant.id, quantity: line.quantity })),
-          })),
+          groups: groups.map((group) => {
+            const methodKind = methodKinds[group.merchantId] ?? "merchant_delivery";
+            return {
+              merchantId: group.merchantId,
+              methodKind,
+              deliveryZoneId: methodKind === "pickup" ? undefined : selectedZones[group.merchantId],
+              paymentMethod: paymentMethods[group.merchantId],
+              items: group.lines.map((line) => ({ variantId: line.product.variant.id, quantity: line.quantity })),
+            };
+          }),
         }),
       });
       const payload = await response.json();
@@ -269,7 +303,31 @@ export function CheckoutFlow() {
                     </li>
                   ))}
                 </ul>
-                {shop && shop.deliveryZones.length > 0 && (
+                {shop && (shop.deliveryZones.length > 0 || shop.pickup?.enabled) && (
+                  <div className="mvp-actions">
+                    {shop.pickup?.enabled && (
+                      <label>
+                        <input
+                          type="radio"
+                          checked={(methodKinds[group.merchantId] ?? "merchant_delivery") === "pickup"}
+                          onChange={() => setMethodKinds((current) => ({ ...current, [group.merchantId]: "pickup" }))}
+                        />{" "}
+                        Retrait en boutique — 0 F
+                      </label>
+                    )}
+                    {shop.deliveryZones.length > 0 && (
+                      <label>
+                        <input
+                          type="radio"
+                          checked={(methodKinds[group.merchantId] ?? "merchant_delivery") === "merchant_delivery"}
+                          onChange={() => setMethodKinds((current) => ({ ...current, [group.merchantId]: "merchant_delivery" }))}
+                        />{" "}
+                        Livraison
+                      </label>
+                    )}
+                  </div>
+                )}
+                {shop && (methodKinds[group.merchantId] ?? "merchant_delivery") === "merchant_delivery" && shop.deliveryZones.length > 0 && (
                   <label className="mvp-field">
                     Zone de livraison
                     <select
@@ -283,6 +341,15 @@ export function CheckoutFlow() {
                       ))}
                     </select>
                   </label>
+                )}
+                {shop && (methodKinds[group.merchantId] ?? "merchant_delivery") === "pickup" && shop.pickup?.enabled && (
+                  <ShopContact
+                    phone={shop.phone}
+                    email={shop.email}
+                    addressLine={shop.pickup.addressLine}
+                    latitude={shop.pickup.latitude}
+                    longitude={shop.pickup.longitude}
+                  />
                 )}
               </div>
             );
@@ -350,7 +417,10 @@ export function CheckoutFlow() {
               <ul className="mvp-list">
                 {quote.groups.map((group) => (
                   <li className="mvp-row" key={group.merchantId}>
-                    <span>{group.merchantName} · livraison {formatPrice(group.deliveryFeeXof)}</span>
+                    <span>
+                      {group.merchantName} ·{" "}
+                      {group.methodKind === "pickup" ? "Retrait en boutique — 0 F" : `livraison ${formatPrice(group.deliveryFeeXof)}`}
+                    </span>
                     <strong>{formatPrice(group.totalXof)}</strong>
                   </li>
                 ))}
