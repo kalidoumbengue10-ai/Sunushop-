@@ -16,13 +16,23 @@ export async function GET(request: Request) {
     // jour uniquement par l'IPN signé (capture_order_payment).
     const { data: intent, error } = await supabase
       .from("payment_intents")
-      .select("id, status, order_batch_id, kind, amount_xof")
+      .select("id, status, order_batch_id, kind, amount_xof, buyer_id")
       .eq("ref_command", ref)
-      .eq("buyer_id", user.id)
       .maybeSingle();
     if (error) throw error;
     if (!intent) {
       throw new ApiError(404, "PAYMENT_INTENT_NOT_FOUND", "Intention de paiement introuvable.");
+    }
+    if (intent.buyer_id !== user.id) {
+      // Le paiement existe mais appartient à un autre compte que la session
+      // active (ex. changement de compte dans le navigateur entre le
+      // paiement et la consultation du statut) : message distinct pour ne
+      // pas laisser croire à une référence invalide ou perdue.
+      throw new ApiError(
+        403,
+        "PAYMENT_INTENT_OTHER_ACCOUNT",
+        "Ce paiement est associé à un autre compte que celui actuellement connecté.",
+      );
     }
 
     return apiSuccess(

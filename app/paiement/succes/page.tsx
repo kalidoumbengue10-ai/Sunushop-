@@ -34,6 +34,7 @@ function PaiementSuccesContent() {
   const ref = searchParams.get("ref") ?? undefined;
   const [payload, setPayload] = useState<StatusPayload>();
   const [error, setError] = useState("");
+  const [errorCode, setErrorCode] = useState("");
 
   useEffect(() => {
     if (!ref) {
@@ -51,7 +52,10 @@ function PaiementSuccesContent() {
       try {
         const response = await fetch(`/api/payments/paytech/status?ref=${encodeURIComponent(ref)}`);
         const body = await response.json();
-        if (!response.ok) throw new Error(body.error?.message ?? "Statut indisponible.");
+        if (!response.ok) {
+          if (!cancelled) setErrorCode(body.error?.code ?? "");
+          throw new Error(body.error?.message ?? "Statut indisponible.");
+        }
         if (cancelled) return;
         setPayload(body.data as StatusPayload);
         attempts += 1;
@@ -90,7 +94,13 @@ function PaiementSuccesContent() {
     return (
       <div className="mvp-card">
         <p className="mvp-alert mvp-alert--error">{error}</p>
-        <Link href="/marche">Retour au marché</Link>
+        {errorCode === "PAYMENT_INTENT_OTHER_ACCOUNT" ? (
+          <Link href={`/connexion?next=${encodeURIComponent(`/paiement/succes?ref=${ref ?? ""}`)}`}>
+            Se connecter avec le bon compte
+          </Link>
+        ) : (
+          <Link href="/marche">Retour au marché</Link>
+        )}
       </div>
     );
   }
