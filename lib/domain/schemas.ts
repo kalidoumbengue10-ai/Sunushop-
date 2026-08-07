@@ -501,6 +501,10 @@ export const cartItemInputSchema = z.object({
   quantity: z.int().min(0).max(99),
 });
 
+export const shopFollowInputSchema = z.object({
+  merchantId: uuid,
+});
+
 export const deliveryAssignmentSchema = z.object({
   orderId: uuid,
   courierMembershipId: uuid,

@@ -7,6 +7,7 @@ import { getBrowserSupabase } from "@/lib/infrastructure/supabase/browser";
 
 type Address = { id: string; label: string; recipient_name: string; phone: string; region: string; city: string; address_hint: string; is_default: boolean };
 type Order = { id: string; public_code: string; status: string; total_xof: number; created_at: string; merchant_accounts: { public_name: string } | Array<{ public_name: string }> };
+type ShopFollow = { merchant_id: string; created_at: string; merchant_accounts: { public_name: string; slug: string; city: string | null; region: string | null } | Array<{ public_name: string; slug: string; city: string | null; region: string | null }> };
 
 const ORDER_TABS = ["en_cours", "terminees", "annulees"] as const;
 type OrderTab = (typeof ORDER_TABS)[number];
@@ -23,15 +24,25 @@ function orderTab(status: string): OrderTab {
 export function ClientWorkspace() {
   const [addresses, setAddresses] = useState<Address[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
+  const [shopFollows, setShopFollows] = useState<ShopFollow[]>([]);
   const [activeTab, setActiveTab] = useState<OrderTab>("en_cours");
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const load = useCallback(async () => {
-    const [addressResponse, orderResponse] = await Promise.all([fetch("/api/client/addresses"), fetch("/api/client/orders")]);
-    const [addressPayload, orderPayload] = await Promise.all([addressResponse.json(), orderResponse.json()]);
+    const [addressResponse, orderResponse, shopFollowResponse] = await Promise.all([
+      fetch("/api/client/addresses"),
+      fetch("/api/client/orders"),
+      fetch("/api/client/shop-follows"),
+    ]);
+    const [addressPayload, orderPayload, shopFollowPayload] = await Promise.all([
+      addressResponse.json(),
+      orderResponse.json(),
+      shopFollowResponse.json(),
+    ]);
     if (!addressResponse.ok) throw new Error(addressPayload.error?.message);
     if (!orderResponse.ok) throw new Error(orderPayload.error?.message);
-    setAddresses(addressPayload.data.items); setOrders(orderPayload.data.items);
+    if (!shopFollowResponse.ok) throw new Error(shopFollowPayload.error?.message);
+    setAddresses(addressPayload.data.items); setOrders(orderPayload.data.items); setShopFollows(shopFollowPayload.data.items);
   }, []);
   useEffect(() => {
     // Chargement réseau initial, puis abonnement aux mises à jour.
@@ -53,6 +64,10 @@ export function ClientWorkspace() {
   const archive = async (id: string) => {
     const response = await fetch("/api/client/addresses", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ id, archive: true }) });
     if (!response.ok) return setError("Adresse non supprimée."); await load();
+  };
+  const unfollow = async (merchantId: string) => {
+    const response = await fetch("/api/client/shop-follows", { method: "DELETE", headers: { "content-type": "application/json" }, body: JSON.stringify({ merchantId }) });
+    if (!response.ok) return setError("Boutique non retirée des favoris."); await load();
   };
   const one = <T,>(value: T | T[]) => Array.isArray(value) ? value[0] : value;
   return <div className="mvp-grid">
@@ -78,5 +93,6 @@ export function ClientWorkspace() {
       <div className="mvp-list">{orders.filter((order) => orderTab(order.status) === activeTab).map((order) => <div className="mvp-row" key={order.id}><div><Link href={`/commandes/${order.id}`}><strong>{order.public_code}</strong></Link><small>{one(order.merchant_accounts)?.public_name} · {formatPrice(order.total_xof)} · {new Date(order.created_at).toLocaleDateString("fr-SN")}</small></div><span className="mvp-status" data-status={order.status}>{order.status.replaceAll("_", " ")}</span></div>)}</div>
       {!orders.filter((order) => orderTab(order.status) === activeTab).length && <p className="mvp-empty">Aucune commande dans cette catégorie.</p>}
     </section>
+    <section className="mvp-card"><h2>Mes boutiques suivies</h2><div className="mvp-list">{shopFollows.map((follow) => { const merchant = one(follow.merchant_accounts); return <div className="mvp-row" key={follow.merchant_id}><div>{merchant && <Link href={`/boutiques/${merchant.slug}`}><strong>{merchant.public_name}</strong></Link>}<small>{merchant?.city ?? merchant?.region}</small></div><button className="mvp-button mvp-button--secondary" onClick={() => unfollow(follow.merchant_id)}>Ne plus suivre</button></div>; })}</div>{!shopFollows.length && <p className="mvp-empty">Vous ne suivez aucune boutique pour le moment.</p>}</section>
   </div>;
 }

@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { MarketplaceClient } from "@/components/marketplace-client";
 import { MvpShell } from "@/components/mvp-shell";
 import { ShopContact } from "@/components/shop-contact";
+import { ShopFollowButton } from "@/components/shop-follow-button";
 import { getAdminSupabase } from "@/lib/infrastructure/supabase/server";
 import { SupabaseCatalogRepository } from "@/lib/infrastructure/supabase/repositories";
 import { formatPrice } from "@/lib/marketplace";
@@ -50,6 +51,9 @@ export default async function BoutiquePage({
           <p className="mvp-lede">
             {shop.description || "Catalogue marchand SunuShop."}
           </p>
+          <div className="mvp-actions">
+            <ShopFollowButton merchantId={shop.id} />
+          </div>
           <div className="mvp-list">
             {shop.deliveryZones.map((zone) => (
               <div className="mvp-row" key={zone.id}>
