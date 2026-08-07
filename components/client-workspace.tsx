@@ -8,9 +8,22 @@ import { getBrowserSupabase } from "@/lib/infrastructure/supabase/browser";
 type Address = { id: string; label: string; recipient_name: string; phone: string; region: string; city: string; address_hint: string; is_default: boolean };
 type Order = { id: string; public_code: string; status: string; total_xof: number; created_at: string; merchant_accounts: { public_name: string } | Array<{ public_name: string }> };
 
+const ORDER_TABS = ["en_cours", "terminees", "annulees"] as const;
+type OrderTab = (typeof ORDER_TABS)[number];
+const ORDER_TAB_LABELS: Record<OrderTab, string> = { en_cours: "En cours", terminees: "Terminées", annulees: "Annulées" };
+const CANCELLED_STATUSES = new Set(["cancelled", "disputed"]);
+const FINISHED_STATUSES = new Set(["delivered"]);
+
+function orderTab(status: string): OrderTab {
+  if (CANCELLED_STATUSES.has(status)) return "annulees";
+  if (FINISHED_STATUSES.has(status)) return "terminees";
+  return "en_cours";
+}
+
 export function ClientWorkspace() {
   const [addresses, setAddresses] = useState<Address[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
+  const [activeTab, setActiveTab] = useState<OrderTab>("en_cours");
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const load = useCallback(async () => {
@@ -47,6 +60,23 @@ export function ClientWorkspace() {
     <section className="mvp-card"><h2>Mes adresses</h2><div className="mvp-list">{addresses.map((address) => <div className="mvp-row" key={address.id}><div><strong>{address.label}{address.is_default ? " · par défaut" : ""}</strong><small>{address.recipient_name} · {address.phone}<br />{address.city}, {address.address_hint}</small></div><button className="mvp-button mvp-button--secondary" onClick={() => archive(address.id)}>Retirer</button></div>)}</div>
       <form className="mvp-form" onSubmit={saveAddress}><h3>Ajouter une adresse</h3><div className="mvp-form__grid"><label className="mvp-field">Libellé<input name="label" placeholder="Maison" required /></label><label className="mvp-field">Destinataire<input name="recipientName" required /></label><label className="mvp-field">Téléphone<input name="phone" required /></label><label className="mvp-field">Région<input name="region" required /></label><label className="mvp-field">Ville<input name="city" required /></label></div><label className="mvp-field">Adresse et repère<textarea name="addressHint" required /></label><label><input name="isDefault" type="checkbox" /> Adresse par défaut</label><button className="mvp-button">Enregistrer</button></form>
     </section>
-    <section className="mvp-card"><h2>Mes commandes</h2><div className="mvp-list">{orders.map((order) => <div className="mvp-row" key={order.id}><div><Link href={`/commandes/${order.id}`}><strong>{order.public_code}</strong></Link><small>{one(order.merchant_accounts)?.public_name} · {formatPrice(order.total_xof)} · {new Date(order.created_at).toLocaleDateString("fr-SN")}</small></div><span className="mvp-status" data-status={order.status}>{order.status.replaceAll("_", " ")}</span></div>)}</div>{!orders.length && <p className="mvp-empty">Aucune commande pour le moment.</p>}</section>
+    <section className="mvp-card"><h2>Mes commandes</h2>
+      <div className="mvp-tabs" role="tablist" aria-label="Filtrer mes commandes">
+        {ORDER_TABS.map((tab) => (
+          <button
+            key={tab}
+            type="button"
+            role="tab"
+            aria-selected={activeTab === tab}
+            className={activeTab === tab ? "mvp-tab is-active" : "mvp-tab"}
+            onClick={() => setActiveTab(tab)}
+          >
+            {ORDER_TAB_LABELS[tab]} ({orders.filter((order) => orderTab(order.status) === tab).length})
+          </button>
+        ))}
+      </div>
+      <div className="mvp-list">{orders.filter((order) => orderTab(order.status) === activeTab).map((order) => <div className="mvp-row" key={order.id}><div><Link href={`/commandes/${order.id}`}><strong>{order.public_code}</strong></Link><small>{one(order.merchant_accounts)?.public_name} · {formatPrice(order.total_xof)} · {new Date(order.created_at).toLocaleDateString("fr-SN")}</small></div><span className="mvp-status" data-status={order.status}>{order.status.replaceAll("_", " ")}</span></div>)}</div>
+      {!orders.filter((order) => orderTab(order.status) === activeTab).length && <p className="mvp-empty">Aucune commande dans cette catégorie.</p>}
+    </section>
   </div>;
 }

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
+import { ShopContact } from "@/components/shop-contact";
 import { formatPrice } from "@/lib/marketplace";
 
 type OrderPayload = {
@@ -20,7 +21,7 @@ type OrderPayload = {
       minDelayMinutes?: number;
       maxDelayMinutes?: number;
     };
-    merchant_accounts: { public_name: string; slug: string };
+    merchant_accounts: { public_name: string; slug: string; phone: string | null; email: string | null };
   };
   items: Array<{
     id: string;
@@ -203,6 +204,13 @@ export function OrderTracking({ orderId }: { orderId: string }) {
             </div>
           ))}
         </div>
+        <div className="mvp-divider" />
+        <h2>Contacter le commerçant</h2>
+        <ShopContact
+          phone={payload.order.merchant_accounts.phone}
+          email={payload.order.merchant_accounts.email}
+        />
+
         {payload.order.payment_method !== "cash_on_delivery" && (
           <>
             <div className="mvp-divider" />
@@ -312,6 +320,19 @@ export function OrderTracking({ orderId }: { orderId: string }) {
             </p>
           </>
         )}
+      </section>
+      <section className="mvp-card">
+        <h2>Besoin d’aide ?</h2>
+        <p className="mvp-lede">
+          Un problème avec cette commande, une question sur votre paiement ou votre livraison ?
+          L’équipe SunuShop peut vous aider.
+        </p>
+        <a
+          className="mvp-button mvp-button--secondary"
+          href={`mailto:sunushop1@gmail.com?subject=${encodeURIComponent(`SAV commande ${payload.order.public_code}`)}`}
+        >
+          Contacter le SAV SunuShop
+        </a>
       </section>
       <section className="mvp-card">
         <h2>Historique vérifiable</h2>

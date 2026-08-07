@@ -418,13 +418,13 @@ export function CheckoutFlow() {
           </div>
 
           <div className="mvp-card">
-            <h3>Paiement</h3>
+            <h3>Comment voulez-vous payer ?</h3>
             <div className="mvp-actions">
               <label>
-                <input type="radio" checked={payOnline} onChange={() => setPayOnline(true)} /> Payer en ligne maintenant (Carte, Wave, Orange Money via PayTech)
+                <input type="radio" checked={payOnline} onChange={() => setPayOnline(true)} /> Payer en ligne maintenant (Carte, Wave, Orange Money)
               </label>
               <label>
-                <input type="radio" checked={!payOnline} onChange={() => setPayOnline(false)} /> Choisir un moyen de paiement par boutique
+                <input type="radio" checked={!payOnline} onChange={() => setPayOnline(false)} /> Payer à la réception ou par transfert direct
               </label>
             </div>
             {payOnline && (
@@ -437,18 +437,22 @@ export function CheckoutFlow() {
           {!payOnline && groups.map((group) => {
             const shop = shops[group.merchantId];
             if (!shop) return null;
+            const isPickup = (methodKinds[group.merchantId] ?? "merchant_delivery") === "pickup";
             return (
               <div className="mvp-card" key={group.merchantId}>
-                <h3>Paiement — {group.merchantName}</h3>
+                <h3>{group.merchantName}</h3>
                 <div className="mvp-actions">
                   {shop.paymentMethods.cashOnDelivery && (
-                    <label><input type="radio" checked={paymentMethods[group.merchantId] === "cash_on_delivery"} onChange={() => setPaymentMethods((current) => ({ ...current, [group.merchantId]: "cash_on_delivery" }))} /> À la livraison</label>
+                    <label>
+                      <input type="radio" checked={paymentMethods[group.merchantId] === "cash_on_delivery"} onChange={() => setPaymentMethods((current) => ({ ...current, [group.merchantId]: "cash_on_delivery" }))} />{" "}
+                      {isPickup ? "Espèces au retrait en boutique" : "Espèces à la livraison"}
+                    </label>
                   )}
                   {shop.paymentMethods.wave && (
-                    <label><input type="radio" checked={paymentMethods[group.merchantId] === "wave_direct"} onChange={() => setPaymentMethods((current) => ({ ...current, [group.merchantId]: "wave_direct" }))} /> Wave</label>
+                    <label><input type="radio" checked={paymentMethods[group.merchantId] === "wave_direct"} onChange={() => setPaymentMethods((current) => ({ ...current, [group.merchantId]: "wave_direct" }))} /> Transfert Wave direct au commerçant</label>
                   )}
                   {shop.paymentMethods.orangeMoney && (
-                    <label><input type="radio" checked={paymentMethods[group.merchantId] === "orange_money_direct"} onChange={() => setPaymentMethods((current) => ({ ...current, [group.merchantId]: "orange_money_direct" }))} /> Orange Money</label>
+                    <label><input type="radio" checked={paymentMethods[group.merchantId] === "orange_money_direct"} onChange={() => setPaymentMethods((current) => ({ ...current, [group.merchantId]: "orange_money_direct" }))} /> Transfert Orange Money direct au commerçant</label>
                   )}
                 </div>
               </div>
