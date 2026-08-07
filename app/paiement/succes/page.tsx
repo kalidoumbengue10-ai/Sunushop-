@@ -15,12 +15,26 @@ export default function PaiementSuccesPage({
   searchParams: Promise<{ ref?: string }>;
 }) {
   const [ref, setRef] = useState<string>();
+  const [refResolved, setRefResolved] = useState(false);
   const [payload, setPayload] = useState<StatusPayload>();
   const [error, setError] = useState("");
 
   useEffect(() => {
-    searchParams.then((params) => setRef(params.ref));
+    searchParams.then((params) => {
+      setRef(params.ref);
+      setRefResolved(true);
+    });
   }, [searchParams]);
+
+  // Le lien de retour PayTech peut arriver sans le paramètre ref (redirection
+  // tronquée par un navigateur in-app Wave/Orange Money, config PayTech, etc.) :
+  // sans ce garde, la page resterait bloquée indéfiniment sur "Vérification en
+  // cours" puisque aucune requête ne serait jamais lancée (ref manquant).
+  useEffect(() => {
+    if (refResolved && !ref) {
+      setError("Référence de paiement manquante dans le lien de retour. Si le paiement a été débité, retrouvez-le dans « Mes commandes ».");
+    }
+  }, [refResolved, ref]);
 
   useEffect(() => {
     if (!ref) return;
