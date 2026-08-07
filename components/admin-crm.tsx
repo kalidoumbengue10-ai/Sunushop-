@@ -308,6 +308,42 @@ export function AdminCrm({
     }
   };
 
+  const deleteMerchant = async () => {
+    if (!selected?.merchant_id) return;
+    const merchantId = selected.merchant_id;
+    const previewResponse = await fetch(`/api/admin/merchants/${merchantId}`);
+    const previewPayload = await previewResponse.json();
+    if (!previewResponse.ok) {
+      setError(previewPayload.error?.message ?? "Impossible de préparer la suppression.");
+      return;
+    }
+    const { productCount, orderCount } = previewPayload.data as { productCount: number; orderCount: number };
+    const confirmed = window.confirm(
+      `Supprimer définitivement la boutique « ${selected.business_name} » ?\n\n` +
+        `${productCount} produit(s) et ${orderCount} commande(s) seront supprimés avec elle. Cette action est IRRÉVERSIBLE.`,
+    );
+    if (!confirmed) return;
+    if (orderCount > 0) {
+      const doubleConfirmed = window.confirm(
+        `Cette boutique a ${orderCount} commande(s) enregistrée(s). Les supprimer efface aussi l’historique d’achat des clients concernés. Confirmer quand même ?`,
+      );
+      if (!doubleConfirmed) return;
+    }
+    setBusy(true); setError(""); setActionMessage("");
+    try {
+      const response = await fetch(`/api/admin/merchants/${merchantId}`, { method: "DELETE" });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error?.message ?? "Suppression impossible.");
+      setActionMessage("La boutique et toutes ses données ont été supprimées.");
+      setSelected(null);
+      await reload();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Une erreur est survenue.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const deleteLead = async () => {
     if (!selected) return;
     const confirmed = window.confirm(`Supprimer définitivement la fiche « ${selected.business_name} » ? Cette action est irréversible.`);
@@ -455,6 +491,19 @@ export function AdminCrm({
                   ) : (
                     <p className="admin-feedback admin-feedback--error">Cette boutique est suspendue.</p>
                   )}
+                </section>
+              )}
+
+              {selected.merchant_id && (
+                <section className="crm-detail-card crm-danger-zone">
+                  <h3>Supprimer cette boutique</h3>
+                  <p className="crm-muted">
+                    Action définitive réservée aux boutiques de test : la boutique, ses produits, ses commandes
+                    et ses paiements associés seront supprimés. Le compte du commerçant n’est pas supprimé.
+                  </p>
+                  <button type="button" className="admin-danger-button" onClick={deleteMerchant} disabled={busy}>
+                    <Trash2 /> Supprimer définitivement la boutique
+                  </button>
                 </section>
               )}
 
