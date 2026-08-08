@@ -9,6 +9,7 @@ import {
   Boxes,
   ClipboardCheck,
   ExternalLink,
+  Gift,
   LayoutDashboard,
   MessageSquare,
   PackageSearch,
@@ -20,6 +21,7 @@ import { formatPrice } from "@/lib/marketplace";
 import { CourierManager } from "@/components/courier-manager";
 import { MerchantMedia } from "@/components/merchant-media";
 import { MerchantDashboard } from "@/components/merchant-dashboard";
+import { MerchantLoyalty } from "@/components/merchant-loyalty";
 import { ConversationList } from "@/components/conversation-list";
 import { MerchantProductWizard, type MerchantProductEditor } from "@/components/merchant-product-wizard";
 import { MerchantDeliverySettings, type MerchantDeliveryZone } from "@/components/merchant-delivery-settings";
@@ -180,6 +182,7 @@ type MerchantTab =
   | "catalogue"
   | "livraison"
   | "livreurs"
+  | "fidelite"
   | "messages"
   | "boutique"
   | "abonnement"
@@ -191,6 +194,7 @@ const merchantNavigation = [
   { id: "catalogue", label: "Produits", hint: "Photos, prix et stocks", icon: Boxes },
   { id: "livraison", label: "Livraison", hint: "Zones et tarifs", icon: Truck },
   { id: "livreurs", label: "Livreurs", hint: "Équipe et affectations", icon: Bike },
+  { id: "fidelite", label: "Fidélité", hint: "Points de vos clients", icon: Gift },
   { id: "messages", label: "Messages", hint: "Discussions avec vos clients", icon: MessageSquare },
   { id: "boutique", label: "Ma boutique", hint: "Image et présentation", icon: Store },
   { id: "abonnement", label: "Abonnement", hint: "Plan et paiements", icon: BadgeDollarSign },
@@ -203,6 +207,7 @@ const merchantSectionTitles: Record<MerchantTab, { eyebrow: string; title: strin
   catalogue: { eyebrow: "Catalogue", title: "Produits", description: "Ajoutez vos photos, variantes, prix et stocks." },
   livraison: { eyebrow: "Logistique", title: "Livraison", description: "Configurez simplement les régions et leurs tarifs." },
   livreurs: { eyebrow: "Équipe", title: "Livreurs", description: "Organisez les personnes qui prennent en charge vos colis." },
+  fidelite: { eyebrow: "Relation client", title: "Fidélité", description: "Suivez les points gagnés et utilisés dans votre boutique." },
   messages: { eyebrow: "Relation client", title: "Messages", description: "Répondez aux questions de vos clients sur vos produits et commandes." },
   boutique: { eyebrow: "Vitrine", title: "Ma boutique", description: "Soignez la présentation visible par vos clients." },
   abonnement: { eyebrow: "Accès", title: "Abonnement", description: "Consultez votre plan et transmettez un paiement." },
@@ -212,11 +217,9 @@ const merchantSectionTitles: Record<MerchantTab, { eyebrow: string; title: strin
 export function MerchantWorkspace(props: MerchantWorkspaceProps) {
   const router = useRouter();
   const [tab, setTab] = useState<MerchantTab>(
-    props.merchant?.verification_status !== "approved"
-      ? "dossier"
-      : props.merchant && ["active", "grace"].includes(props.merchant.subscription_status)
-        ? "dashboard"
-        : "abonnement",
+    props.merchant && ["active", "grace"].includes(props.merchant.subscription_status)
+      ? "dashboard"
+      : "abonnement",
   );
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
@@ -454,17 +457,8 @@ export function MerchantWorkspace(props: MerchantWorkspaceProps) {
       props.subscriptionPaymentNumbers.orangeMoney,
   );
   const subscriptionReady = ["active", "grace"].includes(props.merchant.subscription_status);
-  const verificationReady = props.merchant.verification_status === "approved";
-  const visibleNavigation = verificationReady
-    ? merchantNavigation
-    : merchantNavigation.filter(({ id }) => id === "dossier" || id === "abonnement");
-  const currentSection = !verificationReady && tab === "dossier"
-    ? {
-        eyebrow: "Conformité",
-        title: "Complétez votre dossier",
-        description: "Ajoutez les justificatifs nécessaires à la validation de votre boutique.",
-      }
-    : merchantSectionTitles[tab];
+  const visibleNavigation = merchantNavigation;
+  const currentSection = merchantSectionTitles[tab];
 
   return (
     <div className="merchant-app-layout">
@@ -543,6 +537,8 @@ export function MerchantWorkspace(props: MerchantWorkspaceProps) {
         {tab === "livreurs" && (
           <CourierManager merchantId={props.merchant.id} orders={props.orders} />
         )}
+
+        {tab === "fidelite" && <MerchantLoyalty merchantId={props.merchant.id} />}
 
         {tab === "messages" && (
           <section className="merchant-content-surface">

@@ -71,6 +71,7 @@ export type QuoteRequestGroup = {
   merchantId: string;
   deliveryZoneId?: string | null;
   methodKind?: "pickup" | "merchant_delivery";
+  applyLoyalty?: boolean;
   items: Array<{ variantId: string; quantity: number }>;
 };
 

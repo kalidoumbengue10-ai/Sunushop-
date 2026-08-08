@@ -22,6 +22,10 @@ export async function POST(
     if (error) throw error;
 
     const admin = requireAdminClient();
+    if (input.resolution === "refund") {
+      const { error: loyaltyError } = await admin.rpc("reverse_order_loyalty", { p_order_id: orderId });
+      if (loyaltyError) throw loyaltyError;
+    }
     const { data: order } = await admin
       .from("orders")
       .select("public_code, total_xof, buyer_id, merchant_id, batch_id, merchant_accounts(public_name, email, owner_user_id)")

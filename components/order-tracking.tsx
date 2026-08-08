@@ -15,6 +15,9 @@ type OrderPayload = {
     public_code: string;
     status: string;
     total_xof: number;
+    loyalty_points_redeemed: number;
+    loyalty_discount_xof: number;
+    loyalty_points_earned: number;
     payment_method: string;
     payment_instructions_snapshot: {
       channel?: string;
@@ -190,6 +193,8 @@ export function OrderTracking({ orderId }: { orderId: string }) {
           {payload.order.merchant_accounts.public_name} ·{" "}
           {formatPrice(payload.order.total_xof)}
         </p>
+        {payload.order.loyalty_discount_xof > 0 && <p className="mvp-alert"><strong>{payload.order.loyalty_points_redeemed} points utilisés</strong><br />Remise fidélité : {formatPrice(payload.order.loyalty_discount_xof)}</p>}
+        {payload.order.loyalty_points_earned > 0 && <p className="mvp-alert">Cette livraison vous a rapporté <strong>{payload.order.loyalty_points_earned} points</strong> dans cette boutique.</p>}
         {payload.delivery?.recipientCode && (
           <div className="mvp-alert">
             <strong>Code de réception</strong>

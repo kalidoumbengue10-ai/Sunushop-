@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ChevronDown, Search, ShoppingBag } from "lucide-react";
+import { ChevronDown, LogOut, Search, ShoppingBag } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { CartProvider, useCart } from "@/components/cart-provider";
 import { CartDrawer } from "@/components/cart-drawer";
@@ -77,6 +77,42 @@ function AccessMenu({ onNavigate }: { onNavigate: () => void }) {
   );
 }
 
+function SignOutButton({ onNavigate }: { onNavigate: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  const signOut = async () => {
+    if (busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      const response = await fetch("/api/auth/sign-out", { method: "POST" });
+      if (!response.ok) throw new Error("SIGN_OUT_FAILED");
+      onNavigate();
+      window.location.replace("/");
+    } catch {
+      setBusy(false);
+      setError("La déconnexion a échoué. Réessayez.");
+    }
+  };
+
+  return (
+    <div className="auth-sign-out">
+      <button
+        type="button"
+        className="auth-sign-out__button"
+        onClick={signOut}
+        disabled={busy}
+        aria-label="Se déconnecter"
+      >
+        <LogOut aria-hidden="true" />
+        {busy ? "Déconnexion…" : "Se déconnecter"}
+      </button>
+      {error && <span role="alert">{error}</span>}
+    </div>
+  );
+}
+
 function ShellChrome({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { authenticated, area: authenticatedArea } = useAuthState();
@@ -104,10 +140,13 @@ function ShellChrome({ children }: { children: React.ReactNode }) {
             <Link href="/recherche" onClick={() => setMenuOpen(false)}>Rechercher</Link>
             <Link href="/aide" onClick={() => setMenuOpen(false)}>Aide</Link>
             <Link href="/creer-ma-boutique" className="mvp-nav__cta" onClick={() => setMenuOpen(false)}>Créer ma boutique</Link>
-            {isAuth ? (
+            {authenticated ? (
+              <>
+                <Link href={area.href} className="mvp-nav__cta" onClick={() => setMenuOpen(false)}>{area.label}</Link>
+                <SignOutButton onNavigate={() => setMenuOpen(false)} />
+              </>
+            ) : isAuth ? (
               <Link href="/marche" className="mvp-nav__cta" onClick={() => setMenuOpen(false)}>Retour au marché</Link>
-            ) : authenticated ? (
-              <Link href={area.href} className="mvp-nav__cta" onClick={() => setMenuOpen(false)}>{area.label}</Link>
             ) : (
               <AccessMenu onNavigate={() => setMenuOpen(false)} />
             )}

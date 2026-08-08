@@ -44,6 +44,12 @@ describe("contrat statique des migrations", () => {
       "courier_memberships",
       "deliveries",
       "delivery_events",
+      "merchant_loyalty_settings",
+      "loyalty_accounts",
+      "loyalty_point_lots",
+      "loyalty_entries",
+      "loyalty_contributions",
+      "loyalty_credit_payouts",
     ].forEach((table) => {
       expect(sql).toContain(
         `alter table public.${table} enable row level security;`,
@@ -62,6 +68,10 @@ describe("contrat statique des migrations", () => {
     expect(sql).toContain("grant execute");
     expect(sql).toContain("create type public.crm_lead_status");
     expect(sql).toContain("create policy crm_leads_admin_access");
+    expect(sql).toContain("create function public.consume_loyalty_points");
+    expect(sql).toContain("create function public.reverse_order_loyalty");
+    expect(sql).toContain("create function public.prepare_loyalty_credit_payouts");
+    expect(sql).toContain("'courier-profiles', 'courier-profiles', false");
   });
 
   it("modernise l’espace marchand via une migration additive", () => {

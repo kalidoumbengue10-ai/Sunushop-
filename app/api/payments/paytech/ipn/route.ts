@@ -202,6 +202,7 @@ async function handleEvent(admin: AdminClient, typeEvent: string, payload: Payte
         .eq("batch_id", intent.order_batch_id);
       for (const order of orders ?? []) {
         await admin.rpc("mark_escrow_refunded", { p_order_id: order.id });
+        await admin.rpc("reverse_order_loyalty", { p_order_id: order.id });
       }
       await admin
         .from("payment_intents")
@@ -213,6 +214,15 @@ async function handleEvent(admin: AdminClient, typeEvent: string, payload: Payte
     case "transfer_success": {
       const externalId = String(payload.custom_field ?? payload.external_id ?? "");
       if (!externalId) return;
+      if (externalId.startsWith("LOYALTY-")) {
+        const { error } = await admin.from("loyalty_credit_payouts").update({
+          status: "paid",
+          paid_at: new Date().toISOString(),
+          last_error: null,
+        }).eq("external_id", externalId);
+        if (error) throw error;
+        return;
+      }
       const { error } = await admin.rpc("mark_payout_paid", {
         p_external_id: externalId,
         p_id_transfer: token || null,
@@ -224,6 +234,15 @@ async function handleEvent(admin: AdminClient, typeEvent: string, payload: Payte
     case "transfer_failed": {
       const externalId = String(payload.custom_field ?? payload.external_id ?? "");
       if (!externalId) return;
+      if (externalId.startsWith("LOYALTY-")) {
+        const { error } = await admin.from("loyalty_credit_payouts").update({
+          status: "failed",
+          failed_at: new Date().toISOString(),
+          last_error: "PAYTECH_TRANSFER_FAILED",
+        }).eq("external_id", externalId);
+        if (error) throw error;
+        return;
+      }
       const { data: payout, error } = await admin.rpc("mark_payout_failed", {
         p_external_id: externalId,
         p_error: "PAYTECH_TRANSFER_FAILED",

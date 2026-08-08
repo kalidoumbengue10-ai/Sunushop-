@@ -1,4 +1,4 @@
-export type Json =
+﻿export type Json =
   | string
   | number
   | boolean
@@ -284,42 +284,128 @@ export type Database = {
           },
         ]
       }
+      conversations: {
+        Row: {
+          admin_last_read_at: string | null
+          buyer_id: string
+          buyer_last_read_at: string | null
+          created_at: string
+          id: string
+          kind: Database["public"]["Enums"]["conversation_kind"]
+          last_message_at: string
+          merchant_id: string | null
+          merchant_last_read_at: string | null
+          order_id: string | null
+          product_id: string | null
+          subject: string | null
+        }
+        Insert: {
+          admin_last_read_at?: string | null
+          buyer_id: string
+          buyer_last_read_at?: string | null
+          created_at?: string
+          id?: string
+          kind: Database["public"]["Enums"]["conversation_kind"]
+          last_message_at?: string
+          merchant_id?: string | null
+          merchant_last_read_at?: string | null
+          order_id?: string | null
+          product_id?: string | null
+          subject?: string | null
+        }
+        Update: {
+          admin_last_read_at?: string | null
+          buyer_id?: string
+          buyer_last_read_at?: string | null
+          created_at?: string
+          id?: string
+          kind?: Database["public"]["Enums"]["conversation_kind"]
+          last_message_at?: string
+          merchant_id?: string | null
+          merchant_last_read_at?: string | null
+          order_id?: string | null
+          product_id?: string | null
+          subject?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "conversations_buyer_id_fkey"
+            columns: ["buyer_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "conversations_merchant_id_fkey"
+            columns: ["merchant_id"]
+            isOneToOne: false
+            referencedRelation: "merchant_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "conversations_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "conversations_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       courier_memberships: {
         Row: {
           accepted_at: string
           courier_user_id: string
           created_at: string
           display_name: string
+          email: string | null
           id: string
           invited_by: string
           merchant_id: string
           phone: string
+          photo_storage_path: string | null
           status: Database["public"]["Enums"]["courier_membership_status"]
           updated_at: string
+          vehicle_registration: string | null
+          vehicle_type: string | null
         }
         Insert: {
           accepted_at?: string
           courier_user_id: string
           created_at?: string
           display_name: string
+          email?: string | null
           id?: string
           invited_by: string
           merchant_id: string
           phone: string
+          photo_storage_path?: string | null
           status?: Database["public"]["Enums"]["courier_membership_status"]
           updated_at?: string
+          vehicle_registration?: string | null
+          vehicle_type?: string | null
         }
         Update: {
           accepted_at?: string
           courier_user_id?: string
           created_at?: string
           display_name?: string
+          email?: string | null
           id?: string
           invited_by?: string
           merchant_id?: string
           phone?: string
+          photo_storage_path?: string | null
           status?: Database["public"]["Enums"]["courier_membership_status"]
           updated_at?: string
+          vehicle_registration?: string | null
+          vehicle_type?: string | null
         }
         Relationships: [
           {
@@ -582,10 +668,12 @@ export type Database = {
           assigned_at: string
           assigned_by: string
           code_attempt_limit: number
+          commission_status: string
           courier_membership_id: string
           created_at: string
           delivered_at: string | null
           failure_reason: string | null
+          gross_delivery_fee_xof: number
           id: string
           merchant_id: string
           order_id: string
@@ -593,6 +681,8 @@ export type Database = {
           pickup_code_hash: string
           pickup_snapshot: Json
           pickup_verified_at: string | null
+          platform_commission_rate_bps: number
+          platform_commission_xof: number
           recipient_code_attempts: number
           recipient_code_hash: string
           status: Database["public"]["Enums"]["delivery_status"]
@@ -602,10 +692,12 @@ export type Database = {
           assigned_at?: string
           assigned_by: string
           code_attempt_limit?: number
+          commission_status?: string
           courier_membership_id: string
           created_at?: string
           delivered_at?: string | null
           failure_reason?: string | null
+          gross_delivery_fee_xof?: number
           id?: string
           merchant_id: string
           order_id: string
@@ -613,6 +705,8 @@ export type Database = {
           pickup_code_hash: string
           pickup_snapshot: Json
           pickup_verified_at?: string | null
+          platform_commission_rate_bps?: number
+          platform_commission_xof?: number
           recipient_code_attempts?: number
           recipient_code_hash: string
           status?: Database["public"]["Enums"]["delivery_status"]
@@ -622,10 +716,12 @@ export type Database = {
           assigned_at?: string
           assigned_by?: string
           code_attempt_limit?: number
+          commission_status?: string
           courier_membership_id?: string
           created_at?: string
           delivered_at?: string | null
           failure_reason?: string | null
+          gross_delivery_fee_xof?: number
           id?: string
           merchant_id?: string
           order_id?: string
@@ -633,6 +729,8 @@ export type Database = {
           pickup_code_hash?: string
           pickup_snapshot?: Json
           pickup_verified_at?: string | null
+          platform_commission_rate_bps?: number
+          platform_commission_xof?: number
           recipient_code_attempts?: number
           recipient_code_hash?: string
           status?: Database["public"]["Enums"]["delivery_status"]
@@ -1056,6 +1154,286 @@ export type Database = {
           },
         ]
       }
+      loyalty_accounts: {
+        Row: {
+          balance_points: number
+          buyer_id: string
+          created_at: string
+          id: string
+          lifetime_earned_points: number
+          lifetime_redeemed_points: number
+          merchant_id: string
+          updated_at: string
+        }
+        Insert: {
+          balance_points?: number
+          buyer_id: string
+          created_at?: string
+          id?: string
+          lifetime_earned_points?: number
+          lifetime_redeemed_points?: number
+          merchant_id: string
+          updated_at?: string
+        }
+        Update: {
+          balance_points?: number
+          buyer_id?: string
+          created_at?: string
+          id?: string
+          lifetime_earned_points?: number
+          lifetime_redeemed_points?: number
+          merchant_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "loyalty_accounts_buyer_id_fkey"
+            columns: ["buyer_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "loyalty_accounts_merchant_id_fkey"
+            columns: ["merchant_id"]
+            isOneToOne: false
+            referencedRelation: "merchant_accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      loyalty_contributions: {
+        Row: {
+          buyer_id: string
+          created_at: string
+          discount_xof: number
+          id: string
+          kind: string
+          merchant_id: string
+          merchant_share_xof: number
+          order_id: string
+          payout_id: string | null
+          platform_share_xof: number
+        }
+        Insert: {
+          buyer_id: string
+          created_at?: string
+          discount_xof: number
+          id?: string
+          kind: string
+          merchant_id: string
+          merchant_share_xof: number
+          order_id: string
+          payout_id?: string | null
+          platform_share_xof: number
+        }
+        Update: {
+          buyer_id?: string
+          created_at?: string
+          discount_xof?: number
+          id?: string
+          kind?: string
+          merchant_id?: string
+          merchant_share_xof?: number
+          order_id?: string
+          payout_id?: string | null
+          platform_share_xof?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "loyalty_contributions_buyer_id_fkey"
+            columns: ["buyer_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "loyalty_contributions_merchant_id_fkey"
+            columns: ["merchant_id"]
+            isOneToOne: false
+            referencedRelation: "merchant_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "loyalty_contributions_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "loyalty_contributions_payout_id_fkey"
+            columns: ["payout_id"]
+            isOneToOne: false
+            referencedRelation: "loyalty_credit_payouts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      loyalty_credit_payouts: {
+        Row: {
+          amount_xof: number
+          attempts: number
+          created_at: string
+          destination_number: string
+          external_id: string
+          failed_at: string | null
+          id: string
+          last_error: string | null
+          merchant_id: string
+          paid_at: string | null
+          period_end: string
+          period_start: string
+          sent_at: string | null
+          service: string
+          status: string
+        }
+        Insert: {
+          amount_xof: number
+          attempts?: number
+          created_at?: string
+          destination_number: string
+          external_id: string
+          failed_at?: string | null
+          id?: string
+          last_error?: string | null
+          merchant_id: string
+          paid_at?: string | null
+          period_end: string
+          period_start: string
+          sent_at?: string | null
+          service: string
+          status?: string
+        }
+        Update: {
+          amount_xof?: number
+          attempts?: number
+          created_at?: string
+          destination_number?: string
+          external_id?: string
+          failed_at?: string | null
+          id?: string
+          last_error?: string | null
+          merchant_id?: string
+          paid_at?: string | null
+          period_end?: string
+          period_start?: string
+          sent_at?: string | null
+          service?: string
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "loyalty_credit_payouts_merchant_id_fkey"
+            columns: ["merchant_id"]
+            isOneToOne: false
+            referencedRelation: "merchant_accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      loyalty_entries: {
+        Row: {
+          account_id: string
+          balance_after: number
+          created_at: string
+          expires_at: string | null
+          id: number
+          kind: string
+          metadata: Json
+          order_id: string | null
+          points_delta: number
+        }
+        Insert: {
+          account_id: string
+          balance_after: number
+          created_at?: string
+          expires_at?: string | null
+          id?: never
+          kind: string
+          metadata?: Json
+          order_id?: string | null
+          points_delta: number
+        }
+        Update: {
+          account_id?: string
+          balance_after?: number
+          created_at?: string
+          expires_at?: string | null
+          id?: never
+          kind?: string
+          metadata?: Json
+          order_id?: string | null
+          points_delta?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "loyalty_entries_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "loyalty_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "loyalty_entries_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      loyalty_point_lots: {
+        Row: {
+          account_id: string
+          created_at: string
+          expires_at: string
+          id: string
+          original_points: number
+          remaining_points: number
+          source_kind: string
+          source_order_id: string | null
+          warning_sent_at: string | null
+        }
+        Insert: {
+          account_id: string
+          created_at?: string
+          expires_at: string
+          id?: string
+          original_points: number
+          remaining_points: number
+          source_kind: string
+          source_order_id?: string | null
+          warning_sent_at?: string | null
+        }
+        Update: {
+          account_id?: string
+          created_at?: string
+          expires_at?: string
+          id?: string
+          original_points?: number
+          remaining_points?: number
+          source_kind?: string
+          source_order_id?: string | null
+          warning_sent_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "loyalty_point_lots_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "loyalty_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "loyalty_point_lots_source_order_id_fkey"
+            columns: ["source_order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       merchant_accounts: {
         Row: {
           address_hint: string | null
@@ -1154,6 +1532,60 @@ export type Database = {
           {
             foreignKeyName: "merchant_accounts_owner_user_id_fkey"
             columns: ["owner_user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      merchant_loyalty_settings: {
+        Row: {
+          accrual_enabled: boolean
+          created_at: string
+          earn_xof_per_point: number
+          max_redemption_bps: number
+          merchant_funding_bps: number
+          merchant_id: string
+          platform_funding_bps: number
+          point_value_xof: number
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          accrual_enabled?: boolean
+          created_at?: string
+          earn_xof_per_point?: number
+          max_redemption_bps?: number
+          merchant_funding_bps?: number
+          merchant_id: string
+          platform_funding_bps?: number
+          point_value_xof?: number
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          accrual_enabled?: boolean
+          created_at?: string
+          earn_xof_per_point?: number
+          max_redemption_bps?: number
+          merchant_funding_bps?: number
+          merchant_id?: string
+          platform_funding_bps?: number
+          point_value_xof?: number
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "merchant_loyalty_settings_merchant_id_fkey"
+            columns: ["merchant_id"]
+            isOneToOne: true
+            referencedRelation: "merchant_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "merchant_loyalty_settings_updated_by_fkey"
+            columns: ["updated_by"]
             isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
@@ -1402,6 +1834,48 @@ export type Database = {
           },
         ]
       }
+      messages: {
+        Row: {
+          body: string
+          conversation_id: string
+          created_at: string
+          id: string
+          sender_id: string
+          sender_role: Database["public"]["Enums"]["message_sender_role"]
+        }
+        Insert: {
+          body: string
+          conversation_id: string
+          created_at?: string
+          id?: string
+          sender_id: string
+          sender_role: Database["public"]["Enums"]["message_sender_role"]
+        }
+        Update: {
+          body?: string
+          conversation_id?: string
+          created_at?: string
+          id?: string
+          sender_id?: string
+          sender_role?: Database["public"]["Enums"]["message_sender_role"]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "messages_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "messages_sender_id_fkey"
+            columns: ["sender_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       notification_outbox: {
         Row: {
           attempts: number
@@ -1636,6 +2110,13 @@ export type Database = {
           delivery_fee_xof: number
           delivery_snapshot: Json
           id: string
+          loyalty_accrual_enabled: boolean
+          loyalty_discount_xof: number
+          loyalty_merchant_share_xof: number
+          loyalty_platform_share_xof: number
+          loyalty_points_earned: number
+          loyalty_points_redeemed: number
+          loyalty_processed_at: string | null
           merchant_id: string
           merchant_sequence: number
           payment_instructions_snapshot: Json
@@ -1658,6 +2139,13 @@ export type Database = {
           delivery_fee_xof: number
           delivery_snapshot: Json
           id?: string
+          loyalty_accrual_enabled?: boolean
+          loyalty_discount_xof?: number
+          loyalty_merchant_share_xof?: number
+          loyalty_platform_share_xof?: number
+          loyalty_points_earned?: number
+          loyalty_points_redeemed?: number
+          loyalty_processed_at?: string | null
           merchant_id: string
           merchant_sequence: number
           payment_instructions_snapshot?: Json
@@ -1680,6 +2168,13 @@ export type Database = {
           delivery_fee_xof?: number
           delivery_snapshot?: Json
           id?: string
+          loyalty_accrual_enabled?: boolean
+          loyalty_discount_xof?: number
+          loyalty_merchant_share_xof?: number
+          loyalty_platform_share_xof?: number
+          loyalty_points_earned?: number
+          loyalty_points_redeemed?: number
+          loyalty_processed_at?: string | null
           merchant_id?: string
           merchant_sequence?: number
           payment_instructions_snapshot?: Json
@@ -2733,6 +3228,10 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      admin_delete_merchant_cascade: {
+        Args: { p_merchant_id: string }
+        Returns: undefined
+      }
       admin_grant_subscription: {
         Args: {
           p_days: number
@@ -2769,6 +3268,7 @@ export type Database = {
           top_sellers: Json
         }[]
       }
+      award_order_loyalty: { Args: { p_order_id: string }; Returns: undefined }
       capture_order_payment: {
         Args: {
           p_amount_xof: number
@@ -2809,10 +3309,12 @@ export type Database = {
           assigned_at: string
           assigned_by: string
           code_attempt_limit: number
+          commission_status: string
           courier_membership_id: string
           created_at: string
           delivered_at: string | null
           failure_reason: string | null
+          gross_delivery_fee_xof: number
           id: string
           merchant_id: string
           order_id: string
@@ -2820,6 +3322,8 @@ export type Database = {
           pickup_code_hash: string
           pickup_snapshot: Json
           pickup_verified_at: string | null
+          platform_commission_rate_bps: number
+          platform_commission_xof: number
           recipient_code_attempts: number
           recipient_code_hash: string
           status: Database["public"]["Enums"]["delivery_status"]
@@ -2862,6 +3366,10 @@ export type Database = {
           isOneToOne: true
           isSetofReturn: false
         }
+      }
+      consume_loyalty_points: {
+        Args: { p_account_id: string; p_order_id: string; p_points: number }
+        Returns: number
       }
       consume_rate_limit: {
         Args: {
@@ -2921,6 +3429,10 @@ export type Database = {
         Args: { p_groups: Json; p_idempotency_key: string; p_recipient: Json }
         Returns: Json
       }
+      create_order_batch_without_loyalty: {
+        Args: { p_groups: Json; p_idempotency_key: string; p_recipient: Json }
+        Returns: Json
+      }
       create_order_payment_intent: {
         Args: {
           p_amount_xof: number
@@ -2953,6 +3465,16 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      credit_loyalty_points: {
+        Args: {
+          p_account_id: string
+          p_expires_at: string
+          p_kind: string
+          p_order_id: string
+          p_points: number
+        }
+        Returns: number
+      }
       declare_direct_payment: {
         Args: {
           p_amount_xof: number
@@ -2971,6 +3493,26 @@ export type Database = {
           storage_path: string
         }[]
       }
+      ensure_loyalty_account: {
+        Args: { p_buyer_id: string; p_merchant_id: string }
+        Returns: {
+          balance_points: number
+          buyer_id: string
+          created_at: string
+          id: string
+          lifetime_earned_points: number
+          lifetime_redeemed_points: number
+          merchant_id: string
+          updated_at: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "loyalty_accounts"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      expire_loyalty_points: { Args: { p_limit?: number }; Returns: number }
       generate_public_code: { Args: { p_prefix: string }; Returns: string }
       has_aal2: { Args: never; Returns: boolean }
       has_admin_role: {
@@ -3127,8 +3669,13 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      prepare_loyalty_credit_payouts: { Args: never; Returns: number }
       refresh_subscription_states: { Args: never; Returns: number }
       release_due_escrows: { Args: { p_limit?: number }; Returns: Json }
+      reorder_merchant_product_media: {
+        Args: { p_media_ids: string[]; p_product_id: string }
+        Returns: Json
+      }
       resolve_order_dispute: {
         Args: { p_note?: string; p_order_id: string; p_resolution: string }
         Returns: {
@@ -3155,6 +3702,10 @@ export type Database = {
           isOneToOne: true
           isSetofReturn: false
         }
+      }
+      reverse_order_loyalty: {
+        Args: { p_order_id: string }
+        Returns: undefined
       }
       review_subscription_payment: {
         Args: {
@@ -3226,10 +3777,6 @@ export type Database = {
         }
         Returns: Json
       }
-      reorder_merchant_product_media: {
-        Args: { p_media_ids: string[]; p_product_id: string }
-        Returns: Json
-      }
       set_merchant_product_publication: {
         Args: { p_product_id: string; p_publish: boolean }
         Returns: {
@@ -3238,6 +3785,7 @@ export type Database = {
           description: string
           id: string
           merchant_id: string
+          option_names: string[]
           published_at: string | null
           slug: string
           status: Database["public"]["Enums"]["product_status"]
@@ -3251,6 +3799,8 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      show_limit: { Args: never; Returns: number }
+      show_trgm: { Args: { "": string }; Returns: string[] }
       submit_subscription_payment: {
         Args: {
           p_amount_xof: number
@@ -3324,6 +3874,13 @@ export type Database = {
           delivery_fee_xof: number
           delivery_snapshot: Json
           id: string
+          loyalty_accrual_enabled: boolean
+          loyalty_discount_xof: number
+          loyalty_merchant_share_xof: number
+          loyalty_platform_share_xof: number
+          loyalty_points_earned: number
+          loyalty_points_redeemed: number
+          loyalty_processed_at: string | null
           merchant_id: string
           merchant_sequence: number
           payment_instructions_snapshot: Json
@@ -3350,6 +3907,7 @@ export type Database = {
     }
     Enums: {
       admin_role_kind: "reviewer" | "support" | "admin"
+      conversation_kind: "buyer_merchant" | "buyer_support"
       courier_membership_status: "active" | "inactive"
       crm_lead_priority: "low" | "normal" | "high"
       crm_lead_status:
@@ -3375,6 +3933,7 @@ export type Database = {
       merchant_media_kind: "logo" | "cover"
       merchant_member_role: "owner" | "manager" | "catalog" | "fulfillment"
       merchant_status: "draft" | "pending" | "active" | "suspended" | "closed"
+      message_sender_role: "buyer" | "merchant" | "admin"
       notification_status: "pending" | "processing" | "sent" | "failed"
       order_payment_method:
         | "cash_on_delivery"
@@ -3560,6 +4119,7 @@ export const Constants = {
   public: {
     Enums: {
       admin_role_kind: ["reviewer", "support", "admin"],
+      conversation_kind: ["buyer_merchant", "buyer_support"],
       courier_membership_status: ["active", "inactive"],
       crm_lead_priority: ["low", "normal", "high"],
       crm_lead_status: [
@@ -3587,6 +4147,7 @@ export const Constants = {
       merchant_media_kind: ["logo", "cover"],
       merchant_member_role: ["owner", "manager", "catalog", "fulfillment"],
       merchant_status: ["draft", "pending", "active", "suspended", "closed"],
+      message_sender_role: ["buyer", "merchant", "admin"],
       notification_status: ["pending", "processing", "sent", "failed"],
       order_payment_method: [
         "cash_on_delivery",

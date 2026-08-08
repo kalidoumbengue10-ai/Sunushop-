@@ -61,7 +61,12 @@ export async function POST(request: Request) {
       }
     } else {
       merchantId = String(invitation.merchant_id);
-      const payload = invitation.payload as { displayName?: string; phone?: string };
+      const payload = invitation.payload as {
+        displayName: string;
+        phone: string;
+        vehicleType?: string;
+        vehicleRegistration?: string;
+      };
       const { error: membershipError } = await admin
         .from("courier_memberships")
         .upsert(
@@ -69,7 +74,10 @@ export async function POST(request: Request) {
             merchant_id: merchantId,
             courier_user_id: user.id,
             display_name: payload.displayName,
+            email: invitation.email,
             phone: payload.phone,
+            vehicle_type: payload.vehicleType ?? null,
+            vehicle_registration: payload.vehicleRegistration ?? null,
             status: "active",
             invited_by: invitation.invited_by,
           },

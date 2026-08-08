@@ -50,6 +50,11 @@ type QuoteGroupResult = {
   methodKind: "pickup" | "merchant_delivery";
   subtotalXof: number;
   deliveryFeeXof: number;
+  availablePoints: number;
+  pointsApplied: number;
+  loyaltyDiscountXof: number;
+  pointsEarnable: number;
+  loyaltyAccrualEnabled: boolean;
   totalXof: number;
 };
 
@@ -80,6 +85,7 @@ export function CheckoutFlow() {
   const [selectedZones, setSelectedZones] = useState<Record<string, string>>({});
   const [methodKinds, setMethodKinds] = useState<Record<string, "pickup" | "merchant_delivery">>({});
   const [paymentMethods, setPaymentMethods] = useState<Record<string, CheckoutGroupDraft["paymentMethod"]>>({});
+  const [applyLoyalty, setApplyLoyalty] = useState<Record<string, boolean>>({});
   const [payOnline, setPayOnline] = useState(false);
   const [recipient, setRecipient] = useState<CheckoutRecipient>(emptyRecipient);
   const [quote, setQuote] = useState<{ groups: QuoteGroupResult[]; totalXof: number } | null>(null);
@@ -156,15 +162,18 @@ export function CheckoutFlow() {
   const buildQuoteGroups = (
     methodKindsOverride?: Record<string, "pickup" | "merchant_delivery">,
     selectedZonesOverride?: Record<string, string>,
+    loyaltyOverride?: Record<string, boolean>,
   ) => {
     const kinds = methodKindsOverride ?? methodKinds;
     const zones = selectedZonesOverride ?? selectedZones;
+    const loyalty = loyaltyOverride ?? applyLoyalty;
     return groups.map((group) => {
       const methodKind = kinds[group.merchantId] ?? "merchant_delivery";
       return {
         merchantId: group.merchantId,
         methodKind,
         deliveryZoneId: methodKind === "pickup" ? undefined : zones[group.merchantId],
+        applyLoyalty: loyalty[group.merchantId] ?? true,
         items: group.lines.map((line) => ({ variantId: line.product.variant.id, quantity: line.quantity })),
       };
     });
@@ -177,6 +186,7 @@ export function CheckoutFlow() {
   const requestQuote = async (
     methodKindsOverride?: Record<string, "pickup" | "merchant_delivery">,
     selectedZonesOverride?: Record<string, string>,
+    loyaltyOverride?: Record<string, boolean>,
   ) => {
     setError("");
     setBusy(true);
@@ -184,7 +194,7 @@ export function CheckoutFlow() {
       const response = await fetch("/api/cart/quote", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ groups: buildQuoteGroups(methodKindsOverride, selectedZonesOverride) }),
+        body: JSON.stringify({ groups: buildQuoteGroups(methodKindsOverride, selectedZonesOverride, loyaltyOverride) }),
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload?.error?.message ?? "Le devis n’a pas pu être calculé.");
@@ -208,16 +218,18 @@ export function CheckoutFlow() {
     let cancelled = false;
     const draftZones = Object.fromEntries(draft.groups.filter((group) => group.deliveryZoneId).map((group) => [group.merchantId, group.deliveryZoneId as string]));
     const draftMethodKinds = Object.fromEntries(draft.groups.map((group) => [group.merchantId, group.methodKind]));
+    const draftLoyalty = Object.fromEntries(draft.groups.map((group) => [group.merchantId, group.applyLoyalty ?? true]));
     queueMicrotask(async () => {
       if (cancelled) return;
       setRecipient(draft.recipient);
       setSelectedZones(draftZones);
       setMethodKinds(draftMethodKinds);
       setPaymentMethods(Object.fromEntries(draft.groups.map((group) => [group.merchantId, group.paymentMethod])));
+      setApplyLoyalty(draftLoyalty);
       setPayOnline(draft.groups.some((group) => group.paymentMethod === "paytech"));
       await cart.merge();
       if (cancelled) return;
-      if (await requestQuote(draftMethodKinds, draftZones)) setStep("confirmation");
+      if (await requestQuote(draftMethodKinds, draftZones, draftLoyalty)) setStep("confirmation");
     });
     return () => { cancelled = true; };
     // La reprise ne doit s'exécuter qu'une fois lorsque l'authentification et le panier sont prêts.
@@ -226,6 +238,12 @@ export function CheckoutFlow() {
 
   const goToLivraison = async () => {
     if (await requestQuote()) setStep("livraison");
+  };
+
+  const toggleLoyalty = async (merchantId: string, enabled: boolean) => {
+    const next = { ...applyLoyalty, [merchantId]: enabled };
+    setApplyLoyalty(next);
+    await requestQuote(undefined, undefined, next);
   };
 
   // Paiement en ligne PayTech : un seul paiement pour tout le panier, prioritaire
@@ -248,6 +266,7 @@ export function CheckoutFlow() {
           methodKind,
           deliveryZoneId: methodKind === "pickup" ? undefined : selectedZones[group.merchantId],
           paymentMethod: effectivePaymentMethod(group.merchantId),
+          applyLoyalty: applyLoyalty[group.merchantId] ?? true,
         };
       }),
     });
@@ -271,6 +290,7 @@ export function CheckoutFlow() {
               methodKind,
               deliveryZoneId: methodKind === "pickup" ? undefined : selectedZones[group.merchantId],
               paymentMethod: effectivePaymentMethod(group.merchantId),
+              applyLoyalty: applyLoyalty[group.merchantId] ?? true,
               items: group.lines.map((line) => ({ variantId: line.product.variant.id, quantity: line.quantity })),
             };
           }),
@@ -496,10 +516,11 @@ export function CheckoutFlow() {
               <ul className="mvp-list">
                 {quote.groups.map((group) => (
                   <li className="mvp-row" key={group.merchantId}>
-                    <span>
-                      {group.merchantName} ·{" "}
-                      {group.methodKind === "pickup" ? "Retrait en boutique — 0 F" : `livraison ${formatPrice(group.deliveryFeeXof)}`}
-                    </span>
+                    <div><span>{group.merchantName} · {group.methodKind === "pickup" ? "Retrait en boutique — 0 F" : `livraison ${formatPrice(group.deliveryFeeXof)}`}</span>
+                      {group.availablePoints > 0 && <label className="checkout-loyalty-toggle"><input type="checkbox" checked={applyLoyalty[group.merchantId] ?? true} onChange={(event) => void toggleLoyalty(group.merchantId, event.target.checked)} /> Utiliser mes points ({group.availablePoints} disponibles)</label>}
+                      {group.loyaltyDiscountXof > 0 && <small>Remise fidélité : −{formatPrice(group.loyaltyDiscountXof)} · {group.pointsApplied} points utilisés</small>}
+                      {group.loyaltyAccrualEnabled && <small>Cette commande rapportera {group.pointsEarnable} points après livraison.</small>}
+                    </div>
                     <strong>{formatPrice(group.totalXof)}</strong>
                   </li>
                 ))}
@@ -537,7 +558,7 @@ export function CheckoutFlow() {
           <ul className="mvp-list">
             {quote.groups.map((group) => (
               <li className="mvp-row" key={group.merchantId}>
-                <span>{group.merchantName}</span>
+                <div><span>{group.merchantName}</span>{group.loyaltyDiscountXof > 0 && <small>−{formatPrice(group.loyaltyDiscountXof)} avec {group.pointsApplied} points</small>}{group.loyaltyAccrualEnabled && <small>{group.pointsEarnable} points à gagner</small>}</div>
                 <strong>{formatPrice(group.totalXof)}</strong>
               </li>
             ))}

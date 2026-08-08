@@ -8,6 +8,9 @@ export type ConfirmedOrder = {
   merchantName?: string;
   totalXof: number;
   status: string;
+  loyaltyPointsRedeemed?: number;
+  loyaltyDiscountXof?: number;
+  loyaltyPointsEarnable?: number;
 };
 
 export function OrderBatchConfirmation({ orders, batchTotalXof }: { orders: ConfirmedOrder[]; batchTotalXof: number }) {
@@ -27,6 +30,8 @@ export function OrderBatchConfirmation({ orders, batchTotalXof }: { orders: Conf
             <div>
               <strong>{order.merchantName ?? "Boutique"}</strong>
               <small>Commande {order.publicCode} · {formatPrice(order.totalXof)}</small>
+              {Boolean(order.loyaltyDiscountXof) && <small>{order.loyaltyPointsRedeemed} points utilisés · remise {formatPrice(order.loyaltyDiscountXof ?? 0)}</small>}
+              {Boolean(order.loyaltyPointsEarnable) && <small>{order.loyaltyPointsEarnable} points après livraison</small>}
             </div>
             <Link href={`/commandes/${order.id}`} className="mvp-button mvp-button--secondary">
               Suivre

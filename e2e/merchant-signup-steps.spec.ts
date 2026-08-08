@@ -33,6 +33,10 @@ test.afterAll(async () => {
   for (const userId of createdUserIds) {
     await admin.auth.admin.deleteUser(userId);
   }
+  // L'inscription crée aussi une fiche CRM : elle doit disparaître avec les
+  // données E2E pour ne pas polluer le pipeline commercial réel.
+  await admin.from("crm_leads").update({ merchant_id: null }).eq("email", email);
+  await admin.from("crm_leads").delete().eq("email", email);
 });
 
 test("un nouvel utilisateur voit bien l'étape 1 (Mon commerce), sans saut d'étape", async ({ page }) => {
@@ -92,4 +96,14 @@ test("un nouvel utilisateur voit bien l'étape 1 (Mon commerce), sans saut d'ét
   if (created) createdUserIds.push(created.id);
   const { data: merchant } = await admin.from("merchant_accounts").select("id").eq("email", email).maybeSingle();
   if (merchant) createdMerchantIds.push(merchant.id);
+
+  // La déconnexion reste directement accessible quel que soit le rôle et
+  // invalide réellement la session avant de revenir à l'accueil.
+  const mobileMenu = page.getByRole("button", { name: "Menu" });
+  if (await mobileMenu.isVisible()) await mobileMenu.click();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
+  await page.getByRole("button", { name: "Se déconnecter" }).click();
+  await expect(page).toHaveURL("/");
+  await page.goto("/marchand");
+  await expect(page).toHaveURL(/\/connexion\?profil=vendeur/);
 });

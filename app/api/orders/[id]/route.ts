@@ -21,7 +21,7 @@ export async function GET(
       supabase
         .from("orders")
         .select(
-          "id, batch_id, buyer_id, merchant_id, public_code, status, payment_method, subtotal_xof, delivery_fee_xof, total_xof, delivery_snapshot, recipient_snapshot, payment_instructions_snapshot, created_at, updated_at",
+          "id, batch_id, buyer_id, merchant_id, public_code, status, payment_method, subtotal_xof, delivery_fee_xof, total_xof, loyalty_points_redeemed, loyalty_discount_xof, loyalty_points_earned, delivery_snapshot, recipient_snapshot, payment_instructions_snapshot, created_at, updated_at",
         )
         .eq("id", id)
         .single(),
