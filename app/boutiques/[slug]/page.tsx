@@ -3,6 +3,7 @@ import { MarketplaceClient } from "@/components/marketplace-client";
 import { MvpShell } from "@/components/mvp-shell";
 import { ShopContact } from "@/components/shop-contact";
 import { ShopFollowButton } from "@/components/shop-follow-button";
+import { StartConversationButton } from "@/components/start-conversation-button";
 import { getAdminSupabase } from "@/lib/infrastructure/supabase/server";
 import { SupabaseCatalogRepository } from "@/lib/infrastructure/supabase/repositories";
 import { formatPrice } from "@/lib/marketplace";
@@ -21,6 +22,11 @@ export default async function BoutiquePage({
   const shop = await repository.findShopBySlug(slug);
   if (!shop) notFound();
   const page = await repository.listPage({ merchantSlug: slug, page: 1, limit: 24 });
+  const { data: categories } = await admin
+    .from("categories")
+    .select("id, slug, name")
+    .eq("active", true)
+    .order("position");
   const { data: branding } = await admin
     .from("merchant_media")
     .select("kind, storage_bucket, storage_path")
@@ -53,6 +59,7 @@ export default async function BoutiquePage({
           </p>
           <div className="mvp-actions">
             <ShopFollowButton merchantId={shop.id} />
+            <StartConversationButton merchantId={shop.id} subject={`Question sur ${shop.name}`} />
           </div>
           <div className="mvp-list">
             {shop.deliveryZones.map((zone) => (
@@ -80,7 +87,7 @@ export default async function BoutiquePage({
               longitude={shop.pickup.longitude}
             />
           )}
-          <MarketplaceClient initialProducts={page.products} initialTotal={page.total} merchantSlug={shop.slug} groupByCategory />
+          <MarketplaceClient initialProducts={page.products} initialTotal={page.total} initialCategories={categories ?? []} merchantSlug={shop.slug} groupByCategory />
         </div>
       </main>
     </MvpShell>

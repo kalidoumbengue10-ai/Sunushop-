@@ -4,6 +4,8 @@ import Link from "next/link";
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { formatPrice } from "@/lib/marketplace";
 import { getBrowserSupabase } from "@/lib/infrastructure/supabase/browser";
+import { SENEGAL_REGIONS } from "@/lib/domain/merchant-ui";
+import { AbandonedCarts } from "@/components/abandoned-carts";
 
 type Address = { id: string; label: string; recipient_name: string; phone: string; region: string; city: string; address_hint: string; is_default: boolean };
 type Order = { id: string; public_code: string; status: string; total_xof: number; created_at: string; merchant_accounts: { public_name: string } | Array<{ public_name: string }> };
@@ -50,8 +52,20 @@ export function ClientWorkspace() {
     load().catch((caught: Error) => setError(caught.message));
     const interval = window.setInterval(() => { if (document.visibilityState === "visible") load().catch(() => undefined); }, 30_000);
     let channel: ReturnType<ReturnType<typeof getBrowserSupabase>["channel"]> | undefined;
-    try { const supabase = getBrowserSupabase(); channel = supabase.channel("client-orders").on("postgres_changes", { event: "*", schema: "public", table: "orders" }, () => { load().catch(() => undefined); }).subscribe(); } catch { /* Le rafraîchissement périodique reste actif. */ }
-    return () => { window.clearInterval(interval); if (channel) channel.unsubscribe(); };
+    let cancelled = false;
+    (async () => {
+      try {
+        const supabase = getBrowserSupabase();
+        const { data: { user } } = await supabase.auth.getUser();
+        if (cancelled || !user) return;
+        // Filtré sur l'acheteur : sans ce filtre, chaque changement de commande
+        // (toutes boutiques et tous acheteurs confondus) réveillait tous les clients connectés.
+        channel = supabase.channel("client-orders")
+          .on("postgres_changes", { event: "*", schema: "public", table: "orders", filter: `buyer_id=eq.${user.id}` }, () => { load().catch(() => undefined); })
+          .subscribe();
+      } catch { /* Le rafraîchissement périodique reste actif. */ }
+    })();
+    return () => { cancelled = true; window.clearInterval(interval); if (channel) channel.unsubscribe(); };
   }, [load]);
   const saveAddress = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault(); setError(""); setMessage(""); const form = new FormData(event.currentTarget);
@@ -72,10 +86,11 @@ export function ClientWorkspace() {
   const one = <T,>(value: T | T[]) => Array.isArray(value) ? value[0] : value;
   return <div className="mvp-grid">
     <section className="mvp-card mvp-card--full"><span className="mvp-eyebrow">Espace client</span><h1 className="mvp-title">Achats, adresses et suivi</h1><div className="mvp-actions"><Link className="mvp-button" href="/marche">Ouvrir mon panier</Link></div>{message && <p className="mvp-alert">{message}</p>}{error && <p className="mvp-alert mvp-alert--error">{error}</p>}</section>
+    <AbandonedCarts />
     <section className="mvp-card"><h2>Mes adresses</h2><div className="mvp-list">{addresses.map((address) => <div className="mvp-row" key={address.id}><div><strong>{address.label}{address.is_default ? " · par défaut" : ""}</strong><small>{address.recipient_name} · {address.phone}<br />{address.city}, {address.address_hint}</small></div><button className="mvp-button mvp-button--secondary" onClick={() => archive(address.id)}>Retirer</button></div>)}</div>
-      <form className="mvp-form" onSubmit={saveAddress}><h3>Ajouter une adresse</h3><div className="mvp-form__grid"><label className="mvp-field">Libellé<input name="label" placeholder="Maison" required /></label><label className="mvp-field">Destinataire<input name="recipientName" required /></label><label className="mvp-field">Téléphone<input name="phone" required /></label><label className="mvp-field">Région<input name="region" required /></label><label className="mvp-field">Ville<input name="city" required /></label></div><label className="mvp-field">Adresse et repère<textarea name="addressHint" required /></label><label><input name="isDefault" type="checkbox" /> Adresse par défaut</label><button className="mvp-button">Enregistrer</button></form>
+      <form className="mvp-form" onSubmit={saveAddress}><h3>Ajouter une adresse</h3><div className="mvp-form__grid"><label className="mvp-field">Libellé<input name="label" placeholder="Maison" required /></label><label className="mvp-field">Destinataire<input name="recipientName" required /></label><label className="mvp-field">Téléphone<input name="phone" required /></label><label className="mvp-field">Région<select name="region" required defaultValue=""><option value="" disabled>Choisissez une région</option>{SENEGAL_REGIONS.map((value) => <option value={value} key={value}>{value}</option>)}</select></label><label className="mvp-field">Ville<input name="city" required /></label></div><label className="mvp-field">Adresse et repère<textarea name="addressHint" required /></label><label><input name="isDefault" type="checkbox" /> Adresse par défaut</label><button className="mvp-button">Enregistrer</button></form>
     </section>
-    <section className="mvp-card"><h2>Mes commandes</h2>
+    <section className="mvp-card"><h2>Mes commandes</h2><Link className="mvp-link" href="/client/commandes">Voir toutes mes commandes en détail →</Link>
       <div className="mvp-tabs" role="tablist" aria-label="Filtrer mes commandes">
         {ORDER_TABS.map((tab) => (
           <button

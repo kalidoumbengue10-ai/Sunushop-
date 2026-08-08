@@ -16,6 +16,8 @@ export async function GET(request: Request) {
         query: url.searchParams.get("query")?.trim() || undefined,
         category: url.searchParams.get("category")?.trim() || undefined,
         merchantSlug: url.searchParams.get("merchant")?.trim() || undefined,
+        region: url.searchParams.get("region")?.trim() || undefined,
+        city: url.searchParams.get("city")?.trim() || undefined,
       }),
       admin.from("categories").select("id, slug, name, description").eq("active", true).order("position"),
       admin.from("merchant_media").select("merchant_id, kind, storage_bucket, storage_path"),

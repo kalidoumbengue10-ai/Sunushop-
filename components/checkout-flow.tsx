@@ -14,6 +14,7 @@ import {
 } from "@/lib/domain/checkout-draft";
 import { formatPrice } from "@/lib/marketplace";
 import type { CartLine } from "@/lib/domain/cart";
+import { SENEGAL_REGIONS } from "@/lib/domain/merchant-ui";
 
 type Step = "panier" | "livraison" | "compte" | "confirmation";
 
@@ -424,7 +425,10 @@ export function CheckoutFlow() {
               </label>
               <label className="mvp-field">
                 Région
-                <input value={recipient.region} onChange={(event) => setRecipient({ ...recipient, region: event.target.value })} required />
+                <select value={recipient.region} onChange={(event) => setRecipient({ ...recipient, region: event.target.value })} required>
+                  <option value="" disabled>Choisissez une région</option>
+                  {SENEGAL_REGIONS.map((value) => <option value={value} key={value}>{value}</option>)}
+                </select>
               </label>
               <label className="mvp-field">
                 Ville
