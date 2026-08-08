@@ -2,12 +2,16 @@
 
 import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
+import { AideSupportButton } from "@/components/aide-support-button";
 import { ShopContact } from "@/components/shop-contact";
+import { StartConversationButton } from "@/components/start-conversation-button";
+import { siteConfig } from "@/app/site-config";
 import { formatPrice } from "@/lib/marketplace";
 
 type OrderPayload = {
   order: {
     id: string;
+    merchant_id: string;
     public_code: string;
     status: string;
     total_xof: number;
@@ -210,6 +214,12 @@ export function OrderTracking({ orderId }: { orderId: string }) {
           phone={payload.order.merchant_accounts.phone}
           email={payload.order.merchant_accounts.email}
         />
+        <StartConversationButton
+          merchantId={payload.order.merchant_id}
+          orderId={payload.order.id}
+          subject={`Commande ${payload.order.public_code}`}
+          label="Discuter de cette commande"
+        />
 
         {payload.order.payment_method !== "cash_on_delivery" && (
           <>
@@ -327,12 +337,15 @@ export function OrderTracking({ orderId }: { orderId: string }) {
           Un problème avec cette commande, une question sur votre paiement ou votre livraison ?
           L’équipe SunuShop peut vous aider.
         </p>
-        <a
-          className="mvp-button mvp-button--secondary"
-          href={`mailto:sunushop1@gmail.com?subject=${encodeURIComponent(`SAV commande ${payload.order.public_code}`)}`}
-        >
-          Contacter le SAV SunuShop
-        </a>
+        <div className="mvp-actions">
+          <AideSupportButton />
+          <a
+            className="mvp-button mvp-button--secondary"
+            href={`mailto:${siteConfig.supportEmail}?subject=${encodeURIComponent(`SAV commande ${payload.order.public_code}`)}`}
+          >
+            Contacter le SAV par email
+          </a>
+        </div>
       </section>
       <section className="mvp-card">
         <h2>Historique vérifiable</h2>

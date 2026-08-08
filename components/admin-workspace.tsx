@@ -6,6 +6,7 @@ import {
   CheckCircle2,
   FileCheck2,
   LayoutDashboard,
+  MessageSquare,
   ReceiptText,
   ShieldCheck,
   Store,
@@ -17,10 +18,11 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { AdminCrm, type CrmLead } from "@/components/admin-crm";
 import { AdminCrmMetrics } from "@/components/admin-crm-metrics";
 import { CategoryAdmin } from "@/components/category-admin";
+import { ConversationList } from "@/components/conversation-list";
 import { MerchantInvitationPanel } from "@/components/merchant-invitation-panel";
 import { formatPrice } from "@/lib/marketplace";
 
-type AdminTab = "overview" | "crm" | "verifications" | "subscriptions" | "litiges" | "categories";
+type AdminTab = "overview" | "crm" | "verifications" | "subscriptions" | "litiges" | "support" | "categories";
 
 type VerificationQueueItem = {
   id: string;
@@ -330,6 +332,7 @@ export function AdminWorkspace({ initialTab = "overview" }: { initialTab?: Admin
     { id: "verifications" as const, label: "Dossiers commerçants", icon: FileCheck2, badge: queue.length },
     { id: "subscriptions" as const, label: "Abonnements", icon: ReceiptText, badge: payments.length },
     { id: "litiges" as const, label: "Litiges", icon: AlertTriangle, badge: disputes.length },
+    { id: "support" as const, label: "Support", icon: MessageSquare },
     { id: "categories" as const, label: "Catégories", icon: Store },
   ];
 
@@ -339,6 +342,7 @@ export function AdminWorkspace({ initialTab = "overview" }: { initialTab?: Admin
     verifications: ["Dossiers commerçants", "Validez les informations avec un parcours lisible et traçable."],
     subscriptions: ["Abonnements", "Activez les accès après confirmation des paiements."],
     litiges: ["Litiges", "Arbitrez les commandes signalées et débloquez les fonds gelés."],
+    support: ["Support", "Répondez aux acheteurs qui contactent l’équipe SunuShop."],
     categories: ["Catégories", "Organisez la navigation et le classement des boutiques."],
   }[tab];
 
@@ -494,6 +498,13 @@ export function AdminWorkspace({ initialTab = "overview" }: { initialTab?: Admin
               })}
               {!disputes.length && <div className="admin-empty"><CheckCircle2 /><h3>Aucun litige en cours</h3><p>Les commandes signalées par les acheteurs apparaîtront ici.</p></div>}
             </div>
+          </section>
+        )}
+
+        {tab === "support" && (
+          <section className="admin-panel admin-operation-panel">
+            <div className="admin-panel__heading"><div><span className="admin-kicker">Service après-vente</span><h2>Support SunuShop</h2><p>Fils ouverts par les acheteurs vers l’équipe SunuShop.</p></div></div>
+            <ConversationList view="asAdmin" />
           </section>
         )}
       </main>

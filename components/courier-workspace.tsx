@@ -25,9 +25,20 @@ export function CourierWorkspace() {
     load().catch((caught: Error) => setError(caught.message));
     const interval = window.setInterval(() => { if (document.visibilityState === "visible") load().catch(() => undefined); }, 30_000);
     let channel: ReturnType<ReturnType<typeof getBrowserSupabase>["channel"]> | undefined;
-    try { const supabase = getBrowserSupabase(); channel = supabase.channel("courier-deliveries").on("postgres_changes", { event: "*", schema: "public", table: "deliveries" }, () => { load().catch(() => undefined); }).subscribe(); } catch { /* Le rafraîchissement périodique reste actif. */ }
+    try {
+      const supabase = getBrowserSupabase();
+      const membershipIds = memberships.map((membership) => membership.id);
+      // Filtré sur les missions du livreur : sans ce filtre, chaque changement de
+      // livraison (toutes boutiques confondues) réveillait tous les livreurs connectés.
+      if (membershipIds.length) {
+        channel = supabase.channel("courier-deliveries")
+          .on("postgres_changes", { event: "*", schema: "public", table: "deliveries", filter: `courier_membership_id=in.(${membershipIds.join(",")})` }, () => { load().catch(() => undefined); })
+          .subscribe();
+      }
+    } catch { /* Le rafraîchissement périodique reste actif. */ }
     return () => { window.clearInterval(interval); if (channel) channel.unsubscribe(); };
-  }, [load]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [load, memberships.length]);
   const active = useMemo(() => items.filter((item) => !terminalStatuses.includes(item.status)), [items]);
   const history = useMemo(() => items.filter((item) => terminalStatuses.includes(item.status)), [items]);
 

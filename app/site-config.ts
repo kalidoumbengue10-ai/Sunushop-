@@ -12,6 +12,7 @@ export const siteConfig = {
   locale: "fr_SN",
   city: "Dakar",
   country: "SN",
+  supportEmail: "sunushop1@gmail.com",
 } as const;
 
 export function getStructuredData() {
