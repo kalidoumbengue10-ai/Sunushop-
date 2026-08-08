@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { Check, ChevronLeft, ChevronRight, Minus, Plus, ShoppingBag, X, ZoomIn } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useCart } from "@/components/cart-provider";
 import type { CatalogItem } from "@/lib/domain/repositories";
 import {
@@ -11,7 +11,10 @@ import {
   productOptionValues,
 } from "@/lib/domain/product-options";
 import { useVariantSelection } from "@/lib/domain/use-variant-selection";
+import { useCatalogSync } from "@/lib/domain/use-catalog-sync";
 import { formatPrice } from "@/lib/marketplace";
+import { useLocationFilter } from "@/components/location-provider";
+import { LocationFilter } from "@/components/location-filter";
 
 function VariantOptions({
   product,
@@ -22,7 +25,7 @@ function VariantOptions({
   selected: Record<string, string>;
   selectOption: (name: string, value: string) => void;
 }) {
-  const optionNames = productOptionNames(product.variants);
+  const optionNames = productOptionNames(product.variants, product.optionNames);
   return (
     <>
       {optionNames.map((name) => (
@@ -133,7 +136,7 @@ function ProductDetailModal({ product, onClose }: { product: CatalogItem; onClos
   );
 }
 
-function ProductCard({ product }: { product: CatalogItem }) {
+export function ProductCard({ product }: { product: CatalogItem }) {
   const cart = useCart();
   const { selected, variant, quantity, setQuantity, selectOption } = useVariantSelection(product);
   const [added, setAdded] = useState(false);
@@ -178,56 +181,116 @@ function ProductCard({ product }: { product: CatalogItem }) {
   );
 }
 
+type CatalogCategory = { id: string; slug: string; name: string };
+
 export function MarketplaceClient({
   initialProducts,
   initialTotal = initialProducts.length,
+  initialCategories = [],
+  initialCategorySlug = null,
   merchantSlug,
   groupByCategory = false,
 }: {
   initialProducts: CatalogItem[];
   initialTotal?: number;
+  initialCategories?: CatalogCategory[];
+  initialCategorySlug?: string | null;
   merchantSlug?: string;
   groupByCategory?: boolean;
 }) {
   const [products, setProducts] = useState(initialProducts);
   const [total, setTotal] = useState(initialTotal);
+  const [allCategories, setAllCategories] = useState(initialCategories);
   const [page, setPage] = useState(1);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [activeCategory, setActiveCategory] = useState("Toutes");
+  const [loadingFilter, setLoadingFilter] = useState(false);
+  const [activeCategorySlug, setActiveCategorySlug] = useState<string | null>(initialCategorySlug);
   const [search, setSearch] = useState("");
 
-  const categories = useMemo(
-    () => ["Toutes", ...Array.from(new Set(products.map((product) => product.category.name))).sort()],
-    [products],
-  );
+  // Les catégories affichées viennent de la table `categories` (fixe), pas des
+  // produits déjà chargés : sinon les catégories vides ou non paginées disparaissent.
+  useEffect(() => {
+    if (initialCategories.length) return;
+    fetch("/api/storefront?limit=1")
+      .then((response) => (response.ok ? response.json() : null))
+      .then((payload) => { if (payload?.data?.categories) setAllCategories(payload.data.categories); })
+      .catch(() => undefined);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const activeCategoryName = activeCategorySlug ? allCategories.find((category) => category.slug === activeCategorySlug)?.name : undefined;
+
+  // Le filtre de localisation ne s'applique qu'au marché global : à l'intérieur
+  // d'une boutique précise, filtrer par région n'aurait pas de sens.
+  const { region, city } = useLocationFilter();
+
+  const fetchPage = useCallback(async (options: { page: number; categorySlug: string | null; query: string }) => {
+    const params = new URLSearchParams({ page: String(options.page), limit: "24" });
+    if (merchantSlug) params.set("merchant", merchantSlug);
+    if (options.categorySlug) params.set("category", options.categorySlug);
+    if (options.query.trim()) params.set("query", options.query.trim());
+    if (!merchantSlug && region) params.set("region", region);
+    if (!merchantSlug && city) params.set("city", city);
+    const response = await fetch(`/api/storefront?${params}`);
+    if (!response.ok) return null;
+    return (await response.json()) as { data: { products: CatalogItem[]; pagination: { total: number }; categories: CatalogCategory[] } };
+  }, [merchantSlug, region, city]);
+
+  // Filtre instantané sur la fenêtre déjà chargée, pendant que la recherche
+  // serveur (ci-dessous, débouncée) rapatrie les résultats sur tout le catalogue.
   const filtered = useMemo(() => {
     const query = search.trim().toLocaleLowerCase("fr");
     return products.filter((product) =>
-      (activeCategory === "Toutes" || product.category.name === activeCategory) &&
+      (!activeCategoryName || product.category.name === activeCategoryName) &&
       (!query || `${product.title} ${product.description} ${product.merchant.name}`.toLocaleLowerCase("fr").includes(query)),
     );
-  }, [activeCategory, products, search]);
+  }, [activeCategoryName, products, search]);
 
   const sections = useMemo(() => {
-    if (!groupByCategory || activeCategory !== "Toutes") return [[activeCategory, filtered] as const];
-    return categories.slice(1).map((category) => [category, filtered.filter((product) => product.category.name === category)] as const);
-  }, [activeCategory, categories, filtered, groupByCategory]);
+    if (!groupByCategory || activeCategorySlug) return [[activeCategoryName ?? "Toutes", filtered] as const];
+    const names = [...new Set(filtered.map((product) => product.category.name))].sort();
+    return names.map((category) => [category, filtered.filter((product) => product.category.name === category)] as const);
+  }, [activeCategoryName, activeCategorySlug, filtered, groupByCategory]);
 
   const loadMore = async () => {
     setLoadingMore(true);
     const nextPage = page + 1;
-    const params = new URLSearchParams({ page: String(nextPage), limit: "24" });
-    if (merchantSlug) params.set("merchant", merchantSlug);
-    const response = await fetch(`/api/storefront?${params}`);
-    const payload = await response.json();
-    if (response.ok) {
-      const incoming = payload.data.products as CatalogItem[];
+    const payload = await fetchPage({ page: nextPage, categorySlug: activeCategorySlug, query: search });
+    if (payload) {
+      const incoming = payload.data.products;
       setProducts((current) => [...current, ...incoming.filter((product) => !current.some((item) => item.id === product.id))]);
       setTotal(payload.data.pagination.total);
       setPage(nextPage);
     }
     setLoadingMore(false);
   };
+
+  // Recherche et filtre catégorie server-side, débouncés : couvre tout le
+  // catalogue (pas seulement les 24 produits déjà chargés) et repart de la page 1.
+  const isFirstFilterRun = useRef(true);
+  useEffect(() => {
+    if (isFirstFilterRun.current) { isFirstFilterRun.current = false; return; }
+    const timeout = setTimeout(async () => {
+      setLoadingFilter(true);
+      const payload = await fetchPage({ page: 1, categorySlug: activeCategorySlug, query: search });
+      if (payload) {
+        setProducts(payload.data.products);
+        setTotal(payload.data.pagination.total);
+        setPage(1);
+      }
+      setLoadingFilter(false);
+    }, 300);
+    return () => clearTimeout(timeout);
+  }, [activeCategorySlug, search, fetchPage]);
+
+  useCatalogSync(async () => {
+    // Rafraîchit exactement la fenêtre déjà chargée (prix, stock, photos,
+    // nouvelles variantes) sans perturber la pagination en cours.
+    const payload = await fetchPage({ page: 1, categorySlug: activeCategorySlug, query: search });
+    if (!payload) return;
+    setProducts(payload.data.products);
+    setTotal(payload.data.pagination.total);
+  });
 
   return (
     <section className="marketplace-catalog" id="catalogue">
@@ -237,14 +300,16 @@ export function MarketplaceClient({
       </div>
       <div className="catalog-tools">
         <div className="catalog-category-tabs" role="group" aria-label="Filtrer par catégorie">
-          {categories.map((category) => <button type="button" key={category} className={category === activeCategory ? "is-active" : ""} onClick={() => setActiveCategory(category)}>{category}</button>)}
+          <button type="button" className={activeCategorySlug === null ? "is-active" : ""} onClick={() => setActiveCategorySlug(null)}>Toutes</button>
+          {allCategories.map((category) => <button type="button" key={category.id} className={category.slug === activeCategorySlug ? "is-active" : ""} onClick={() => setActiveCategorySlug(category.slug)}>{category.name}</button>)}
         </div>
-        <label className="catalog-search"><span aria-hidden="true">⌕</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Rechercher un produit ou une boutique" aria-label="Rechercher dans le catalogue" /></label>
+        <label className="catalog-search"><span aria-hidden="true">⌕</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Rechercher un produit ou une boutique" aria-label="Rechercher dans le catalogue" />{loadingFilter && <span className="catalog-search__spinner" aria-hidden="true" />}</label>
+        {!merchantSlug && <LocationFilter />}
       </div>
 
       {filtered.length ? sections.map(([category, items]) => items.length > 0 && (
         <section className="catalog-category-section" key={category}>
-          {groupByCategory && activeCategory === "Toutes" && <header><h3>{category}</h3><span>{items.length} produit{items.length > 1 ? "s" : ""}</span></header>}
+          {groupByCategory && !activeCategorySlug && <header><h3>{category}</h3><span>{items.length} produit{items.length > 1 ? "s" : ""}</span></header>}
           <div className="mvp-product-grid">{items.map((product) => <ProductCard product={product} key={product.id} />)}</div>
         </section>
       )) : <div className="mvp-empty">Aucun produit ne correspond à cette recherche.</div>}

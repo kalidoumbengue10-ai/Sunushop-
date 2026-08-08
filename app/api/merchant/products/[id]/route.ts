@@ -24,6 +24,7 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
       p_title: input.title,
       p_description: input.description,
       p_variants: input.variants,
+      p_option_names: input.optionNames,
     });
     if (error) throw error;
     return apiSuccess(data, { requestId });

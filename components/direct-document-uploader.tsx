@@ -41,6 +41,31 @@ export function DirectDocumentUploader({
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [progress, setProgress] = useState(0);
+  const [downloading, setDownloading] = useState(false);
+
+  const download = async () => {
+    if (!latest) return;
+    setDownloading(true);
+    setError("");
+    try {
+      const response = await fetch(
+        `/api/merchant/verifications/${caseId}/documents/${latest.id}/download`,
+      );
+      const payload = (await response.json()) as {
+        data?: { url: string };
+        error?: { message?: string };
+      };
+      if (!response.ok || !payload.data) {
+        setError(payload.error?.message ?? "Le document n’a pas pu être ouvert.");
+        return;
+      }
+      window.open(payload.data.url, "_blank", "noopener,noreferrer");
+    } catch {
+      setError("Impossible de joindre SunuShop. Vérifiez la connexion puis réessayez.");
+    } finally {
+      setDownloading(false);
+    }
+  };
 
   const upload = async (file?: File) => {
     if (!file) return;
@@ -191,18 +216,30 @@ export function DirectDocumentUploader({
       />
       {success && <p className="mvp-alert">{success}</p>}
       {error && <p className="mvp-alert mvp-alert--error">{error}</p>}
-      <button
-        type="button"
-        className="mvp-button mvp-button--secondary"
-        disabled={busy}
-        onClick={() => inputRef.current?.click()}
-      >
-        {busy
-          ? `Envoi sécurisé en cours… ${progress}%`
-          : latest || success
-            ? "Remplacer le fichier"
-            : "Ajouter le fichier"}
-      </button>
+      <div className="mvp-actions">
+        {latest && (
+          <button
+            type="button"
+            className="mvp-button mvp-button--secondary"
+            disabled={downloading}
+            onClick={download}
+          >
+            {downloading ? "Ouverture…" : "Télécharger"}
+          </button>
+        )}
+        <button
+          type="button"
+          className="mvp-button mvp-button--secondary"
+          disabled={busy}
+          onClick={() => inputRef.current?.click()}
+        >
+          {busy
+            ? `Envoi sécurisé en cours… ${progress}%`
+            : latest || success
+              ? "Remplacer le fichier"
+              : "Ajouter le fichier"}
+        </button>
+      </div>
     </div>
   );
 }

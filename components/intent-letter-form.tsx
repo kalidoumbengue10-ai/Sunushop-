@@ -35,7 +35,8 @@ export function IntentLetterForm({
   const [certify, setCertify] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [success, setSuccess] = useState(false);
+  const [documentId, setDocumentId] = useState("");
+  const [downloading, setDownloading] = useState(false);
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -62,7 +63,7 @@ export function IntentLetterForm({
         setError(payload?.error?.message ?? "La lettre n’a pas pu être enregistrée. Réessayez.");
         return;
       }
-      setSuccess(true);
+      setDocumentId(payload?.data?.id ?? "");
       router.refresh();
     } catch {
       setError("Impossible de joindre SunuShop. Vérifiez la connexion puis réessayez.");
@@ -71,7 +72,31 @@ export function IntentLetterForm({
     }
   };
 
-  if (success) {
+  const download = async () => {
+    if (!documentId) return;
+    setDownloading(true);
+    setError("");
+    try {
+      const response = await fetch(
+        `/api/merchant/verifications/${caseId}/documents/${documentId}/download`,
+      );
+      const payload = (await response.json()) as {
+        data?: { url: string };
+        error?: { message?: string };
+      };
+      if (!response.ok || !payload.data) {
+        setError(payload.error?.message ?? "Le document n’a pas pu être ouvert.");
+        return;
+      }
+      window.open(payload.data.url, "_blank", "noopener,noreferrer");
+    } catch {
+      setError("Impossible de joindre SunuShop. Vérifiez la connexion puis réessayez.");
+    } finally {
+      setDownloading(false);
+    }
+  };
+
+  if (documentId) {
     return (
       <div className="mvp-card intent-letter-modal">
         <div className="mvp-document__heading">
@@ -81,9 +106,16 @@ export function IntentLetterForm({
           </button>
         </div>
         <p className="mvp-alert">
-          Votre lettre d’intention a été générée et ajoutée à votre dossier. Vous pouvez la
-          consulter dans la liste des documents ci-dessous.
+          Votre lettre d’intention a été générée et ajoutée à votre dossier, avec toutes vos
+          informations. Vous pouvez la consulter et la télécharger dès maintenant — c’est
+          exactement la version reçue par l’équipe SunuShop.
         </p>
+        {error && <p className="mvp-alert mvp-alert--error">{error}</p>}
+        <div className="mvp-actions">
+          <button type="button" className="mvp-button" disabled={downloading} onClick={download}>
+            {downloading ? "Ouverture…" : "Télécharger ma lettre (PDF)"}
+          </button>
+        </div>
       </div>
     );
   }

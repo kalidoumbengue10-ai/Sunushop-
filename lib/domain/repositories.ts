@@ -3,6 +3,7 @@ export type CatalogItem = {
   title: string;
   slug: string;
   description: string;
+  optionNames: string[];
   category: { id: string; name: string; slug: string };
   merchant: {
     id: string;
@@ -104,6 +105,8 @@ export interface CatalogRepository {
     query?: string;
     category?: string;
     merchantSlug?: string;
+    region?: string;
+    city?: string;
     page: number;
     limit: number;
   }): Promise<{ products: CatalogItem[]; total: number; page: number; limit: number }>;

@@ -1996,6 +1996,7 @@ export type Database = {
           description: string
           id: string
           merchant_id: string
+          option_names: string[]
           published_at: string | null
           slug: string
           status: Database["public"]["Enums"]["product_status"]
@@ -2008,6 +2009,7 @@ export type Database = {
           description: string
           id?: string
           merchant_id: string
+          option_names?: string[]
           published_at?: string | null
           slug: string
           status?: Database["public"]["Enums"]["product_status"]
@@ -2020,6 +2022,7 @@ export type Database = {
           description?: string
           id?: string
           merchant_id?: string
+          option_names?: string[]
           published_at?: string | null
           slug?: string
           status?: Database["public"]["Enums"]["product_status"]
@@ -3216,6 +3219,7 @@ export type Database = {
         Args: {
           p_category_id: string
           p_description: string
+          p_option_names?: string[]
           p_product_id: string
           p_title: string
           p_variants: Json

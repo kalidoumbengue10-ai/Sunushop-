@@ -2,8 +2,11 @@ import type { CatalogItem } from "@/lib/domain/repositories";
 
 export type CatalogVariant = CatalogItem["variants"][number];
 
-export function productOptionNames(variants: CatalogVariant[]) {
-  return [...new Set(variants.flatMap((variant) => Object.keys(variant.attributes)))];
+export function productOptionNames(variants: CatalogVariant[], storedOrder: string[] = []) {
+  const discovered = [...new Set(variants.flatMap((variant) => Object.keys(variant.attributes)))];
+  const ordered = storedOrder.filter((name) => discovered.includes(name));
+  const remaining = discovered.filter((name) => !ordered.includes(name));
+  return [...ordered, ...remaining];
 }
 
 export function productOptionValues(variants: CatalogVariant[], name: string) {

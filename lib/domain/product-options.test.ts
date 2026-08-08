@@ -13,6 +13,12 @@ describe("product options", () => {
     expect(productOptionValues(variants, "Taille")).toEqual(["S", "M"]);
   });
 
+  it("respecte l’ordre stocké quand il est fourni", () => {
+    expect(productOptionNames(variants, ["Couleur", "Taille"])).toEqual(["Couleur", "Taille"]);
+    // Un axe stocké mais absent des variantes ne doit pas apparaître.
+    expect(productOptionNames(variants, ["Matière", "Couleur", "Taille"])).toEqual(["Couleur", "Taille"]);
+  });
+
   it("résout une combinaison et désactive celles sans stock", () => {
     expect(resolveProductVariant(variants, { Taille: "M", Couleur: "Rouge" })?.id).toBe("3");
     expect(optionValueAvailable(variants, { Couleur: "Noir" }, "Taille", "M")).toBe(false);

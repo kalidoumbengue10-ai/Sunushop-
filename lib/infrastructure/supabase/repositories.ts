@@ -16,6 +16,7 @@ type RawProduct = {
   title: string;
   slug: string;
   description: string;
+  option_names: string[] | null;
   merchant_accounts: {
     id: string;
     public_name: string;
@@ -43,6 +44,7 @@ const productSelection = `
   title,
   slug,
   description,
+  option_names,
   merchant_accounts!inner(id, public_name, slug, city),
   categories!inner(id, name, slug),
   product_variants!inner(
@@ -97,6 +99,7 @@ function mapProduct(
     title: product.title,
     slug: product.slug,
     description: product.description,
+    optionNames: product.option_names ?? [],
     category: {
       id: product.categories.id,
       name: product.categories.name,
@@ -142,6 +145,8 @@ export class SupabaseCatalogRepository implements CatalogRepository {
     query?: string;
     category?: string;
     merchantSlug?: string;
+    region?: string;
+    city?: string;
     page: number;
     limit: number;
   }) {
@@ -164,11 +169,16 @@ export class SupabaseCatalogRepository implements CatalogRepository {
       .order("published_at", { ascending: false })
       .range(from, from + limit - 1);
 
-    if (input.query) request = request.ilike("title", `%${input.query}%`);
+    if (input.query) {
+      const escaped = input.query.replaceAll("%", "\\%").replaceAll(",", "\\,");
+      request = request.or(`title.ilike.%${escaped}%,description.ilike.%${escaped}%`);
+    }
     if (input.category) {
       request = request.eq("categories.slug", input.category);
     }
     if (input.merchantSlug) request = request.eq("merchant_accounts.slug", input.merchantSlug);
+    if (input.region) request = request.eq("merchant_accounts.region", input.region);
+    if (input.city) request = request.ilike("merchant_accounts.city", input.city);
 
     const { data, error, count } = await request;
     if (error) throw error;

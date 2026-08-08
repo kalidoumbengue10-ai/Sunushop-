@@ -301,7 +301,7 @@ export const productDetailsSchema = z.object({
   categoryId: uuid,
   title: z.string().trim().min(2).max(180),
   description: z.string().trim().min(10).max(5000),
-  optionNames: z.array(z.string().trim().min(1).max(40)).max(2).default([]),
+  optionNames: z.array(z.string().trim().min(1).max(40)).max(3).default([]),
   variants: z.array(productVariantEditorSchema).min(1).max(50),
 }).superRefine((value, context) => {
   const combinations = new Set<string>();
@@ -503,6 +503,21 @@ export const cartItemInputSchema = z.object({
 
 export const shopFollowInputSchema = z.object({
   merchantId: uuid,
+});
+
+export const conversationCreateSchema = z.object({
+  kind: z.enum(["buyer_merchant", "buyer_support"]),
+  merchantId: uuid.optional(),
+  orderId: uuid.optional(),
+  productId: uuid.optional(),
+  subject: z.string().trim().max(160).optional(),
+}).refine(
+  (value) => (value.kind === "buyer_merchant") === Boolean(value.merchantId),
+  { message: "merchantId est requis pour un fil marchand et interdit pour un fil support.", path: ["merchantId"] },
+);
+
+export const messageCreateSchema = z.object({
+  body: z.string().trim().min(1).max(4000),
 });
 
 export const deliveryAssignmentSchema = z.object({

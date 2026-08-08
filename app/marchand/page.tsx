@@ -145,7 +145,7 @@ export default async function MarchandPage() {
     admin!
       .from("products")
       .select(
-        "id, category_id, title, description, status, product_media(id, storage_path, alt_text, position), product_variants(id, sku, title, attributes, price_xof, compare_at_price_xof, active, inventory_items(available_quantity, reserved_quantity, low_stock_threshold))",
+        "id, category_id, title, description, status, option_names, product_media(id, storage_path, alt_text, position), product_variants(id, sku, title, attributes, price_xof, compare_at_price_xof, active, inventory_items(available_quantity, reserved_quantity, low_stock_threshold))",
       )
       .eq("merchant_id", merchant.id)
       .order("created_at", { ascending: false }),

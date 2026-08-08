@@ -4,7 +4,7 @@ import type { CatalogItem } from "./repositories";
 
 function product(id: string, stock = 5): CatalogItem {
   const variant = { id, sku: id, title: "M", attributes: { Taille: "M" }, priceXof: 1000, compareAtPriceXof: null, availableQuantity: stock };
-  return { id: `p-${id}`, title: id, slug: id, description: id, category: { id: "c", name: "Mode", slug: "mode" }, merchant: { id: "m", name: "Marchand", slug: "marchand", city: null }, variant, variants: [variant], imageUrl: null, imageUrls: [] };
+  return { id: `p-${id}`, title: id, slug: id, description: id, optionNames: ["Taille"], category: { id: "c", name: "Mode", slug: "mode" }, merchant: { id: "m", name: "Marchand", slug: "marchand", city: null }, variant, variants: [variant], imageUrl: null, imageUrls: [] };
 }
 
 describe("cart domain", () => {

@@ -10,6 +10,7 @@ import {
   ClipboardCheck,
   ExternalLink,
   LayoutDashboard,
+  MessageSquare,
   PackageSearch,
   ShoppingBag,
   Store,
@@ -19,6 +20,7 @@ import { formatPrice } from "@/lib/marketplace";
 import { CourierManager } from "@/components/courier-manager";
 import { MerchantMedia } from "@/components/merchant-media";
 import { MerchantDashboard } from "@/components/merchant-dashboard";
+import { ConversationList } from "@/components/conversation-list";
 import { MerchantProductWizard, type MerchantProductEditor } from "@/components/merchant-product-wizard";
 import { MerchantDeliverySettings, type MerchantDeliveryZone } from "@/components/merchant-delivery-settings";
 import { IntentLetterForm } from "@/components/intent-letter-form";
@@ -178,6 +180,7 @@ type MerchantTab =
   | "catalogue"
   | "livraison"
   | "livreurs"
+  | "messages"
   | "boutique"
   | "abonnement"
   | "dossier";
@@ -188,6 +191,7 @@ const merchantNavigation = [
   { id: "catalogue", label: "Produits", hint: "Photos, prix et stocks", icon: Boxes },
   { id: "livraison", label: "Livraison", hint: "Zones et tarifs", icon: Truck },
   { id: "livreurs", label: "Livreurs", hint: "Équipe et affectations", icon: Bike },
+  { id: "messages", label: "Messages", hint: "Discussions avec vos clients", icon: MessageSquare },
   { id: "boutique", label: "Ma boutique", hint: "Image et présentation", icon: Store },
   { id: "abonnement", label: "Abonnement", hint: "Plan et paiements", icon: BadgeDollarSign },
   { id: "dossier", label: "Dossier", hint: "Documents et validation", icon: ClipboardCheck },
@@ -199,6 +203,7 @@ const merchantSectionTitles: Record<MerchantTab, { eyebrow: string; title: strin
   catalogue: { eyebrow: "Catalogue", title: "Produits", description: "Ajoutez vos photos, variantes, prix et stocks." },
   livraison: { eyebrow: "Logistique", title: "Livraison", description: "Configurez simplement les régions et leurs tarifs." },
   livreurs: { eyebrow: "Équipe", title: "Livreurs", description: "Organisez les personnes qui prennent en charge vos colis." },
+  messages: { eyebrow: "Relation client", title: "Messages", description: "Répondez aux questions de vos clients sur vos produits et commandes." },
   boutique: { eyebrow: "Vitrine", title: "Ma boutique", description: "Soignez la présentation visible par vos clients." },
   abonnement: { eyebrow: "Accès", title: "Abonnement", description: "Consultez votre plan et transmettez un paiement." },
   dossier: { eyebrow: "Conformité", title: "Dossier marchand", description: "Suivez la validation de vos documents SunuShop." },
@@ -526,6 +531,12 @@ export function MerchantWorkspace(props: MerchantWorkspaceProps) {
           <CourierManager merchantId={props.merchant.id} orders={props.orders} />
         )}
 
+        {tab === "messages" && (
+          <section className="merchant-content-surface">
+            <ConversationList view="asMerchant" />
+          </section>
+        )}
+
         {tab === "dossier" && props.verificationCase && (
           <div className="mvp-card mvp-card--full">
             <h2>Dossier de vérification</h2>
@@ -550,15 +561,17 @@ export function MerchantWorkspace(props: MerchantWorkspaceProps) {
             {canEditDocuments && !showIntentLetterForm && (
               <div className="mvp-actions">
                 <button type="button" className="mvp-button" onClick={() => setShowIntentLetterForm(true)}>
-                  Remplir la lettre d’intention en ligne
+                  {latestDocuments.has("intent_letter") ? "Modifier ma lettre d’intention" : "Remplir la lettre d’intention en ligne"}
                 </button>
-                <Link
-                  className="mvp-button mvp-button--secondary"
-                  href="/documents/lettre-intention-sunushop.html"
-                  download="Lettre-intention-SunuShop.html"
-                >
-                  Télécharger le modèle PDF vierge
-                </Link>
+                {!latestDocuments.has("intent_letter") && (
+                  <Link
+                    className="mvp-button mvp-button--secondary"
+                    href="/documents/lettre-intention-sunushop.html"
+                    download="Lettre-intention-SunuShop.html"
+                  >
+                    Télécharger le modèle PDF vierge
+                  </Link>
+                )}
               </div>
             )}
             {canEditDocuments && showIntentLetterForm && (
@@ -732,7 +745,7 @@ export function MerchantWorkspace(props: MerchantWorkspaceProps) {
               </button>
             </form>
             <div className="mvp-divider" />
-            <MerchantDeliverySettings merchantId={props.merchant.id} categories={props.categories} zones={props.zones} />
+            <MerchantDeliverySettings merchantId={props.merchant.id} categories={props.categories} zones={props.zones} pickupSettingEnabled={props.merchant.pickup_enabled ?? false} />
           </div>
         )}
 
