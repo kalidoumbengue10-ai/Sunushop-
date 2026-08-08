@@ -9,6 +9,7 @@ import {
   PackageCheck,
   ReceiptText,
   ShoppingBag,
+  ShoppingCart,
   TriangleAlert,
 } from "lucide-react";
 import { formatPrice } from "@/lib/marketplace";
@@ -53,7 +54,15 @@ export function MerchantDashboard({ merchantId }: { merchantId: string }) {
   const [data, setData] = useState<Analytics>();
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+  const [abandonedCartCount, setAbandonedCartCount] = useState<number>();
   const range = useMemo(() => rangeForPreset(preset, customFrom, customTo), [preset, customFrom, customTo]);
+
+  useEffect(() => {
+    fetch(`/api/merchant/abandoned-carts?merchantId=${merchantId}`)
+      .then((response) => (response.ok ? response.json() : null))
+      .then((payload) => { if (payload?.data) setAbandonedCartCount(payload.data.count); })
+      .catch(() => undefined);
+  }, [merchantId]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -145,6 +154,11 @@ export function MerchantDashboard({ merchantId }: { merchantId: string }) {
               <span className="dashboard-kpi__icon"><PackageCheck /></span>
               <div><small>Ventes de produits</small><strong>{formatPrice(data.summary.productRevenueXof)}</strong></div>
               <p>Livraison : <b>{formatPrice(data.summary.deliveryRevenueXof)}</b></p>
+            </article>
+            <article className="dashboard-kpi">
+              <span className="dashboard-kpi__icon"><ShoppingCart /></span>
+              <div><small>Paniers abandonnés</small><strong>{abandonedCartCount ?? "—"}</strong></div>
+              <p>Sans commande depuis plus de 24 h</p>
             </article>
           </section>
 

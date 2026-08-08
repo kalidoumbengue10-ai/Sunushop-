@@ -8,7 +8,7 @@ export async function GET() {
     const admin = requireAdminClient();
     const { data, error } = await admin
       .from("orders")
-      .select("id, public_code, status, payment_method, total_xof, recipient_snapshot, created_at, merchant_accounts!inner(public_name, slug), deliveries(id, status, delivered_at)")
+      .select("id, merchant_id, public_code, status, payment_method, total_xof, recipient_snapshot, created_at, merchant_accounts!inner(public_name, slug), deliveries(id, status, delivered_at), order_items(id, product_snapshot, quantity, line_total_xof)")
       .eq("buyer_id", user.id)
       .order("created_at", { ascending: false })
       .limit(100);
