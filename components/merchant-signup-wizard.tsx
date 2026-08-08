@@ -344,6 +344,11 @@ export function MerchantSignupWizard({
         {step === "identite" && created && (
           <>
             <h2>Votre pièce d’identité</h2>
+            {resume && (
+              <p className="mvp-alert">
+                Vous reprenez une boutique déjà créée ({resume.publicName}). Les étapes « Mon commerce » et « Mon accès » sont déjà enregistrées.
+              </p>
+            )}
             <p>La CNI recto-verso et la preuve d’activité sont obligatoires. Vous pouvez continuer plus tard : rien n’est perdu.</p>
             <div className="mvp-document-grid">
               {documentTypes.map((type) => (
@@ -351,6 +356,11 @@ export function MerchantSignupWizard({
               ))}
             </div>
             <div className="mvp-actions">
+              {!resume && (
+                <button type="button" className="mvp-button mvp-button--secondary" onClick={() => setStep("acces")}>
+                  Retour
+                </button>
+              )}
               <button type="button" className="mvp-button mvp-button--secondary" onClick={finishLater}>
                 Continuer plus tard
               </button>
@@ -368,6 +378,9 @@ export function MerchantSignupWizard({
                 <h2>Votre lettre d’intention</h2>
                 <p>Dernière étape : remplissez votre lettre d’intention en ligne, elle est générée automatiquement.</p>
                 <div className="mvp-actions">
+                  <button type="button" className="mvp-button mvp-button--secondary" onClick={() => setStep("identite")}>
+                    Retour
+                  </button>
                   <button type="button" className="mvp-button mvp-button--secondary" onClick={finishLater}>
                     Continuer plus tard
                   </button>
