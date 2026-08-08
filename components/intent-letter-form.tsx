@@ -13,10 +13,16 @@ type MerchantSummary = {
 export function IntentLetterForm({
   caseId,
   merchant,
+  existingDocumentId,
+  allowEditing = true,
+  onSaved,
   onClose,
 }: {
   caseId: string;
   merchant: MerchantSummary;
+  existingDocumentId?: string | null;
+  allowEditing?: boolean;
+  onSaved?: (documentId: string) => void;
   onClose: () => void;
 }) {
   const router = useRouter();
@@ -35,7 +41,8 @@ export function IntentLetterForm({
   const [certify, setCertify] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [documentId, setDocumentId] = useState("");
+  const [documentId, setDocumentId] = useState(existingDocumentId ?? "");
+  const [editing, setEditing] = useState(!existingDocumentId);
   const [downloading, setDownloading] = useState(false);
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
@@ -63,7 +70,10 @@ export function IntentLetterForm({
         setError(payload?.error?.message ?? "La lettre n’a pas pu être enregistrée. Réessayez.");
         return;
       }
-      setDocumentId(payload?.data?.id ?? "");
+      const savedDocumentId = payload?.data?.id ?? "";
+      setDocumentId(savedDocumentId);
+      if (savedDocumentId) onSaved?.(savedDocumentId);
+      setEditing(false);
       router.refresh();
     } catch {
       setError("Impossible de joindre SunuShop. Vérifiez la connexion puis réessayez.");
@@ -72,7 +82,7 @@ export function IntentLetterForm({
     }
   };
 
-  const download = async () => {
+  const openDocument = async (disposition: "view" | "download") => {
     if (!documentId) return;
     setDownloading(true);
     setError("");
@@ -81,14 +91,14 @@ export function IntentLetterForm({
         `/api/merchant/verifications/${caseId}/documents/${documentId}/download`,
       );
       const payload = (await response.json()) as {
-        data?: { url: string };
+        data?: { url: string; viewUrl: string; downloadUrl: string };
         error?: { message?: string };
       };
       if (!response.ok || !payload.data) {
         setError(payload.error?.message ?? "Le document n’a pas pu être ouvert.");
         return;
       }
-      window.open(payload.data.url, "_blank", "noopener,noreferrer");
+      window.open(disposition === "view" ? payload.data.viewUrl : payload.data.downloadUrl, "_blank", "noopener,noreferrer");
     } catch {
       setError("Impossible de joindre SunuShop. Vérifiez la connexion puis réessayez.");
     } finally {
@@ -96,7 +106,7 @@ export function IntentLetterForm({
     }
   };
 
-  if (documentId) {
+  if (documentId && !editing) {
     return (
       <div className="mvp-card intent-letter-modal">
         <div className="mvp-document__heading">
@@ -112,9 +122,17 @@ export function IntentLetterForm({
         </p>
         {error && <p className="mvp-alert mvp-alert--error">{error}</p>}
         <div className="mvp-actions">
-          <button type="button" className="mvp-button" disabled={downloading} onClick={download}>
-            {downloading ? "Ouverture…" : "Télécharger ma lettre (PDF)"}
+          <button type="button" className="mvp-button mvp-button--secondary" disabled={downloading} onClick={() => openDocument("view")}>
+            {downloading ? "Ouverture…" : "Voir le PDF"}
           </button>
+          <button type="button" className="mvp-button" disabled={downloading} onClick={() => openDocument("download")}>
+            Télécharger le PDF
+          </button>
+          {allowEditing && (
+            <button type="button" className="mvp-button mvp-button--secondary" disabled={downloading} onClick={() => setEditing(true)}>
+              Modifier la lettre
+            </button>
+          )}
         </div>
       </div>
     );

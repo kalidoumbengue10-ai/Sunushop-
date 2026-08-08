@@ -36,6 +36,7 @@ test.afterAll(async () => {
 });
 
 test("un nouvel utilisateur voit bien l'étape 1 (Mon commerce), sans saut d'étape", async ({ page }) => {
+  await page.setExtraHTTPHeaders({ "x-forwarded-for": `203.0.113.${Math.floor(Math.random() * 200) + 20}` });
   await page.goto("/creer-ma-boutique");
 
   // Etape 1 attendue en premier pour un visiteur non connecté.
@@ -76,6 +77,15 @@ test("un nouvel utilisateur voit bien l'étape 1 (Mon commerce), sans saut d'ét
   await expect(page.getByRole("heading", { name: "Votre lettre d’intention" })).toBeVisible();
   await page.getByRole("button", { name: "Retour" }).click();
   await expect(page.getByRole("heading", { name: "Votre pièce d’identité" })).toBeVisible();
+
+  // Une reprise connectée ouvre l'étape utile mais laisse les deux premières
+  // étapes consultables, préremplies et navigables.
+  await page.goto("/creer-ma-boutique");
+  await expect(page.getByRole("heading", { name: "Votre pièce d’identité" })).toBeVisible();
+  await page.getByRole("button", { name: /Mon commerce/ }).click();
+  await expect(page.getByLabel("Nom du commerce")).toHaveValue(`Boutique E2E ${runId}`);
+  await page.getByRole("button", { name: /Mon accès/ }).click();
+  await expect(page.getByLabel("Adresse email")).toHaveAttribute("readonly", "");
 
   const { data: authUsers } = await admin.auth.admin.listUsers();
   const created = authUsers.users.find((user) => user.email === email);

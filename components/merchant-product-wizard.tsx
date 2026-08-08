@@ -2,7 +2,7 @@
 
 /* eslint-disable @next/next/no-img-element */
 
-import { FormEvent, useMemo, useRef, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ImagePlus, Images, Star, Trash2, UploadCloud } from "lucide-react";
 import { formatPrice } from "@/lib/marketplace";
@@ -64,6 +64,7 @@ export function MerchantProductWizard({ merchantId, categories, products, delive
 }) {
   const router = useRouter();
   const photoInputRef = useRef<HTMLInputElement>(null);
+  const blobUrlsRef = useRef(new Set<string>());
   const [step, setStep] = useState(0);
   const [productId, setProductId] = useState<string>();
   const [categoryId, setCategoryId] = useState(categories[0]?.id ?? "");
@@ -80,13 +81,22 @@ export function MerchantProductWizard({ merchantId, categories, products, delive
 
   const sellableStock = useMemo(() => variants.reduce((sum, variant) => sum + Math.max(0, variant.stock - variant.reserved), 0), [variants]);
 
+  const revokeBlobUrls = () => {
+    for (const url of blobUrlsRef.current) URL.revokeObjectURL(url);
+    blobUrlsRef.current.clear();
+  };
+
+  useEffect(() => () => revokeBlobUrls(), []);
+
   const reset = () => {
+    revokeBlobUrls();
     setStep(0); setProductId(undefined); setCategoryId(categories[0]?.id ?? "");
     setTitle(""); setDescription(""); setVariants([emptyVariant()]); setPhotos([]);
     setAxes(emptyAxes()); setMessage(""); setError(""); setConfirmNoVariants(false);
   };
 
   const editProduct = (product: MerchantProductEditor, targetStep: 1 | 2 | 3 = 1) => {
+    revokeBlobUrls();
     setProductId(product.id); setCategoryId(product.category_id); setTitle(product.title); setDescription(product.description);
     setPhotos([...product.product_media].sort((a, b) => a.position - b.position).map((media) => ({
       id: media.id,
@@ -210,10 +220,12 @@ export function MerchantProductWizard({ merchantId, categories, products, delive
       if (!response.ok) { const payload = await response.json(); setError(payload.error?.message ?? `Échec pour ${file.name}.`); break; }
       const payload = await response.json();
       added += 1;
+      const previewUrl = URL.createObjectURL(file);
+      blobUrlsRef.current.add(previewUrl);
       setPhotos((current) => [...current, {
         id: payload.data.id,
         name: file.name,
-        url: URL.createObjectURL(file),
+        url: previewUrl,
         altText: title,
         position: current.length,
       }]);
@@ -230,7 +242,10 @@ export function MerchantProductWizard({ merchantId, categories, products, delive
     if (!response.ok) return setError(payload.error?.message ?? "La photo n’a pas pu être supprimée.");
     setPhotos((current) => {
       const removed = current.find((photo) => photo.id === photoId);
-      if (removed?.url?.startsWith("blob:")) URL.revokeObjectURL(removed.url);
+      if (removed?.url?.startsWith("blob:")) {
+        URL.revokeObjectURL(removed.url);
+        blobUrlsRef.current.delete(removed.url);
+      }
       return current.filter((photo) => photo.id !== photoId).map((photo, position) => ({ ...photo, position }));
     });
     setMessage("Photo supprimée.");
@@ -242,18 +257,23 @@ export function MerchantProductWizard({ merchantId, categories, products, delive
     const currentIndex = photos.findIndex((photo) => photo.id === photoId);
     const targetIndex = currentIndex + direction;
     if (currentIndex < 0 || targetIndex < 0 || targetIndex >= photos.length) return;
+    const previous = photos;
     const reordered = [...photos];
     [reordered[currentIndex], reordered[targetIndex]] = [reordered[targetIndex], reordered[currentIndex]];
     const withPositions = reordered.map((photo, position) => ({ ...photo, position }));
     setPhotos(withPositions);
     setBusy(true); setError("");
-    const [a, b] = [withPositions[currentIndex], withPositions[targetIndex]];
-    const [responseA, responseB] = await Promise.all([
-      fetch(`/api/merchant/products/${productId}/media/${a.id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ position: a.position, altText: a.altText }) }),
-      fetch(`/api/merchant/products/${productId}/media/${b.id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ position: b.position, altText: b.altText }) }),
-    ]);
+    const response = await fetch(`/api/merchant/products/${productId}/media/order`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ mediaIds: withPositions.map((photo) => photo.id) }),
+    });
     setBusy(false);
-    if (!responseA.ok || !responseB.ok) { setError("L’ordre des photos n’a pas pu être enregistré."); return; }
+    if (!response.ok) {
+      setPhotos(previous);
+      setError("L’ordre des photos n’a pas pu être enregistré.");
+      return;
+    }
     router.refresh();
   };
 

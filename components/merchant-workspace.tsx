@@ -212,7 +212,11 @@ const merchantSectionTitles: Record<MerchantTab, { eyebrow: string; title: strin
 export function MerchantWorkspace(props: MerchantWorkspaceProps) {
   const router = useRouter();
   const [tab, setTab] = useState<MerchantTab>(
-    props.merchant && ["active", "grace"].includes(props.merchant.subscription_status) ? "dashboard" : "abonnement",
+    props.merchant?.verification_status !== "approved"
+      ? "dossier"
+      : props.merchant && ["active", "grace"].includes(props.merchant.subscription_status)
+        ? "dashboard"
+        : "abonnement",
   );
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
@@ -450,8 +454,17 @@ export function MerchantWorkspace(props: MerchantWorkspaceProps) {
       props.subscriptionPaymentNumbers.orangeMoney,
   );
   const subscriptionReady = ["active", "grace"].includes(props.merchant.subscription_status);
-  const visibleNavigation = merchantNavigation;
-  const currentSection = merchantSectionTitles[tab];
+  const verificationReady = props.merchant.verification_status === "approved";
+  const visibleNavigation = verificationReady
+    ? merchantNavigation
+    : merchantNavigation.filter(({ id }) => id === "dossier" || id === "abonnement");
+  const currentSection = !verificationReady && tab === "dossier"
+    ? {
+        eyebrow: "Conformité",
+        title: "Complétez votre dossier",
+        description: "Ajoutez les justificatifs nécessaires à la validation de votre boutique.",
+      }
+    : merchantSectionTitles[tab];
 
   return (
     <div className="merchant-app-layout">
@@ -558,10 +571,10 @@ export function MerchantWorkspace(props: MerchantWorkspaceProps) {
               La CNI recto-verso, la lettre d’intention remplie et la preuve
               d’activité sont obligatoires. Le passeport est facultatif.
             </p>
-            {canEditDocuments && !showIntentLetterForm && (
+            {!showIntentLetterForm && (canEditDocuments || latestDocuments.has("intent_letter")) && (
               <div className="mvp-actions">
                 <button type="button" className="mvp-button" onClick={() => setShowIntentLetterForm(true)}>
-                  {latestDocuments.has("intent_letter") ? "Modifier ma lettre d’intention" : "Remplir la lettre d’intention en ligne"}
+                  {latestDocuments.has("intent_letter") ? "Voir ou télécharger ma lettre" : "Remplir la lettre d’intention en ligne"}
                 </button>
                 {!latestDocuments.has("intent_letter") && (
                   <Link
@@ -574,9 +587,11 @@ export function MerchantWorkspace(props: MerchantWorkspaceProps) {
                 )}
               </div>
             )}
-            {canEditDocuments && showIntentLetterForm && (
+            {showIntentLetterForm && (canEditDocuments || latestDocuments.has("intent_letter")) && (
               <IntentLetterForm
                 caseId={props.verificationCase.id}
+                existingDocumentId={latestDocuments.get("intent_letter")?.id}
+                allowEditing={canEditDocuments}
                 merchant={{
                   publicName: props.merchant.public_name,
                   kind: props.merchant.kind,

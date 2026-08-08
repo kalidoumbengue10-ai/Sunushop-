@@ -6,6 +6,7 @@ import {
   merchantApplicationSchema,
   orderBatchSchema,
   productDetailsSchema,
+  productMediaOrderSchema,
   prelaunchLeadIngestSchema,
   signUpWithPasswordSchema,
 } from "./schemas";
@@ -27,6 +28,13 @@ describe("validation des entrées métier", () => {
       { title: "M", attributes: { Taille: "M" }, priceXof: 5000, stock: 4 },
       { title: "M bis", attributes: { Taille: "M" }, priceXof: 5500, stock: 2 },
     ] }).success).toBe(false);
+  });
+  it("refuse un ordre de photos incomplet ou dupliqué côté API", () => {
+    const mediaA = "00000000-0000-4000-8000-000000000020";
+    const mediaB = "00000000-0000-4000-8000-000000000021";
+    expect(productMediaOrderSchema.safeParse({ mediaIds: [mediaA, mediaB] }).success).toBe(true);
+    expect(productMediaOrderSchema.safeParse({ mediaIds: [mediaA, mediaA] }).success).toBe(false);
+    expect(productMediaOrderSchema.safeParse({ mediaIds: [] }).success).toBe(false);
   });
   it("normalise un email d’inscription valide", () => {
     const result = signUpWithPasswordSchema.parse({

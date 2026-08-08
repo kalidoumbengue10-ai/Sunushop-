@@ -32,7 +32,7 @@ test("commerçants et livreurs ne peuvent pas s’inscrire librement via le form
   await page.goto("/connexion?profil=vendeur&next=/marchand&mode=inscription");
   await expect(page.getByRole("button", { name: /Je crée mon compte/i })).toHaveCount(0);
   await expect(page.getByText(/après une invitation/i)).toBeVisible();
-  await expect(page.getByRole("link", { name: /Créer ma boutique/i })).toBeVisible();
+  await expect(page.getByRole("link", { name: /Créer ma boutique/i }).first()).toBeVisible();
   await page.goto("/partenaires");
   await expect(page).toHaveURL(/\/marchand|\/connexion/);
 });

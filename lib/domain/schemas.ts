@@ -377,6 +377,29 @@ export const merchantSettingsSchema = z.object({
   orangeMoneyPaymentNumber: e164Phone.nullable(),
 });
 
+export const productMediaOrderSchema = z.object({
+  mediaIds: z.array(uuid).min(1).max(8).refine((ids) => new Set(ids).size === ids.length, {
+    message: "Une photo ne peut apparaître qu’une seule fois.",
+  }),
+});
+
+export const merchantOnboardingUpdateSchema = z.object({
+  merchantId: uuid,
+  caseId: uuid,
+  contactName: z.string().trim().min(2).max(120),
+  shopName: z.string().trim().min(2).max(120),
+  phone: z.string().trim().min(8).max(24),
+  city: z.string().trim().max(120).optional().default(""),
+  businessType: z.enum(["informal", "formal"]),
+  legalName: z.string().trim().max(180).optional().default(""),
+  salesChannel: z.string().trim().min(2).max(240),
+  categories: z.array(z.string().trim().min(1).max(120)).max(20).default([]),
+}).superRefine((value, context) => {
+  if (value.businessType === "formal" && !value.legalName) {
+    context.addIssue({ code: "custom", path: ["legalName"], message: "La raison sociale est obligatoire." });
+  }
+});
+
 export const crmLeadStatusSchema = z.enum([
   "new",
   "contacted",

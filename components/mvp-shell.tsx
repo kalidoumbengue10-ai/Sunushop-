@@ -2,8 +2,8 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Search, ShoppingBag } from "lucide-react";
-import { useState } from "react";
+import { ChevronDown, Search, ShoppingBag } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { CartProvider, useCart } from "@/components/cart-provider";
 import { CartDrawer } from "@/components/cart-drawer";
 import { LocationProvider } from "@/components/location-provider";
@@ -27,21 +27,66 @@ function CartTrigger() {
   );
 }
 
+function AccessMenu({ onNavigate }: { onNavigate: () => void }) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (event: PointerEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setOpen(false);
+      rootRef.current?.querySelector<HTMLButtonElement>("button")?.focus();
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [open]);
+
+  const close = () => {
+    setOpen(false);
+    onNavigate();
+  };
+
+  return (
+    <div className="auth-access-menu" ref={rootRef}>
+      <button
+        type="button"
+        className="mvp-nav__cta auth-access-menu__trigger"
+        aria-expanded={open}
+        aria-haspopup="menu"
+        aria-controls="auth-access-options"
+        onClick={() => setOpen((value) => !value)}
+      >
+        Se connecter <ChevronDown aria-hidden="true" />
+      </button>
+      {open && (
+        <div id="auth-access-options" className="auth-access-menu__options" role="menu" aria-label="Choisir un espace de connexion">
+          <Link role="menuitem" href="/connexion?profil=client&next=/client" onClick={close}><strong>Client</strong><small>Commandes et messages</small></Link>
+          <Link role="menuitem" href="/connexion?profil=vendeur&next=/marchand" onClick={close}><strong>Marchand</strong><small>Boutique et catalogue</small></Link>
+          <Link role="menuitem" href="/connexion?profil=admin&next=/admin/crm" onClick={close}><strong>Admin</strong><small>Pilotage SunuShop</small></Link>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ShellChrome({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const { authenticated } = useAuthState();
+  const { authenticated, area: authenticatedArea } = useAuthState();
   const [menuOpen, setMenuOpen] = useState(false);
   const isAuth = pathname === "/connexion" || pathname === "/mot-de-passe";
-  const area = pathname.startsWith("/marchand")
-    ? { href: "/marchand", label: "Ma boutique" }
-    : pathname.startsWith("/client") || pathname.startsWith("/commandes")
-      ? { href: "/client", label: "Mes commandes" }
-      : pathname.startsWith("/admin")
-        ? { href: "/admin", label: "Pilotage" }
-        // Un acheteur déjà connecté ne doit pas revoir "Mon espace" → /connexion.
-        : authenticated
-          ? { href: "/client", label: "Mes commandes" }
-          : { href: "/connexion", label: "Mon espace" };
+  const area = authenticatedArea === "admin"
+    ? { href: "/admin", label: "Pilotage" }
+    : authenticatedArea === "merchant" || authenticatedArea === "courier"
+      ? { href: "/marchand", label: authenticatedArea === "courier" ? "Mes missions" : "Ma boutique" }
+      : { href: "/client", label: "Mes commandes" };
 
   return (
     <div className="mvp-page">
@@ -51,15 +96,21 @@ function ShellChrome({ children }: { children: React.ReactNode }) {
           <button className="mvp-menu-toggle" type="button" aria-expanded={menuOpen} aria-controls="main-navigation" onClick={() => setMenuOpen((value) => !value)}>
             <span className="mvp-menu-toggle__icon"><span /><span /><span /></span><b>Menu</b>
           </button>
-          <nav id="main-navigation" className={`mvp-nav ${menuOpen ? "is-open" : ""}`} aria-label="Navigation principale" onClick={() => setMenuOpen(false)}>
-            <Link href="/">Accueil</Link>
-            <Link href="/marche">Produits</Link>
-            <Link href="/categories">Catégories</Link>
-            <Link href="/#boutiques">Boutiques</Link>
-            <Link href="/recherche">Rechercher</Link>
-            <Link href="/aide">Aide</Link>
-            <Link href="/creer-ma-boutique" className="mvp-nav__cta">Créer ma boutique</Link>
-            <Link href={isAuth ? "/marche" : area.href} className="mvp-nav__cta">{isAuth ? "Retour au marché" : area.label}</Link>
+          <nav id="main-navigation" className={`mvp-nav ${menuOpen ? "is-open" : ""}`} aria-label="Navigation principale">
+            <Link href="/" onClick={() => setMenuOpen(false)}>Accueil</Link>
+            <Link href="/marche" onClick={() => setMenuOpen(false)}>Produits</Link>
+            <Link href="/categories" onClick={() => setMenuOpen(false)}>Catégories</Link>
+            <Link href="/#boutiques" onClick={() => setMenuOpen(false)}>Boutiques</Link>
+            <Link href="/recherche" onClick={() => setMenuOpen(false)}>Rechercher</Link>
+            <Link href="/aide" onClick={() => setMenuOpen(false)}>Aide</Link>
+            <Link href="/creer-ma-boutique" className="mvp-nav__cta" onClick={() => setMenuOpen(false)}>Créer ma boutique</Link>
+            {isAuth ? (
+              <Link href="/marche" className="mvp-nav__cta" onClick={() => setMenuOpen(false)}>Retour au marché</Link>
+            ) : authenticated ? (
+              <Link href={area.href} className="mvp-nav__cta" onClick={() => setMenuOpen(false)}>{area.label}</Link>
+            ) : (
+              <AccessMenu onNavigate={() => setMenuOpen(false)} />
+            )}
           </nav>
           <Link href="/recherche" className="mvp-search-trigger" aria-label="Rechercher"><Search aria-hidden="true" /></Link>
           <CartTrigger />

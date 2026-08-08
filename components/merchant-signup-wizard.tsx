@@ -23,6 +23,16 @@ type ResumeState = {
   kind: "informal" | "formal";
   publicName: string;
   representativeIsLegalOwner: boolean;
+  contactName: string;
+  phone: string;
+  city: string;
+  legalName: string;
+  salesChannel: string;
+  categories: string[];
+  email: string;
+  editable: boolean;
+  initialStep: "identite" | "lettre";
+  intentLetterDocumentId: string | null;
 };
 
 type StepId = "commerce" | "acces" | "identite" | "lettre";
@@ -70,9 +80,19 @@ export function MerchantSignupWizard({
   resume: ResumeState | null;
 }) {
   const router = useRouter();
-  const [step, setStep] = useState<StepId>(resume ? "identite" : "commerce");
+  const [step, setStep] = useState<StepId>(resume?.initialStep ?? "commerce");
   const [draft, setDraft] = useState<Draft>(() => {
-    if (resume || typeof window === "undefined") return emptyDraft;
+    if (resume) return {
+      contactName: resume.contactName,
+      shopName: resume.publicName,
+      phone: resume.phone,
+      city: resume.city,
+      businessType: resume.kind,
+      legalName: resume.legalName,
+      salesChannel: resume.salesChannel,
+      categories: resume.categories,
+    };
+    if (typeof window === "undefined") return emptyDraft;
     try {
       const stored = window.sessionStorage.getItem(DRAFT_KEY);
       return stored ? { ...emptyDraft, ...JSON.parse(stored) } : emptyDraft;
@@ -80,7 +100,7 @@ export function MerchantSignupWizard({
       return emptyDraft;
     }
   });
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(resume?.email ?? "");
   const [password, setPassword] = useState("");
   const [captchaToken, setCaptchaToken] = useState<string>();
   const [busy, setBusy] = useState(false);
@@ -89,6 +109,7 @@ export function MerchantSignupWizard({
     resume ? { merchantId: resume.merchantId, caseId: resume.caseId } : null,
   );
   const [showIntentLetter, setShowIntentLetter] = useState(false);
+  const [intentLetterDocumentId, setIntentLetterDocumentId] = useState(resume?.intentLetterDocumentId ?? "");
   const [submitted, setSubmitted] = useState(false);
 
   useEffect(() => {
@@ -121,14 +142,42 @@ export function MerchantSignupWizard({
   }, []);
 
   const stepIndex = stepOrder.indexOf(step);
+  const commerceLocked = Boolean(resume && !resume.editable);
 
-  const submitCommerce = (event: FormEvent<HTMLFormElement>) => {
+  const submitCommerce = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    const editableMerchantId = resume?.editable ? resume.merchantId : created?.merchantId;
+    const editableCaseId = resume?.editable ? resume.caseId : created?.caseId;
+    if (editableMerchantId && editableCaseId) {
+      setBusy(true);
+      setError("");
+      try {
+        const response = await fetch("/api/merchant/onboarding", {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ merchantId: editableMerchantId, caseId: editableCaseId, ...draft }),
+        });
+        const payload = await response.json().catch(() => null);
+        if (!response.ok) {
+          setError(payload?.error?.message ?? "Les informations du commerce n’ont pas pu être enregistrées.");
+          return;
+        }
+      } catch {
+        setError("Impossible de joindre SunuShop. Vérifiez la connexion puis réessayez.");
+        return;
+      } finally {
+        setBusy(false);
+      }
+    }
     setStep("acces");
   };
 
   const submitAcces = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (resume || created) {
+      setStep("identite");
+      return;
+    }
     setBusy(true);
     setError("");
     try {
@@ -213,8 +262,15 @@ export function MerchantSignupWizard({
         <ol className="signup-wizard-steps">
           {stepOrder.map((id, index) => (
             <li key={id} data-done={index < stepIndex} data-active={id === step}>
-              <strong>{index < stepIndex ? <Check aria-hidden="true" size={14} /> : index + 1}</strong>
-              <span>{stepLabels[id]}</span>
+              <button
+                type="button"
+                disabled={!resume && !created && index > stepIndex}
+                onClick={() => setStep(id)}
+                aria-current={id === step ? "step" : undefined}
+              >
+                <strong>{index < stepIndex ? <Check aria-hidden="true" size={14} /> : index + 1}</strong>
+                <span>{stepLabels[id]}</span>
+              </button>
             </li>
           ))}
         </ol>
@@ -236,23 +292,23 @@ export function MerchantSignupWizard({
               <div className="mvp-form__grid">
                 <label className="mvp-field">
                   Nom et prénom
-                  <input id="signup-contact-name" name="contactName" autoComplete="name" required value={draft.contactName} onChange={(e) => setDraft({ ...draft, contactName: e.target.value })} />
+                  <input id="signup-contact-name" name="contactName" autoComplete="name" required disabled={commerceLocked} value={draft.contactName} onChange={(e) => setDraft({ ...draft, contactName: e.target.value })} />
                 </label>
                 <label className="mvp-field">
                   Nom du commerce
-                  <input id="signup-shop-name" name="shopName" required value={draft.shopName} onChange={(e) => setDraft({ ...draft, shopName: e.target.value })} />
+                  <input id="signup-shop-name" name="shopName" required disabled={commerceLocked} value={draft.shopName} onChange={(e) => setDraft({ ...draft, shopName: e.target.value })} />
                 </label>
                 <label className="mvp-field">
                   Téléphone
-                  <input id="signup-phone" name="phone" type="tel" inputMode="tel" autoComplete="tel" placeholder="+221 77 000 00 00" required value={draft.phone} onChange={(e) => setDraft({ ...draft, phone: e.target.value })} />
+                  <input id="signup-phone" name="phone" type="tel" inputMode="tel" autoComplete="tel" placeholder="+221 77 000 00 00" required disabled={commerceLocked} value={draft.phone} onChange={(e) => setDraft({ ...draft, phone: e.target.value })} />
                 </label>
                 <label className="mvp-field">
                   Ville
-                  <input id="signup-city" name="city" autoComplete="address-level2" value={draft.city} onChange={(e) => setDraft({ ...draft, city: e.target.value })} />
+                  <input id="signup-city" name="city" autoComplete="address-level2" disabled={commerceLocked} value={draft.city} onChange={(e) => setDraft({ ...draft, city: e.target.value })} />
                 </label>
                 <label className="mvp-field">
                   Statut de l’activité
-                  <select id="signup-business-type" name="businessType" required value={draft.businessType} onChange={(e) => setDraft({ ...draft, businessType: e.target.value as Draft["businessType"] })}>
+                  <select id="signup-business-type" name="businessType" required disabled={commerceLocked} value={draft.businessType} onChange={(e) => setDraft({ ...draft, businessType: e.target.value as Draft["businessType"] })}>
                     <option value="">Choisir</option>
                     <option value="informal">Commerçant individuel / activité informelle</option>
                     <option value="formal">Entreprise enregistrée</option>
@@ -261,13 +317,13 @@ export function MerchantSignupWizard({
                 {draft.businessType === "formal" && (
                   <label className="mvp-field">
                     Raison sociale
-                    <input id="signup-legal-name" name="legalName" required value={draft.legalName} onChange={(e) => setDraft({ ...draft, legalName: e.target.value })} />
+                    <input id="signup-legal-name" name="legalName" required disabled={commerceLocked} value={draft.legalName} onChange={(e) => setDraft({ ...draft, legalName: e.target.value })} />
                   </label>
                 )}
               </div>
               <label className="mvp-field">
                 Comment vendez-vous aujourd’hui ?
-                <input id="signup-sales-channel" name="salesChannel" placeholder="En boutique, WhatsApp, Instagram…" required value={draft.salesChannel} onChange={(e) => setDraft({ ...draft, salesChannel: e.target.value })} />
+                <input id="signup-sales-channel" name="salesChannel" placeholder="En boutique, WhatsApp, Instagram…" required disabled={commerceLocked} value={draft.salesChannel} onChange={(e) => setDraft({ ...draft, salesChannel: e.target.value })} />
               </label>
               {categories.length > 0 && (
                 <fieldset className="application-category-fieldset">
@@ -278,6 +334,7 @@ export function MerchantSignupWizard({
                         <input
                           name="categories"
                           type="checkbox"
+                          disabled={commerceLocked}
                           checked={draft.categories.includes(category.name)}
                           onChange={(e) =>
                             setDraft({
@@ -294,7 +351,7 @@ export function MerchantSignupWizard({
                   </div>
                 </fieldset>
               )}
-              <button className="mvp-button">Continuer</button>
+              <button className="mvp-button" disabled={busy}>{busy ? "Enregistrement…" : "Continuer"}</button>
             </form>
           </>
         )}
@@ -302,17 +359,24 @@ export function MerchantSignupWizard({
         {step === "acces" && (
           <>
             <h2>Votre accès</h2>
-            <p>Aucun email à confirmer : vous accédez tout de suite à votre boutique.</p>
+            <p>{resume || created ? "Votre compte est déjà créé. L’adresse email reste protégée pendant la reprise du dossier." : "Aucun email à confirmer : vous accédez tout de suite à votre boutique."}</p>
             <form className="mvp-form" onSubmit={submitAcces}>
               <label className="mvp-field">
                 Adresse email
-                <input id="signup-email" name="email" type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
+                <input id="signup-email" name="email" type="email" autoComplete="email" required readOnly={Boolean(resume || created)} value={email} onChange={(e) => setEmail(e.target.value)} />
               </label>
-              <label className="mvp-field">
-                Mot de passe
-                <input id="signup-password" name="password" type="password" autoComplete="new-password" required minLength={10} value={password} onChange={(e) => setPassword(e.target.value)} />
-              </label>
-              {turnstileSiteKey && (
+              {resume || created ? (
+                <p className="small">
+                  Besoin de modifier votre mot de passe ?{" "}
+                  <a href={`/connexion?profil=vendeur&mode=recuperation&email=${encodeURIComponent(email)}`}>Gérer mon mot de passe</a>
+                </p>
+              ) : (
+                <label className="mvp-field">
+                  Mot de passe
+                  <input id="signup-password" name="password" type="password" autoComplete="new-password" required minLength={10} value={password} onChange={(e) => setPassword(e.target.value)} />
+                </label>
+              )}
+              {turnstileSiteKey && !resume && !created && (
                 <div className="merchant-captcha">
                   <strong>Vérification de sécurité</strong>
                   <p>Cochez le contrôle ci-dessous si Cloudflare vous le demande.</p>
@@ -333,8 +397,8 @@ export function MerchantSignupWizard({
                 <button type="button" className="mvp-button mvp-button--secondary" onClick={() => setStep("commerce")}>
                   Retour
                 </button>
-                <button className="mvp-button" disabled={busy || Boolean(turnstileSiteKey && !captchaToken)}>
-                  {busy ? "Création en cours…" : "Créer ma boutique"}
+                <button className="mvp-button" disabled={busy || Boolean(!resume && !created && turnstileSiteKey && !captchaToken)}>
+                  {resume || created ? "Continuer vers mes documents" : busy ? "Création en cours…" : "Créer ma boutique"}
                 </button>
               </div>
             </form>
@@ -346,7 +410,7 @@ export function MerchantSignupWizard({
             <h2>Votre pièce d’identité</h2>
             {resume && (
               <p className="mvp-alert">
-                Vous reprenez une boutique déjà créée ({resume.publicName}). Les étapes « Mon commerce » et « Mon accès » sont déjà enregistrées.
+                Vous reprenez la boutique « {draft.shopName} ». Vous pouvez revenir vérifier ou corriger les étapes précédentes.
               </p>
             )}
             <p>La CNI recto-verso et la preuve d’activité sont obligatoires. Vous pouvez continuer plus tard : rien n’est perdu.</p>
@@ -356,11 +420,9 @@ export function MerchantSignupWizard({
               ))}
             </div>
             <div className="mvp-actions">
-              {!resume && (
-                <button type="button" className="mvp-button mvp-button--secondary" onClick={() => setStep("acces")}>
-                  Retour
-                </button>
-              )}
+              <button type="button" className="mvp-button mvp-button--secondary" onClick={() => setStep("acces")}>
+                Retour
+              </button>
               <button type="button" className="mvp-button mvp-button--secondary" onClick={finishLater}>
                 Continuer plus tard
               </button>
@@ -385,7 +447,7 @@ export function MerchantSignupWizard({
                     Continuer plus tard
                   </button>
                   <button type="button" className="mvp-button" onClick={() => setShowIntentLetter(true)}>
-                    Remplir la lettre d’intention
+                    {intentLetterDocumentId ? "Voir ou télécharger ma lettre" : "Remplir la lettre d’intention"}
                   </button>
                 </div>
                 <p className="small">
@@ -400,8 +462,10 @@ export function MerchantSignupWizard({
             {showIntentLetter && (
               <IntentLetterForm
                 caseId={created.caseId}
+                existingDocumentId={intentLetterDocumentId}
+                onSaved={setIntentLetterDocumentId}
                 merchant={{
-                  publicName: resume?.publicName ?? draft.shopName,
+                  publicName: draft.shopName,
                   kind: merchantKind as "informal" | "formal",
                   representativeIsLegalOwner,
                 }}

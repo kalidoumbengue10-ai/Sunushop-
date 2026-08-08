@@ -141,7 +141,7 @@ test.describe.serial("flux authentifiés marketplace", () => {
         verification_status: "approved",
         subscription_status: "active",
       })
-      .select("id, public_name")
+      .select("id, public_name, slug")
       .single();
     if (merchantError) throw merchantError;
     created.merchantIds.push(merchant.id);
@@ -195,6 +195,31 @@ test.describe.serial("flux authentifiés marketplace", () => {
           201,
         );
 
+        const savedVariants = await responseData<{ productId: string; variantIds: string[] }>(
+          await merchantContext.request.put(`/api/merchant/products/${product.productId}`, {
+            data: {
+              categoryId: category.id,
+              title: `Produit E2E ${runId}`,
+              description: "Produit fictif servant à valider le parcours complet SunuShop.",
+              optionNames: ["Taille", "Couleur"],
+              variants: [
+                { id: product.variantId, title: "S · Rouge", attributes: { Taille: "S", Couleur: "Rouge" }, sku: `SKU-S-${runId}`, priceXof: 5500, stock: 5, reserved: 0, lowStockThreshold: 1, active: true },
+                { title: "M · Noir", attributes: { Taille: "M", Couleur: "Noir" }, sku: `SKU-M-${runId}`, priceXof: 6000, stock: 3, reserved: 0, lowStockThreshold: 1, active: true },
+              ],
+            },
+          }),
+          200,
+        );
+        expect(savedVariants.variantIds).toHaveLength(2);
+        const secondVariantId = savedVariants.variantIds.find((id) => id !== product.variantId)!;
+        const { data: storedProduct, error: storedProductError } = await admin
+          .from("products")
+          .select("option_names")
+          .eq("id", product.productId)
+          .single();
+        if (storedProductError) throw storedProductError;
+        expect(storedProduct.option_names).toEqual(["Taille", "Couleur"]);
+
         const png = Buffer.from(
           "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
           "base64",
@@ -210,6 +235,33 @@ test.describe.serial("flux authentifiés marketplace", () => {
         );
         created.mediaPaths.push(media.storage_path);
 
+        const secondMedia = await responseData<{ id: string; storage_path: string }>(
+          await merchantContext.request.post(`/api/merchant/products/${product.productId}/media`, {
+            multipart: {
+              altText: "Seconde vue du produit de test",
+              file: { name: "produit-e2e-seconde-vue.png", mimeType: "image/png", buffer: png },
+            },
+          }),
+          201,
+        );
+        created.mediaPaths.push(secondMedia.storage_path);
+        await responseData(
+          await merchantContext.request.patch(`/api/merchant/products/${product.productId}/media/order`, {
+            data: { mediaIds: [secondMedia.id, media.id] },
+          }),
+          200,
+        );
+        const { data: orderedMedia, error: orderedMediaError } = await admin
+          .from("product_media")
+          .select("id, position")
+          .eq("product_id", product.productId)
+          .order("position", { ascending: true });
+        if (orderedMediaError) throw orderedMediaError;
+        expect(orderedMedia).toEqual([
+          { id: secondMedia.id, position: 0 },
+          { id: media.id, position: 1 },
+        ]);
+
         const storefront = await responseData<{ products: Array<{ id: string }> }>(
           await merchantContext.request.get("/api/storefront"),
           200,
@@ -224,6 +276,31 @@ test.describe.serial("flux authentifiés marketplace", () => {
 
         await test.step("le client enregistre son adresse, synchronise son panier et commande", async () => {
           await signIn(clientContext, emails.client);
+          const liveCatalogPage = await clientContext.newPage();
+          await liveCatalogPage.goto(`/boutiques/${merchant.slug}`);
+          const productCard = liveCatalogPage.locator("article.mvp-product").filter({ hasText: `Produit E2E ${runId}` });
+          await expect(productCard).toBeVisible();
+          await expect(productCard.getByRole("group", { name: "Taille" }).getByRole("button", { name: "S" })).toBeVisible();
+          await expect(productCard.getByRole("group", { name: "Couleur" }).getByRole("button", { name: "Rouge" })).toBeVisible();
+
+          await responseData(
+            await merchantContext.request.put(`/api/merchant/products/${product.productId}`, {
+              data: {
+                categoryId: category.id,
+                title: `Produit E2E ${runId}`,
+                description: "Produit fictif servant à valider le parcours complet SunuShop.",
+                optionNames: ["Taille", "Couleur"],
+                variants: [
+                  { id: product.variantId, title: "S · Rouge", attributes: { Taille: "S", Couleur: "Rouge" }, sku: `SKU-S-${runId}`, priceXof: 6500, stock: 4, reserved: 0, lowStockThreshold: 1, active: true },
+                  { id: secondVariantId, title: "M · Noir", attributes: { Taille: "M", Couleur: "Noir" }, sku: `SKU-M-${runId}`, priceXof: 6000, stock: 3, reserved: 0, lowStockThreshold: 1, active: true },
+                ],
+              },
+            }),
+            200,
+          );
+          await expect(productCard.getByText("6 500 F")).toBeVisible({ timeout: 15_000 });
+          await liveCatalogPage.close();
+
           const address = await responseData<{ id: string }>(
             await clientContext.request.post("/api/client/addresses", {
               data: {
@@ -298,7 +375,7 @@ test.describe.serial("flux authentifiés marketplace", () => {
           const clientPage = await clientContext.newPage();
           await clientPage.goto("/client");
           await expect(clientPage.getByRole("heading", { name: "Achats, adresses et suivi" })).toBeVisible();
-          await expect(clientPage.getByText("Maison E2E")).toBeVisible();
+          await expect(clientPage.getByText("Maison E2E")).toBeVisible({ timeout: 15_000 });
           await expect(clientPage.getByText(batch.orders[0].publicCode)).toBeVisible();
         });
 
@@ -539,11 +616,15 @@ test.describe.serial("flux authentifiés marketplace", () => {
       await ownerPage.getByLabel("Je certifie sur l’honneur l’exactitude des déclarations ci-dessus.").check();
       await ownerPage.getByRole("button", { name: "Générer et enregistrer ma lettre d’intention" }).click();
       await expect(ownerPage.getByText("Lettre d’intention enregistrée")).toBeVisible({ timeout: 15_000 });
+      await expect(ownerPage.getByRole("button", { name: "Voir le PDF" })).toBeVisible();
+      await expect(ownerPage.getByRole("button", { name: "Télécharger le PDF" })).toBeVisible();
+      await ownerPage.getByRole("button", { name: "Fermer", exact: true }).click();
+      await expect(ownerPage.getByRole("button", { name: "Voir ou télécharger ma lettre" })).toBeVisible();
     });
 
     const { data: intentLetterDocument, error: intentLetterError } = await admin
       .from("verification_documents")
-      .select("mime_type")
+      .select("id, mime_type")
       .eq("case_id", verificationCase.id)
       .eq("document_type", "intent_letter")
       .order("version", { ascending: false })
@@ -551,6 +632,12 @@ test.describe.serial("flux authentifiés marketplace", () => {
       .single();
     if (intentLetterError) throw intentLetterError;
     expect(intentLetterDocument.mime_type).toBe("application/pdf");
+    const intentAccess = await responseData<{ viewUrl: string; downloadUrl: string; version: number }>(
+      await ownerContext.request.get(`/api/merchant/verifications/${verificationCase.id}/documents/${intentLetterDocument.id}/download`),
+      200,
+    );
+    expect(intentAccess.viewUrl).toContain("/storage/v1/object/sign/");
+    expect(intentAccess.downloadUrl).toContain("download");
 
     const { data: storedDocuments } = await admin.from("verification_documents").select("storage_path").eq("case_id", verificationCase.id);
     created.verificationPaths.push(...(storedDocuments ?? []).map((document) => document.storage_path));

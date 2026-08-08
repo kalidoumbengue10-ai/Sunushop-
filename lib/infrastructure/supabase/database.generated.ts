@@ -3226,6 +3226,10 @@ export type Database = {
         }
         Returns: Json
       }
+      reorder_merchant_product_media: {
+        Args: { p_media_ids: string[]; p_product_id: string }
+        Returns: Json
+      }
       set_merchant_product_publication: {
         Args: { p_product_id: string; p_publish: boolean }
         Returns: {

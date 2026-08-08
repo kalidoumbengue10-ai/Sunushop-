@@ -206,20 +206,45 @@ test.describe.serial("blocage des vendeurs non abonnés", () => {
       .insert({ variant_id: variant.id, merchant_id: merchant.id, available_quantity: 10 });
     if (inventoryError) throw inventoryError;
 
+    const { error: mediaError } = await admin.from("product_media").insert({
+      product_id: product.id,
+      merchant_id: merchant.id,
+      storage_bucket: "product-media",
+      storage_path: `${merchant.id}/${product.id}/catalogue-e2e.png`,
+      alt_text: "Produit de contrôle abonnement",
+      position: 0,
+    });
+    if (mediaError) throw mediaError;
+
     const clientContext = await browser.newContext();
     const merchantContext = await browser.newContext();
+    const merchantDb = createClient(supabaseUrl!, anonKey!, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
 
     try {
       await signIn(clientContext, emails.client);
       await signIn(merchantContext, emails.merchant);
+      const { error: merchantSignInError } = await merchantDb.auth.signInWithPassword({
+        email: emails.merchant,
+        password,
+      });
+      if (merchantSignInError) throw merchantSignInError;
 
       // --- Sanity check : tout est visible tant que l'abonnement est actif.
       await test.step("actif : la boutique et le produit sont visibles", async () => {
+        const { data: initialState, error: initialStateError } = await admin
+          .from("merchant_accounts")
+          .select("status, subscription_status")
+          .eq("id", merchant.id)
+          .single();
+        if (initialStateError) throw initialStateError;
+        expect(initialState).toMatchObject({ status: "active", subscription_status: "active" });
         const catalog = await responseData<{ items: Array<{ id: string }> }>(
           await clientContext.request.get(`/api/catalog?q=${encodeURIComponent(`Produit Gating E2E ${runId}`)}`),
           200,
         );
-        expect(catalog.items.some((item) => item.id === product.id)).toBe(true);
+        expect(catalog.items.some((item) => item.id === product.id), JSON.stringify(catalog.items)).toBe(true);
 
         const shop = await clientContext.request.get(`/api/shops/${merchant.slug}`);
         expect(shop.status()).toBe(200);
@@ -294,7 +319,7 @@ test.describe.serial("blocage des vendeurs non abonnés", () => {
         const body = await response.json();
         expect(body.error.code).toBe("SUBSCRIPTION_REQUIRED");
 
-        const { error: rpcError } = await admin.rpc("set_merchant_product_publication", {
+        const { error: rpcError } = await merchantDb.rpc("set_merchant_product_publication", {
           p_product_id: product.id,
           p_publish: true,
         });
@@ -327,11 +352,17 @@ test.describe.serial("blocage des vendeurs non abonnés", () => {
         // Équivalent de admin_grant_subscription, appelée directement via le
         // client service-role (le rôle admin + AAL2 nécessaires pour la
         // route HTTP ne sont pas simulables simplement dans ce test E2E).
-        const { error } = await admin.rpc("admin_activate_test_subscription", {
-          p_merchant_id: merchant.id,
-          p_plan_id: "essential",
-          p_days: 30,
-        });
+        await setSubscriptionStatus("active");
+        const now = new Date();
+        const { error } = await admin
+          .from("merchant_subscriptions")
+          .update({
+            status: "active",
+            starts_at: now.toISOString(),
+            current_period_ends_at: new Date(now.getTime() + 30 * 86_400_000).toISOString(),
+            grace_ends_at: new Date(now.getTime() + 33 * 86_400_000).toISOString(),
+          })
+          .eq("id", subscription.id);
         if (error) throw error;
 
         const catalog = await responseData<{ items: Array<{ id: string }> }>(
@@ -347,13 +378,14 @@ test.describe.serial("blocage des vendeurs non abonnés", () => {
         // elle-même reste appelable directement, elle ne dépend que du
         // sous-état de subscription_status/status, pas des règles
         // applicatives (photo, variante) propres à la route PATCH.
-        const { error: publishError } = await admin.rpc("set_merchant_product_publication", {
+        const { error: publishError } = await merchantDb.rpc("set_merchant_product_publication", {
           p_product_id: product.id,
           p_publish: true,
         });
         expect(publishError).toBeNull();
       });
     } finally {
+      await merchantDb.auth.signOut();
       await Promise.all([clientContext.close(), merchantContext.close()]);
     }
 

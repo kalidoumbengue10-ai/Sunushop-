@@ -46,17 +46,24 @@ export function AdminCrmMetrics() {
   const range = useMemo(() => rangeForPreset(preset, customFrom, customTo), [preset, customFrom, customTo]);
 
   useEffect(() => {
-    setLoading(true);
-    setError("");
-    const params = new URLSearchParams({ from: range.from, to: range.to });
-    fetch(`/api/admin/analytics?${params.toString()}`)
-      .then(async (response) => {
+    let cancelled = false;
+    queueMicrotask(async () => {
+      if (cancelled) return;
+      setLoading(true);
+      setError("");
+      const params = new URLSearchParams({ from: range.from, to: range.to });
+      try {
+        const response = await fetch(`/api/admin/analytics?${params.toString()}`);
         const payload = await response.json();
         if (!response.ok) throw new Error(payload?.error?.message ?? "Impossible de charger les métriques.");
-        setData(payload.data);
-      })
-      .catch((fetchError) => setError(fetchError instanceof Error ? fetchError.message : "Erreur inattendue."))
-      .finally(() => setLoading(false));
+        if (!cancelled) setData(payload.data);
+      } catch (fetchError) {
+        if (!cancelled) setError(fetchError instanceof Error ? fetchError.message : "Erreur inattendue.");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    });
+    return () => { cancelled = true; };
   }, [range.from, range.to]);
 
   const sellers = data?.topSellers ?? [];

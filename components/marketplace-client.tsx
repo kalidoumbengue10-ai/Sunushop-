@@ -284,12 +284,16 @@ export function MarketplaceClient({
   }, [activeCategorySlug, search, fetchPage]);
 
   useCatalogSync(async () => {
-    // Rafraîchit exactement la fenêtre déjà chargée (prix, stock, photos,
-    // nouvelles variantes) sans perturber la pagination en cours.
-    const payload = await fetchPage({ page: 1, categorySlug: activeCategorySlug, query: search });
-    if (!payload) return;
-    setProducts(payload.data.products);
-    setTotal(payload.data.pagination.total);
+    // Rafraîchit toutes les pages déjà chargées (prix, stock, photos,
+    // nouvelles variantes) sans réduire le catalogue à la première page.
+    const payloads = await Promise.all(
+      Array.from({ length: page }, (_, index) => fetchPage({ page: index + 1, categorySlug: activeCategorySlug, query: search })),
+    );
+    const available = payloads.filter((payload): payload is NonNullable<typeof payload> => Boolean(payload));
+    if (!available.length) return;
+    const refreshed = available.flatMap((payload) => payload.data.products);
+    setProducts([...new Map(refreshed.map((product) => [product.id, product])).values()]);
+    setTotal(available[0].data.pagination.total);
   });
 
   return (

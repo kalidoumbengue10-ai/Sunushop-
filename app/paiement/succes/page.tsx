@@ -36,11 +36,9 @@ function PaiementSuccesContent() {
   const [error, setError] = useState("");
   const [errorCode, setErrorCode] = useState("");
 
-  useEffect(() => {
-    if (!ref) {
-      setError("Référence de paiement manquante dans le lien de retour. Si le paiement a été débité, retrouvez-le dans « Mon espace ».");
-    }
-  }, [ref]);
+  const visibleError = error || (!ref
+    ? "Référence de paiement manquante dans le lien de retour. Si le paiement a été débité, retrouvez-le dans « Mon espace »."
+    : "");
 
   useEffect(() => {
     if (!ref) return;
@@ -90,10 +88,10 @@ function PaiementSuccesContent() {
     };
   }, [ref]);
 
-  if (error) {
+  if (visibleError) {
     return (
       <div className="mvp-card">
-        <p className="mvp-alert mvp-alert--error">{error}</p>
+        <p className="mvp-alert mvp-alert--error">{visibleError}</p>
         {errorCode === "PAYMENT_INTENT_OTHER_ACCOUNT" ? (
           <Link href={`/connexion?next=${encodeURIComponent(`/paiement/succes?ref=${ref ?? ""}`)}`}>
             Se connecter avec le bon compte

@@ -56,17 +56,25 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    let local: CartLine[] = [];
-    try {
-      const saved = localStorage.getItem(CART_STORAGE_KEY);
-      const parsed = saved ? JSON.parse(saved) : [];
-      if (Array.isArray(parsed)) local = parsed.filter(isCartLine);
-    } catch {
-      localStorage.removeItem(CART_STORAGE_KEY);
-    }
-    fetchAndMergeWithServer(local)
-      .catch(() => setLines(local))
-      .finally(() => setReady(true));
+    let cancelled = false;
+    queueMicrotask(async () => {
+      let local: CartLine[] = [];
+      try {
+        const saved = localStorage.getItem(CART_STORAGE_KEY);
+        const parsed = saved ? JSON.parse(saved) : [];
+        if (Array.isArray(parsed)) local = parsed.filter(isCartLine);
+      } catch {
+        localStorage.removeItem(CART_STORAGE_KEY);
+      }
+      try {
+        await fetchAndMergeWithServer(local);
+      } catch {
+        if (!cancelled) setLines(local);
+      } finally {
+        if (!cancelled) setReady(true);
+      }
+    });
+    return () => { cancelled = true; };
   }, [fetchAndMergeWithServer]);
 
   useEffect(() => {

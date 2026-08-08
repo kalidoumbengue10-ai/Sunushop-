@@ -68,6 +68,9 @@ describe("contrat statique des migrations", () => {
     expect(sql).toContain("create table public.delivery_category_rates");
     expect(sql).toContain("create table public.merchant_order_counters");
     expect(sql).toContain("create function public.save_merchant_product_variants");
+    expect(sql).toContain("add column option_names text[]");
+    expect(sql).toContain("create or replace function public.reorder_merchant_product_media");
+    expect(sql).toContain("MEDIA_ORDER_INCOMPLETE");
     expect(sql).toContain("highest_category_or_region_default");
     expect(sql).toContain("create function public.admin_activate_test_subscription");
     expect(sql).toContain("subscription.test_activate");

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useCart } from "@/components/cart-provider";
 import { OrderBatchConfirmation, type ConfirmedOrder } from "@/components/order-batch-confirmation";
 import { ShopContact } from "@/components/shop-contact";
@@ -87,7 +87,7 @@ export function CheckoutFlow() {
   const [confirmedOrders, setConfirmedOrders] = useState<ConfirmedOrder[] | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const resumedRef = useState({ done: false })[0];
+  const resumedRef = useRef(false);
 
   // Charge les fiches boutique (zones de livraison, moyens de paiement) pour chaque marchand du panier.
   useEffect(() => {
@@ -153,25 +153,6 @@ export function CheckoutFlow() {
       .catch(() => setAuthenticated(false));
   }, []);
 
-  // Reprise après retour d'email de confirmation : ré-hydrate le brouillon puis avance à la Confirmation (sans soumettre).
-  // Attend que le panier soit hydraté (cart.ready) avant de fusionner : sinon cart.merge()
-  // fusionne un panier local encore vide avec le serveur et écrase le vrai panier (écran vide).
-  useEffect(() => {
-    if (resumedRef.done || authenticated !== true || !cart.ready) return;
-    resumedRef.done = true;
-    const draft = readCheckoutDraft();
-    if (!draft) return;
-    const draftZones = Object.fromEntries(draft.groups.filter((group) => group.deliveryZoneId).map((group) => [group.merchantId, group.deliveryZoneId as string]));
-    const draftMethodKinds = Object.fromEntries(draft.groups.map((group) => [group.merchantId, group.methodKind]));
-    setRecipient(draft.recipient);
-    setSelectedZones(draftZones);
-    setMethodKinds(draftMethodKinds);
-    setPaymentMethods(Object.fromEntries(draft.groups.map((group) => [group.merchantId, group.paymentMethod])));
-    setPayOnline(draft.groups.some((group) => group.paymentMethod === "paytech"));
-    void cart.merge().then(() => requestQuote(draftMethodKinds, draftZones)).then(() => setStep("confirmation"));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authenticated, cart.ready]);
-
   const buildQuoteGroups = (
     methodKindsOverride?: Record<string, "pickup" | "merchant_delivery">,
     selectedZonesOverride?: Record<string, string>,
@@ -216,6 +197,32 @@ export function CheckoutFlow() {
       setBusy(false);
     }
   };
+
+  // Reprise après retour d'email de confirmation : ré-hydrate le brouillon puis avance à la Confirmation (sans soumettre).
+  // Attend que le panier soit hydraté avant de fusionner pour ne pas écraser le panier local.
+  useEffect(() => {
+    if (resumedRef.current || authenticated !== true || !cart.ready) return;
+    const draft = readCheckoutDraft();
+    if (!draft) return;
+    resumedRef.current = true;
+    let cancelled = false;
+    const draftZones = Object.fromEntries(draft.groups.filter((group) => group.deliveryZoneId).map((group) => [group.merchantId, group.deliveryZoneId as string]));
+    const draftMethodKinds = Object.fromEntries(draft.groups.map((group) => [group.merchantId, group.methodKind]));
+    queueMicrotask(async () => {
+      if (cancelled) return;
+      setRecipient(draft.recipient);
+      setSelectedZones(draftZones);
+      setMethodKinds(draftMethodKinds);
+      setPaymentMethods(Object.fromEntries(draft.groups.map((group) => [group.merchantId, group.paymentMethod])));
+      setPayOnline(draft.groups.some((group) => group.paymentMethod === "paytech"));
+      await cart.merge();
+      if (cancelled) return;
+      if (await requestQuote(draftMethodKinds, draftZones)) setStep("confirmation");
+    });
+    return () => { cancelled = true; };
+    // La reprise ne doit s'exécuter qu'une fois lorsque l'authentification et le panier sont prêts.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authenticated, cart.ready]);
 
   const goToLivraison = async () => {
     if (await requestQuote()) setStep("livraison");

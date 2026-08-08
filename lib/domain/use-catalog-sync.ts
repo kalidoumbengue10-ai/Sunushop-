@@ -37,7 +37,7 @@ export function useCatalogSync(onChange: () => void) {
     ).subscribe();
     return () => {
       if (timeout) clearTimeout(timeout);
-      channel.unsubscribe();
+      void supabase.removeChannel(channel);
     };
   }, []);
 }

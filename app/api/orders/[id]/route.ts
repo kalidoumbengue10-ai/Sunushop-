@@ -1,4 +1,4 @@
-import { requireUser } from "@/lib/api/auth";
+import { requireAdminClient, requireUser } from "@/lib/api/auth";
 import { apiFailure, apiSuccess } from "@/lib/api/response";
 import { deriveDeliveryCode } from "@/lib/domain/delivery-code";
 
@@ -21,7 +21,7 @@ export async function GET(
       supabase
         .from("orders")
         .select(
-          "id, batch_id, buyer_id, merchant_id, public_code, status, payment_method, subtotal_xof, delivery_fee_xof, total_xof, delivery_snapshot, recipient_snapshot, payment_instructions_snapshot, created_at, updated_at, merchant_accounts!inner(public_name, slug, phone, email)",
+          "id, batch_id, buyer_id, merchant_id, public_code, status, payment_method, subtotal_xof, delivery_fee_xof, total_xof, delivery_snapshot, recipient_snapshot, payment_instructions_snapshot, created_at, updated_at",
         )
         .eq("id", id)
         .single(),
@@ -62,9 +62,15 @@ export async function GET(
     if (paymentDeclarationsError) throw paymentDeclarationsError;
     if (deliveryError) throw deliveryError;
     if (escrowError) throw escrowError;
+    const { data: merchant, error: merchantError } = await requireAdminClient()
+      .from("merchant_accounts")
+      .select("public_name, slug, phone, email")
+      .eq("id", order.merchant_id)
+      .single();
+    if (merchantError) throw merchantError;
     return apiSuccess(
       {
-        order,
+        order: { ...order, merchant_accounts: merchant },
         items,
         events,
         paymentDeclarations,

@@ -3,12 +3,18 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import { getBrowserSupabase } from "@/lib/infrastructure/supabase/browser";
 
-type AuthStateContextValue = { authenticated: boolean | null; userId: string | null };
+export type AuthArea = "client" | "merchant" | "admin" | "courier";
 
-const AuthStateContext = createContext<AuthStateContextValue>({ authenticated: null, userId: null });
+type AuthStateContextValue = {
+  authenticated: boolean | null;
+  userId: string | null;
+  area: AuthArea | null;
+};
+
+const AuthStateContext = createContext<AuthStateContextValue>({ authenticated: null, userId: null, area: null });
 
 export function AuthStateProvider({ children }: { children: React.ReactNode }) {
-  const [state, setState] = useState<AuthStateContextValue>({ authenticated: null, userId: null });
+  const [state, setState] = useState<AuthStateContextValue>({ authenticated: null, userId: null, area: null });
 
   useEffect(() => {
     let cancelled = false;
@@ -16,9 +22,25 @@ export function AuthStateProvider({ children }: { children: React.ReactNode }) {
       try {
         const supabase = getBrowserSupabase();
         const { data: { user } } = await supabase.auth.getUser();
-        if (!cancelled) setState({ authenticated: Boolean(user), userId: user?.id ?? null });
+        if (!user) {
+          if (!cancelled) setState({ authenticated: false, userId: null, area: null });
+          return;
+        }
+        const [{ data: adminRoles }, { data: merchantMemberships }, { data: courierMemberships }] = await Promise.all([
+          supabase.from("admin_roles").select("role").eq("user_id", user.id).eq("active", true).limit(1),
+          supabase.from("merchant_members").select("merchant_id").eq("user_id", user.id).eq("active", true).limit(1),
+          supabase.from("courier_memberships").select("id").eq("courier_user_id", user.id).eq("active", true).limit(1),
+        ]);
+        const area: AuthArea = adminRoles?.length
+          ? "admin"
+          : merchantMemberships?.length
+            ? "merchant"
+            : courierMemberships?.length
+              ? "courier"
+              : "client";
+        if (!cancelled) setState({ authenticated: true, userId: user.id, area });
       } catch {
-        if (!cancelled) setState({ authenticated: false, userId: null });
+        if (!cancelled) setState({ authenticated: false, userId: null, area: null });
       }
     })();
     return () => { cancelled = true; };

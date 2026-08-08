@@ -1,11 +1,22 @@
 import { spawn, spawnSync } from "node:child_process";
+import { createServer } from "node:net";
 import process from "node:process";
 
-const port = 3107;
+const port = await new Promise((resolve, reject) => {
+  const probe = createServer();
+  probe.unref();
+  probe.on("error", reject);
+  probe.listen(0, "127.0.0.1", () => {
+    const address = probe.address();
+    const availablePort = typeof address === "object" && address ? address.port : 3107;
+    probe.close(() => resolve(availablePort));
+  });
+});
 const baseUrl = `http://localhost:${port}`;
 const node = process.execPath;
 const nextBin = new URL("../node_modules/next/dist/bin/next", import.meta.url).pathname.replace(/^\/(?:[A-Za-z]:)/, (value) => value.slice(1));
 const playwrightBin = new URL("../node_modules/@playwright/test/cli.js", import.meta.url).pathname.replace(/^\/(?:[A-Za-z]:)/, (value) => value.slice(1));
+const playwrightArgs = process.argv.slice(2);
 const server = spawn(node, [nextBin, "dev", "-p", String(port)], {
   cwd: process.cwd(),
   stdio: ["ignore", "pipe", "pipe"],
@@ -42,7 +53,7 @@ let exitCode = 1;
 try {
   await waitForServer();
   exitCode = await new Promise((resolve) => {
-    const runner = spawn(node, [playwrightBin, "test"], {
+    const runner = spawn(node, [playwrightBin, "test", ...playwrightArgs], {
       cwd: process.cwd(),
       stdio: "inherit",
       windowsHide: true,
