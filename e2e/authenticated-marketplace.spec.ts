@@ -26,7 +26,6 @@ const emails = {
 const created = {
   userIds: [] as string[],
   merchantIds: [] as string[],
-  categoryId: "",
   orderId: "",
   batchId: "",
   mediaPaths: [] as string[],
@@ -100,7 +99,6 @@ async function cleanup() {
     await admin.from("crm_lead_notes").delete().eq("lead_id", leadId);
     await admin.from("crm_leads").delete().eq("id", leadId);
   }
-  if (created.categoryId) await admin.from("categories").delete().eq("id", created.categoryId);
   for (const userId of created.userIds.reverse()) {
     await admin.auth.admin.deleteUser(userId);
   }
@@ -118,11 +116,10 @@ test.describe.serial("flux authentifiés marketplace", () => {
 
     const { data: category, error: categoryError } = await admin
       .from("categories")
-      .insert({ slug: `e2e-${runId}`, name: `Catégorie E2E ${runId}`, position: 9999 })
       .select("id")
+      .eq("slug", "autres-produits")
       .single();
     if (categoryError) throw categoryError;
-    created.categoryId = category.id;
 
     const { data: merchant, error: merchantError } = await admin
       .from("merchant_accounts")

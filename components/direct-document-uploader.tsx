@@ -234,7 +234,7 @@ export function DirectDocumentUploader({
           onClick={() => inputRef.current?.click()}
         >
           {busy
-            ? `Envoi sécurisé en cours… ${progress}%`
+            ? `Envoi… ${progress}%`
             : latest || success
               ? "Remplacer le fichier"
               : "Ajouter le fichier"}

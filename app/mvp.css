@@ -185,5 +185,42 @@
 @media(max-width:850px){.auth-sign-out,.auth-sign-out__button{width:100%}}
 
 /* Livreurs intégrés et fidélité par boutique */
-.merchant-role-switch{display:flex;justify-content:flex-end;gap:.5rem;margin:0 0 1rem}.checkout-loyalty-toggle{display:flex;align-items:center;gap:.5rem;margin-top:.45rem;font-weight:700;color:#173f2e}.client-loyalty__grid,.courier-profile-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:1rem}.client-loyalty__card,.courier-profile,.courier-delivery-row,.courier-shop-profile{border:1px solid rgba(23,63,46,.14);border-radius:18px;background:#fffdf8;padding:1rem}.client-loyalty__card{display:grid;gap:.45rem}.client-loyalty__card b{font-size:1.65rem;color:#173f2e}.client-loyalty__card small,.courier-shop-profile small{display:block;color:#69736c}.merchant-loyalty{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1rem}.merchant-loyalty>:first-child,.merchant-loyalty>.merchant-kpi-grid{grid-column:1/-1}.courier-profile{display:grid;grid-template-columns:72px 1fr;gap:1rem;align-items:start}.courier-profile img,.courier-shop-profile img{width:72px;height:72px;border-radius:50%;object-fit:cover}.courier-profile__placeholder{width:72px;height:72px;display:grid;place-items:center;border-radius:50%;background:#173f2e;color:#fff;font-size:1.75rem;font-weight:800}.courier-profile__stats{display:flex;flex-wrap:wrap;gap:.45rem}.courier-profile__stats span{padding:.35rem .6rem;border-radius:999px;background:#f2eee3;font-size:.78rem}.courier-delivery-list{display:grid;gap:1rem}.courier-delivery-row header{display:flex;justify-content:space-between;gap:1rem}.courier-delivery-row header small{display:block}.courier-shop-profile{display:flex;gap:.85rem;align-items:center}.courier-pickup-code{display:grid;gap:.25rem;padding:1rem 1.25rem;border:2px dashed #173f2e;border-radius:16px;text-align:center;background:#f3f8f4}.courier-pickup-code strong{font-size:clamp(2rem,8vw,3.5rem);letter-spacing:.16em;color:#173f2e}
+.merchant-role-switch{display:flex;justify-content:flex-end;gap:.5rem;margin:0 0 1rem}.checkout-loyalty-toggle{display:flex;align-items:center;gap:.5rem;margin-top:.45rem;font-weight:700;color:#173f2e}.merchant-kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:1rem}.merchant-kpi-grid article{display:grid;gap:.35rem;padding:1rem 1.1rem;border:1px solid rgba(23,63,46,.14);border-radius:16px;background:#fffdf8}.merchant-kpi-grid span{font-size:.72rem;font-weight:800;letter-spacing:.03em;text-transform:uppercase;color:#69736c}.merchant-kpi-grid strong{font:700 clamp(22px,2.6vw,30px) Georgia,serif;color:#173f2e}.merchant-kpi-grid small{color:#69736c;font-size:.75rem}.client-loyalty__grid,.courier-profile-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:1rem}.client-loyalty__card,.courier-profile,.courier-delivery-row,.courier-shop-profile{border:1px solid rgba(23,63,46,.14);border-radius:18px;background:#fffdf8;padding:1rem}.client-loyalty__card{display:grid;gap:.45rem}.client-loyalty__card b{font-size:1.65rem;color:#173f2e}.client-loyalty__card small,.courier-shop-profile small{display:block;color:#69736c}.merchant-loyalty{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1rem}.merchant-loyalty>:first-child,.merchant-loyalty>.merchant-kpi-grid{grid-column:1/-1}.courier-profile{display:grid;grid-template-columns:72px 1fr;gap:1rem;align-items:start}.courier-profile img,.courier-shop-profile img{width:72px;height:72px;border-radius:50%;object-fit:cover}.courier-profile__placeholder{width:72px;height:72px;display:grid;place-items:center;border-radius:50%;background:#173f2e;color:#fff;font-size:1.75rem;font-weight:800}.courier-profile__stats{display:flex;flex-wrap:wrap;gap:.45rem}.courier-profile__stats span{padding:.35rem .6rem;border-radius:999px;background:#f2eee3;font-size:.78rem}.courier-delivery-list{display:grid;gap:1rem}.courier-delivery-row header{display:flex;justify-content:space-between;gap:1rem}.courier-delivery-row header small{display:block}.courier-shop-profile{display:flex;gap:.85rem;align-items:center}.courier-pickup-code{display:grid;gap:.25rem;padding:1rem 1.25rem;border:2px dashed #173f2e;border-radius:16px;text-align:center;background:#f3f8f4}.courier-pickup-code strong{font-size:clamp(2rem,8vw,3.5rem);letter-spacing:.16em;color:#173f2e}
 @media(max-width:700px){.merchant-loyalty{grid-template-columns:1fr}.courier-profile{grid-template-columns:1fr}.merchant-role-switch{justify-content:stretch}.merchant-role-switch>*{flex:1;text-align:center}}
+
+/* Confort de lecture et d'action sur tous les formats */
+.mvp-page :where(.mvp-card,.merchant-content-surface,.dashboard-panel,.mvp-document)>*{min-width:0}
+.mvp-button,.mvp-tab,.mvp-nav__cta,.auth-sign-out__button{max-width:100%;white-space:nowrap;text-align:center;line-height:1.15}
+.mvp-card>:where(.mvp-actions,.mvp-form,.mvp-list,.mvp-document-grid,.mvp-table-wrap,.checkout-flow):not(:first-child){margin-top:18px}
+.mvp-card>.mvp-alert{margin:14px 0}
+.mvp-document>.mvp-alert{margin:0}
+.mvp-document .mvp-actions{display:grid;grid-template-columns:repeat(auto-fit,minmax(118px,1fr));width:100%;gap:10px}
+.mvp-document .mvp-button{width:100%;padding-inline:12px;font-size:clamp(10px,2.8vw,13px)}
+.mvp-row>*,.merchant-product-row>*{min-width:0}
+
+@media(max-width:850px){
+  .mvp-shell{width:min(100% - 28px,1180px)}
+  .mvp-main{padding-bottom:76px}
+  .mvp-card{padding:clamp(18px,4vw,24px)}
+  .mvp-actions{gap:10px 8px}
+  .mvp-button{padding-inline:clamp(11px,2.4vw,16px);font-size:clamp(10px,1.7vw,13px)}
+}
+
+@media(max-width:560px){
+  .mvp-shell{width:calc(100% - 24px)}
+  .mvp-main{padding-top:26px}
+  .mvp-card>:where(.mvp-actions,.mvp-form,.mvp-list,.mvp-document-grid,.mvp-table-wrap,.checkout-flow):not(:first-child){margin-top:16px}
+  .mvp-row{align-items:flex-start;flex-direction:column;gap:12px}
+  .mvp-row>.mvp-actions{width:100%}
+  .mvp-row>.mvp-actions .mvp-button{flex:1;min-width:0}
+  .mvp-document-grid{gap:16px}
+  .mvp-document{padding:16px}
+  .mvp-document__heading{gap:10px}
+  .mvp-document .mvp-actions{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .mvp-document .mvp-actions .mvp-button:only-child{grid-column:1/-1}
+}
+
+@media(max-width:360px){
+  .mvp-button{padding-inline:9px;font-size:10px}
+  .mvp-document .mvp-actions{grid-template-columns:1fr}
+}

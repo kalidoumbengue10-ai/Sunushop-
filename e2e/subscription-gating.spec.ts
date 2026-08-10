@@ -26,7 +26,6 @@ const emails = {
 const created = {
   userIds: [] as string[],
   merchantId: "",
-  categoryId: "",
   productId: "",
   variantId: "",
   zoneId: "",
@@ -82,7 +81,6 @@ async function cleanup() {
     await admin.from("merchant_members").delete().eq("merchant_id", created.merchantId);
     await admin.from("merchant_accounts").delete().eq("id", created.merchantId);
   }
-  if (created.categoryId) await admin.from("categories").delete().eq("id", created.categoryId);
   for (const userId of created.userIds.reverse()) {
     await admin.auth.admin.deleteUser(userId);
   }
@@ -99,11 +97,10 @@ test.describe.serial("blocage des vendeurs non abonnés", () => {
 
     const { data: category, error: categoryError } = await admin
       .from("categories")
-      .insert({ slug: `e2e-gating-${runId}`, name: `Catégorie Gating E2E ${runId}`, position: 9999 })
       .select("id")
+      .eq("slug", "autres-produits")
       .single();
     if (categoryError) throw categoryError;
-    created.categoryId = category.id;
 
     const { data: merchant, error: merchantError } = await admin
       .from("merchant_accounts")
