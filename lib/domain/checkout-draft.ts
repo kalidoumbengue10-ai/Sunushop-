@@ -11,6 +11,7 @@ export type CheckoutGroupDraft = {
   deliveryZoneId?: string;
   methodKind: "pickup" | "merchant_delivery";
   paymentMethod: "cash_on_delivery" | "wave_direct" | "orange_money_direct" | "paytech";
+  applyLoyalty?: boolean;
 };
 
 export type CheckoutDraft = {
@@ -38,6 +39,7 @@ function isCheckoutGroupDraft(value: unknown): value is CheckoutGroupDraft {
   return (
     typeof group.merchantId === "string" &&
     (group.deliveryZoneId === undefined || typeof group.deliveryZoneId === "string") &&
+    (group.applyLoyalty === undefined || typeof group.applyLoyalty === "boolean") &&
     (group.methodKind === "pickup" || group.methodKind === "merchant_delivery") &&
     (group.paymentMethod === "cash_on_delivery" ||
       group.paymentMethod === "wave_direct" ||

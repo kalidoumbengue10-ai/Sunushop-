@@ -27,7 +27,7 @@ export async function POST(request: Request) {
     const result = data as { batchId: string; publicCode: string; totalXof: number };
     const { data: orders, error: ordersError } = await supabase
       .from("orders")
-      .select("id, public_code, merchant_id, merchant_sequence, total_xof, status")
+      .select("id, public_code, merchant_id, merchant_sequence, subtotal_xof, total_xof, status, loyalty_points_redeemed, loyalty_discount_xof, loyalty_points_earned")
       .eq("batch_id", result.batchId)
       .order("created_at");
     if (ordersError) throw ordersError;
@@ -53,6 +53,9 @@ export async function POST(request: Request) {
         merchantSequence: order.merchant_sequence,
         totalXof: order.total_xof,
         status: order.status,
+        loyaltyPointsRedeemed: order.loyalty_points_redeemed,
+        loyaltyDiscountXof: order.loyalty_discount_xof,
+        loyaltyPointsEarnable: Math.floor((order.subtotal_xof - (order.loyalty_discount_xof ?? 0)) / 100),
       })),
     }, { status: 201, requestId });
   } catch (error) {

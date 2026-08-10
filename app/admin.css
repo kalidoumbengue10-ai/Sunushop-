@@ -273,3 +273,8 @@
 .crm-invitation-fallback{display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center;gap:10px;padding:13px 15px;border:1px solid #8eb69b;border-radius:13px;background:#eff8f1}.crm-invitation-fallback>div{display:grid;gap:2px}.crm-invitation-fallback strong{font-size:11px;color:var(--admin-green)}.crm-invitation-fallback small{font-size:9px;color:var(--admin-muted)}.crm-invitation-fallback button,.crm-invitation-fallback a{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:36px;padding:8px 11px;border:1px solid var(--admin-line);border-radius:9px;background:#fff;color:var(--admin-green);font-size:10px;font-weight:900;text-decoration:none}.crm-invitation-fallback svg{width:14px;height:14px}
 @media(max-width:600px){.crm-test-subscription{grid-template-columns:1fr}.crm-test-subscription .admin-primary-button{width:100%}}
 @media(max-width:600px){.crm-invitation-fallback{grid-template-columns:1fr}.crm-invitation-fallback button,.crm-invitation-fallback a{width:100%}}
+
+/* Actions compactes, toujours sur une ligne, sans coller au contenu voisin. */
+.admin-primary-button,.admin-secondary-button,.admin-danger-button,.admin-text-button,.crm-contact-actions a,.crm-invitation-fallback button,.crm-invitation-fallback a{max-width:100%;white-space:nowrap;line-height:1.15;text-align:center}
+.admin-panel__heading,.crm-onboarding-action,.crm-test-subscription{row-gap:14px}
+@media(max-width:600px){.admin-primary-button,.admin-secondary-button,.admin-danger-button{padding-inline:10px;font-size:10px}}

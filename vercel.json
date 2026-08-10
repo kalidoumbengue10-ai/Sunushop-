@@ -20,6 +20,10 @@
     {
       "path": "/api/cron/abandoned-carts",
       "schedule": "0 2 * * *"
+    },
+    {
+      "path": "/api/cron/loyalty",
+      "schedule": "30 2 * * *"
     }
   ]
 }

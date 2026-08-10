@@ -7,7 +7,7 @@ import { useRouter } from "next/navigation";
 import { ImagePlus, Images, Star, Trash2, UploadCloud } from "lucide-react";
 import { formatPrice } from "@/lib/marketplace";
 import { merchantStatusLabel } from "@/lib/domain/merchant-ui";
-import { computeVariantMatrix } from "@/lib/domain/variant-matrix";
+import { computeVariantMatrix, parseVariantValues } from "@/lib/domain/variant-matrix";
 
 type VariantEditor = {
   id?: string;
@@ -145,7 +145,7 @@ export function MerchantProductWizard({ merchantId, categories, products, delive
   // (garde-fou : évite d'enregistrer une variante "Standard" vide si l'utilisateur a
   // rempli les axes sans avoir cliqué sur "Générer").
   const computeMatrix = () => computeVariantMatrix(
-    axes.map((axis) => ({ name: axis.name, values: axis.values.split(",").map((value) => value.trim()).filter(Boolean) })),
+    axes.map((axis) => ({ name: axis.name, values: parseVariantValues(axis.values) })),
   );
 
   const applyMatrix = (combinations: Array<Record<string, string>>) => {
@@ -155,16 +155,35 @@ export function MerchantProductWizard({ merchantId, categories, products, delive
 
   const generateMatrix = () => {
     setConfirmNoVariants(false);
+    const axisWithoutName = axes.find((axis) => !axis.name.trim() && parseVariantValues(axis.values).length);
+    if (axisWithoutName) {
+      setError("Donnez un nom à chaque axe qui contient des valeurs (par exemple Taille ou Couleur).");
+      return;
+    }
+    const completedAxisNames = axes
+      .filter((axis) => axis.name.trim() && parseVariantValues(axis.values).length)
+      .map((axis) => axis.name.trim().toLocaleLowerCase("fr"));
+    if (new Set(completedAxisNames).size !== completedAxisNames.length) {
+      setError("Chaque axe doit avoir un nom différent : par exemple Taille, Couleur et Matière.");
+      return;
+    }
     const combinations = computeMatrix();
-    if (!combinations) return setVariants([{ ...(variants[0] ?? emptyVariant()), id: undefined, title: "Standard", attributes: {} }]);
+    if (!combinations) {
+      setError("Ajoutez au moins une valeur dans le champ « Valeurs » : par exemple S, M, L ou Rouge, Noir.");
+      return;
+    }
     if (combinations.length > 50) return setError("La matrice ne peut pas dépasser 50 variantes.");
     setError("");
     applyMatrix(combinations);
+    setMessage(`${combinations.length} variante${combinations.length > 1 ? "s" : ""} générée${combinations.length > 1 ? "s" : ""}. Vérifiez maintenant les prix et les stocks.`);
   };
 
   const updateVariant = (index: number, patch: Partial<VariantEditor>) => setVariants((current) => current.map((variant, position) => position === index ? { ...variant, ...patch } : variant));
 
-  const updateAxis = (index: number, patch: Partial<OptionAxis>) => setAxes((current) => current.map((axis, position) => position === index ? { ...axis, ...patch } : axis));
+  const updateAxis = (index: number, patch: Partial<OptionAxis>) => {
+    setAxes((current) => current.map((axis, position) => position === index ? { ...axis, ...patch } : axis));
+    setError(""); setMessage(""); setConfirmNoVariants(false);
+  };
   const addAxis = () => setAxes((current) => current.length >= MAX_AXES ? current : [...current, { name: "", values: "" }]);
   const removeAxis = (index: number) => setAxes((current) => current.filter((_, position) => position !== index));
 
@@ -189,7 +208,7 @@ export function MerchantProductWizard({ merchantId, categories, products, delive
 
     const stillNoAttributes = variantsToSave.every((variant) => Object.keys(variant.attributes).length === 0);
     if (stillNoAttributes && !confirmNoVariants) {
-      setError("Aucune taille, couleur ou autre option définie pour ce produit. Si c’est volontaire (produit sans variante), cliquez à nouveau sur « Enregistrer » pour confirmer.");
+      setError("Aucune valeur de taille, couleur ou autre option n’a été trouvée. Saisissez par exemple S, M, L dans « Valeurs », puis générez la matrice. Si le produit n’a volontairement aucune option, cliquez à nouveau sur « Enregistrer ».");
       setConfirmNoVariants(true);
       return;
     }
@@ -354,7 +373,7 @@ export function MerchantProductWizard({ merchantId, categories, products, delive
       <div className="merchant-wizard-steps">{["Informations", "Variantes et stock", "Photos", "Vérification"].map((label, index) => <span className={step === index + 1 ? "is-active" : step > index + 1 ? "is-complete" : ""} key={label}><b>{index + 1}</b>{label}</span>)}</div>
       {message && <p className="mvp-alert">{message}</p>}{error && <p className="mvp-alert mvp-alert--error">{error}</p>}
       {step === 1 && <form className="mvp-form" onSubmit={productId ? (event) => { event.preventDefault(); setStep(2); } : createDraft}><div className="mvp-form__grid"><label className="mvp-field">Nom du produit<input value={title} onChange={(event) => setTitle(event.target.value)} required /></label><label className="mvp-field">Catégorie<select value={categoryId} onChange={(event) => setCategoryId(event.target.value)} required>{categories.map((category) => <option value={category.id} key={category.id}>{category.name}</option>)}</select></label></div><label className="mvp-field">Description<textarea rows={5} value={description} onChange={(event) => setDescription(event.target.value)} minLength={10} required /></label><button className="mvp-button" disabled={busy}>{busy ? "Enregistrement…" : "Continuer vers les variantes"}</button></form>}
-      {step === 2 && <div className="mvp-form"><div className="variant-builder"><h3>Générer les combinaisons</h3><p>Définissez jusqu’à trois axes d’attributs (ex. Taille, Couleur, Matière), laissez les valeurs vides pour un produit sans option.</p>{axes.map((axis, index) => (<div className="mvp-form__grid variant-axis-row" key={index}><label className="mvp-field">{`Axe ${index + 1} (ex. Taille)`}<input value={axis.name} onChange={(event) => updateAxis(index, { name: event.target.value })} /></label><label className="mvp-field">Valeurs, séparées par des virgules<input value={axis.values} onChange={(event) => updateAxis(index, { values: event.target.value })} placeholder="S, M, L" /></label>{axes.length > 1 && <button type="button" className="mvp-button mvp-button--secondary" onClick={() => removeAxis(index)} aria-label={`Retirer l’axe ${index + 1}`}>Retirer</button>}</div>))}<div className="mvp-actions">{axes.length < MAX_AXES && <button type="button" className="mvp-button mvp-button--secondary" onClick={addAxis}>Ajouter un axe</button>}<button className="mvp-button mvp-button--secondary" onClick={generateMatrix}>Générer la matrice</button></div></div><div className="variant-table-wrap"><table className="mvp-table variant-table"><thead><tr><th>Variante</th><th>Prix</th><th>Stock physique</th><th>Réservé</th><th>Seuil d’alerte</th><th>SKU facultatif</th></tr></thead><tbody>{variants.map((variant, index) => <tr key={`${variant.title}-${index}`}><td data-label="Variante"><strong>{variant.title}</strong></td><td data-label="Prix"><input aria-label={`Prix ${variant.title}`} type="number" min="0" value={variant.priceXof} onChange={(event) => updateVariant(index, { priceXof: Number(event.target.value) })} /></td><td data-label="Stock physique"><input aria-label={`Stock ${variant.title}`} type="number" min={variant.reserved} value={variant.stock} onChange={(event) => updateVariant(index, { stock: Number(event.target.value) })} /></td><td data-label="Réservé">{variant.reserved}</td><td data-label="Seuil d’alerte"><input aria-label={`Seuil ${variant.title}`} type="number" min="0" value={variant.lowStockThreshold} onChange={(event) => updateVariant(index, { lowStockThreshold: Number(event.target.value) })} /></td><td data-label="SKU facultatif"><input aria-label={`SKU ${variant.title}`} value={variant.sku} placeholder="Généré automatiquement" onChange={(event) => updateVariant(index, { sku: event.target.value })} /></td></tr>)}</tbody></table></div><p><strong>{sellableStock}</strong> unité(s) disponibles à la vente, après réservations.</p><button className="mvp-button" disabled={busy} onClick={saveVariants}>{busy ? "Enregistrement…" : confirmNoVariants ? "Confirmer sans taille/couleur" : "Enregistrer et ajouter les photos"}</button></div>}
+      {step === 2 && <div className="mvp-form"><div className="variant-builder"><h3>Générer les combinaisons</h3><p>Définissez jusqu’à trois axes d’attributs (ex. Taille, Couleur, Matière), laissez les valeurs vides pour un produit sans option.</p>{axes.map((axis, index) => (<div className="mvp-form__grid variant-axis-row" key={index}><label className="mvp-field">{`Axe ${index + 1} (ex. Taille)`}<input value={axis.name} onChange={(event) => updateAxis(index, { name: event.target.value })} /></label><label className="mvp-field">Valeurs, séparées par virgule, point-virgule ou ligne<input value={axis.values} onChange={(event) => updateAxis(index, { values: event.target.value })} placeholder="S, M, L" /></label>{axes.length > 1 && <button type="button" className="mvp-button mvp-button--secondary" onClick={() => removeAxis(index)} aria-label={`Retirer l’axe ${index + 1}`}>Retirer</button>}</div>))}<div className="mvp-actions">{axes.length < MAX_AXES && <button type="button" className="mvp-button mvp-button--secondary" onClick={addAxis}>Ajouter un axe</button>}<button type="button" className="mvp-button mvp-button--secondary" onClick={generateMatrix}>Générer la matrice</button></div></div><div className="variant-table-wrap"><table className="mvp-table variant-table"><thead><tr><th>Variante</th><th>Prix</th><th>Stock physique</th><th>Réservé</th><th>Seuil d’alerte</th><th>SKU facultatif</th></tr></thead><tbody>{variants.map((variant, index) => <tr key={`${variant.title}-${index}`}><td data-label="Variante"><strong>{variant.title}</strong></td><td data-label="Prix"><input aria-label={`Prix ${variant.title}`} type="number" min="0" value={variant.priceXof} onChange={(event) => updateVariant(index, { priceXof: Number(event.target.value) })} /></td><td data-label="Stock physique"><input aria-label={`Stock ${variant.title}`} type="number" min={variant.reserved} value={variant.stock} onChange={(event) => updateVariant(index, { stock: Number(event.target.value) })} /></td><td data-label="Réservé">{variant.reserved}</td><td data-label="Seuil d’alerte"><input aria-label={`Seuil ${variant.title}`} type="number" min="0" value={variant.lowStockThreshold} onChange={(event) => updateVariant(index, { lowStockThreshold: Number(event.target.value) })} /></td><td data-label="SKU facultatif"><input aria-label={`SKU ${variant.title}`} value={variant.sku} placeholder="Généré automatiquement" onChange={(event) => updateVariant(index, { sku: event.target.value })} /></td></tr>)}</tbody></table></div><p><strong>{sellableStock}</strong> unité(s) disponibles à la vente, après réservations.</p><button type="button" className="mvp-button" disabled={busy} onClick={saveVariants}>{busy ? "Enregistrement…" : confirmNoVariants ? "Confirmer sans taille/couleur" : "Enregistrer et ajouter les photos"}</button></div>}
       {step === 3 && <div className="merchant-photo-step">
         <div className="merchant-photo-intro"><span><Images /></span><div><h3>Ajoutez les photos du produit</h3><p>La première photo devient l’image principale visible dans la boutique. Ajoutez jusqu’à 8 photos.</p></div><strong>{photos.length}/8</strong></div>
         <button

@@ -35,20 +35,7 @@ export async function POST(request: Request) {
     const body = await request.json();
     const draftOnly = body.draftOnly === true;
     const input = draftOnly ? productDraftSchema.parse(body) : productInputSchema.parse(body);
-    const { supabase, admin } = await requireActiveMerchantAccess(input.merchantId, ["owner", "manager", "catalog"]);
-    const { data: merchant, error: merchantError } = await admin
-      .from("merchant_accounts")
-      .select("verification_status")
-      .eq("id", input.merchantId)
-      .maybeSingle();
-    if (merchantError) throw merchantError;
-    if (merchant?.verification_status !== "approved") {
-      throw new ApiError(
-        403,
-        "KYC_APPROVAL_REQUIRED",
-        "Votre dossier doit être validé avant de créer des produits.",
-      );
-    }
+    const { supabase } = await requireActiveMerchantAccess(input.merchantId, ["owner", "manager", "catalog"]);
     const automaticSku = `AUTO-${crypto.randomUUID().replaceAll("-", "").slice(0, 12).toUpperCase()}`;
     const { data, error } = await supabase.rpc("create_merchant_product", {
       p_merchant_id: input.merchantId,

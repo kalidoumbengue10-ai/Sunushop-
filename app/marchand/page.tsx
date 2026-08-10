@@ -12,7 +12,8 @@ import {
 
 export const dynamic = "force-dynamic";
 
-export default async function MarchandPage() {
+export default async function MarchandPage({ searchParams }: { searchParams: Promise<{ mode?: string }> }) {
+  const { mode } = await searchParams;
   const supabase = await getServerSupabase();
   if (!supabase) {
     return (
@@ -46,10 +47,10 @@ export default async function MarchandPage() {
     .limit(1)
     .maybeSingle();
 
-  if (!membership && courierMembership) {
+  if ((!membership && courierMembership) || (membership && courierMembership && mode === "missions")) {
     return (
       <MvpShell>
-        <main className="mvp-main"><div className="mvp-shell"><CourierWorkspace /></div></main>
+        <main className="mvp-main"><div className="mvp-shell">{membership && <div className="merchant-role-switch"><Link className="mvp-button mvp-button--secondary" href="/marchand">Ma boutique</Link><span className="mvp-button">Mes missions</span></div>}<CourierWorkspace /></div></main>
       </MvpShell>
     );
   }
@@ -199,6 +200,7 @@ export default async function MarchandPage() {
     <MvpShell>
       <main className="mvp-main">
         <div className="mvp-shell">
+          {courierMembership && <div className="merchant-role-switch"><span className="mvp-button">Ma boutique</span><Link className="mvp-button mvp-button--secondary" href="/marchand?mode=missions">Mes missions</Link></div>}
           <MerchantWorkspace
             merchant={merchant}
             verificationCase={verificationCase}

@@ -17,14 +17,10 @@ async function requireFulfillment(merchantId: string) {
     .maybeSingle();
   if (!data) throw new ApiError(403, "FORBIDDEN", "Accès refusé.");
   const admin = requireAdminClient();
-  const { data: merchant, error } = await admin
-    .from("merchant_accounts")
-    .select("verification_status")
-    .eq("id", merchantId)
-    .maybeSingle();
+  const { data: merchant, error } = await admin.from("merchant_accounts").select("status").eq("id", merchantId).maybeSingle();
   if (error) throw error;
-  if (merchant?.verification_status !== "approved") {
-    throw new ApiError(403, "KYC_APPROVAL_REQUIRED", "Votre dossier doit être validé avant de gérer des livraisons.");
+  if (merchant?.status !== "active") {
+    throw new ApiError(403, "MERCHANT_NOT_ACTIVE", "La boutique doit être active pour gérer les livraisons.");
   }
   return user;
 }
@@ -37,18 +33,27 @@ export async function GET(request: Request) {
     const admin = requireAdminClient();
     const { data, error } = await admin
       .from("deliveries")
-      .select("id, order_id, status, assigned_at, pickup_verified_at, delivered_at, failure_reason, courier_memberships!inner(id, display_name, phone), orders!inner(public_code, status, recipient_snapshot, delivery_fee_xof)")
+      .select("id, order_id, status, assigned_at, pickup_snapshot, pickup_verified_at, delivered_at, failure_reason, pickup_code_attempts, code_attempt_limit, gross_delivery_fee_xof, platform_commission_rate_bps, platform_commission_xof, commission_status, courier_memberships!inner(id, display_name, phone), orders!inner(public_code, status, recipient_snapshot, delivery_fee_xof)")
       .eq("merchant_id", merchantId)
       .order("created_at", { ascending: false })
       .limit(200);
     if (error) throw error;
+    const items = (data ?? []).map((delivery) => ({
+      ...delivery,
+      pickupLocked: delivery.pickup_code_attempts >= delivery.code_attempt_limit,
+    }));
     return apiSuccess({
-      items: (data ?? []).map((delivery) => ({
-        ...delivery,
-        pickupCode: ["assigned", "accepted", "at_pickup"].includes(delivery.status)
-          ? deriveDeliveryCode(delivery.id, "pickup")
-          : null,
-      })),
+      items,
+      stats: {
+        active: items.filter((item) => !["delivered", "failed", "cancelled"].includes(item.status)).length,
+        deliveredThisMonth: items.filter((item) => {
+          if (item.status !== "delivered" || !item.delivered_at) return false;
+          const start = new Date(); start.setUTCDate(1); start.setUTCHours(0, 0, 0, 0);
+          return new Date(item.delivered_at) >= start;
+        }).length,
+        grossDeliveryFeesXof: items.filter((item) => item.status === "delivered").reduce((sum, item) => sum + item.gross_delivery_fee_xof, 0),
+        platformCommissionXof: items.reduce((sum, item) => sum + item.platform_commission_xof, 0),
+      },
     }, { requestId });
   } catch (error) {
     return apiFailure(error, requestId);
@@ -62,7 +67,7 @@ export async function POST(request: Request) {
     const admin = requireAdminClient();
     const { data: order, error: orderError } = await admin
       .from("orders")
-      .select("id, merchant_id, status, public_code, recipient_snapshot, delivery_snapshot, merchant_accounts!inner(public_name, region, city, address_hint, phone)")
+      .select("id, merchant_id, status, public_code, delivery_fee_xof, recipient_snapshot, delivery_snapshot, merchant_accounts!inner(public_name, region, city, address_hint, phone, pickup_address_line, pickup_latitude, pickup_longitude, pickup_hours, pickup_instructions)")
       .eq("id", input.orderId)
       .maybeSingle();
     if (orderError) throw orderError;
@@ -78,18 +83,14 @@ export async function POST(request: Request) {
     if (courierError) throw courierError;
     if (!courier) throw new ApiError(404, "COURIER_NOT_FOUND", "Livreur introuvable.");
 
-    const { data: existing } = await admin
-      .from("deliveries")
-      .select("id, status, courier_membership_id")
-      .eq("order_id", order.id)
-      .maybeSingle();
+    const { data: existing } = await admin.from("deliveries").select("id, status, courier_membership_id").eq("order_id", order.id).maybeSingle();
     if (existing) {
       if (!["assigned", "accepted", "at_pickup"].includes(existing.status)) {
         throw new ApiError(409, "DELIVERY_TRANSITION_NOT_ALLOWED", "Réaffectation impossible après retrait.");
       }
       const { data, error } = await admin
         .from("deliveries")
-        .update({ courier_membership_id: courier.id, status: "assigned", assigned_by: user.id, assigned_at: new Date().toISOString() })
+        .update({ courier_membership_id: courier.id, status: "assigned", assigned_by: user.id, assigned_at: new Date().toISOString(), pickup_code_attempts: 0 })
         .eq("id", existing.id)
         .select("id, status")
         .single();
@@ -103,8 +104,8 @@ export async function POST(request: Request) {
         public_message: "La livraison a été réaffectée.",
         metadata: { previousCourierMembershipId: existing.courier_membership_id, courierMembershipId: courier.id },
       });
-      await enqueueEmail(admin, { dedupeKey: `delivery-assigned:${data.id}:${courier.id}`, template: "delivery_assigned", recipientUserId: courier.courier_user_id, payload: { orderCode: order.public_code, url: new URL("/marchand", request.url).toString() } }).catch(() => false);
-      return apiSuccess({ ...data, pickupCode: deriveDeliveryCode(data.id, "pickup") }, { requestId });
+      await enqueueEmail(admin, { dedupeKey: `delivery-assigned:${data.id}:${courier.id}`, template: "delivery_assigned", recipientUserId: courier.courier_user_id, payload: { orderCode: order.public_code, url: new URL("/marchand?mode=missions", request.url).toString() } }).catch(() => false);
+      return apiSuccess(data, { requestId });
     }
     if (order.status !== "ready_for_handoff") {
       throw new ApiError(409, "ORDER_TRANSITION_NOT_ALLOWED", "La commande doit être prête avant affectation.");
@@ -125,10 +126,18 @@ export async function POST(request: Request) {
           phone: merchant?.phone,
           region: merchant?.region,
           city: merchant?.city,
-          addressHint: merchant?.address_hint,
+          addressHint: merchant?.pickup_address_line ?? merchant?.address_hint,
+          latitude: merchant?.pickup_latitude,
+          longitude: merchant?.pickup_longitude,
+          hours: merchant?.pickup_hours,
+          instructions: merchant?.pickup_instructions,
         },
         pickup_code_hash: hashDeliveryCode(pickupCode),
         recipient_code_hash: hashDeliveryCode(recipientCode),
+        gross_delivery_fee_xof: order.delivery_fee_xof,
+        platform_commission_rate_bps: 0,
+        platform_commission_xof: 0,
+        commission_status: "disabled",
         assigned_by: user.id,
       })
       .select("id, status")
@@ -141,8 +150,8 @@ export async function POST(request: Request) {
       to_status: "assigned",
       public_message: "Un livreur a été affecté à la commande.",
     });
-    await enqueueEmail(admin, { dedupeKey: `delivery-assigned:${id}:${courier.id}`, template: "delivery_assigned", recipientUserId: courier.courier_user_id, payload: { orderCode: order.public_code, url: new URL("/marchand", request.url).toString() } }).catch(() => false);
-    return apiSuccess({ ...data, pickupCode }, { status: 201, requestId });
+    await enqueueEmail(admin, { dedupeKey: `delivery-assigned:${id}:${courier.id}`, template: "delivery_assigned", recipientUserId: courier.courier_user_id, payload: { orderCode: order.public_code, url: new URL("/marchand?mode=missions", request.url).toString() } }).catch(() => false);
+    return apiSuccess(data, { status: 201, requestId });
   } catch (error) {
     return apiFailure(error, requestId);
   }

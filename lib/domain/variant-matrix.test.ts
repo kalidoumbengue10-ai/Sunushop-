@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { computeVariantMatrix } from "./variant-matrix";
+import { computeVariantMatrix, parseVariantValues } from "./variant-matrix";
 
 describe("computeVariantMatrix", () => {
+  it("accepte virgules, points-virgules et retours à la ligne sans doublons", () => {
+    expect(parseVariantValues("S, M; L\nM")).toEqual(["S", "M", "L"]);
+    expect(parseVariantValues("Bleu marine ; Rouge")).toEqual(["Bleu marine", "Rouge"]);
+  });
+
   it("retourne null sans axe rempli", () => {
     expect(computeVariantMatrix([])).toBeNull();
     expect(computeVariantMatrix([{ name: "Taille", values: [] }])).toBeNull();

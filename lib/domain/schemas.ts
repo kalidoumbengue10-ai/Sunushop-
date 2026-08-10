@@ -167,6 +167,7 @@ export const quoteGroupSchema = z
     merchantId: uuid,
     deliveryZoneId: uuid.optional(),
     methodKind: z.enum(["pickup", "merchant_delivery"]).default("merchant_delivery"),
+    applyLoyalty: z.boolean().default(true),
     items: z.array(quoteItemSchema).min(1).max(50),
   })
   .superRefine((value, context) => {
@@ -493,6 +494,23 @@ export const courierInvitationSchema = z.object({
   email: authEmail,
   displayName: z.string().trim().min(2).max(120),
   phone: z.string().trim().min(8).max(24),
+  vehicleType: z.enum(["walking", "bicycle", "motorbike", "car", "van", "other"]).optional(),
+  vehicleRegistration: z.string().trim().min(2).max(40).optional(),
+});
+
+export const courierUpdateSchema = z.object({
+  merchantId: uuid,
+  membershipId: uuid,
+  displayName: z.string().trim().min(2).max(120),
+  phone: z.string().trim().min(8).max(24),
+  vehicleType: z.enum(["walking", "bicycle", "motorbike", "car", "van", "other"]).nullable().optional(),
+  vehicleRegistration: z.string().trim().min(2).max(40).nullable().optional(),
+  status: z.enum(["active", "inactive"]),
+});
+
+export const loyaltySettingSchema = z.object({
+  merchantId: uuid,
+  accrualEnabled: z.boolean(),
 });
 
 export const invitationClaimSchema = z.object({

@@ -13,6 +13,9 @@ type Order = {
   public_code: string;
   status: string;
   total_xof: number;
+  loyalty_points_redeemed: number;
+  loyalty_discount_xof: number;
+  loyalty_points_earned: number;
   created_at: string;
   merchant_accounts: { public_name: string; slug: string } | Array<{ public_name: string; slug: string }>;
   order_items: OrderItem[];
@@ -133,7 +136,7 @@ export function ClientOrders() {
                 ))}
               </ul>
               <footer>
-                <strong>{formatPrice(order.total_xof)}</strong>
+                <div><strong>{formatPrice(order.total_xof)}</strong>{order.loyalty_discount_xof > 0 && <small>{order.loyalty_points_redeemed} points utilisés</small>}{order.loyalty_points_earned > 0 && <small>{order.loyalty_points_earned} points gagnés</small>}</div>
                 <div className="mvp-actions">
                   <Link className="mvp-button mvp-button--secondary" href={`/commandes/${order.id}`}>Voir le suivi</Link>
                   <StartConversationButton
