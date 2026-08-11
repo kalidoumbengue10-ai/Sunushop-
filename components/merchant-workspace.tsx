@@ -120,6 +120,7 @@ type MerchantWorkspaceProps = {
   subscriptionPaymentNumbers: {
     wave: string | null;
     orangeMoney: string | null;
+    waveLink: string | null;
   };
 };
 function ProductMediaUploader({ productId }: { productId: string }) {
@@ -467,6 +468,9 @@ export function MerchantWorkspace(props: MerchantWorkspaceProps) {
   const selectedSubscriptionPlan = props.plans.find((plan) => plan.id === subscriptionPlanId) ?? props.plans[0];
   const subscriptionMonths = subscriptionCycle === "monthly" ? 1 : subscriptionCycle === "quarterly" ? 3 : 12;
   const subscriptionAmountXof = (selectedSubscriptionPlan?.monthly_price_xof ?? 0) * subscriptionMonths;
+  const waveCheckoutUrl = props.subscriptionPaymentNumbers.waveLink && subscriptionAmountXof > 0
+    ? `${props.subscriptionPaymentNumbers.waveLink}?amount=${subscriptionAmountXof}`
+    : null;
   const subscriptionReady = ["active", "grace"].includes(props.merchant.subscription_status);
   const visibleNavigation = merchantNavigation;
   const currentSection = merchantSectionTitles[tab];
@@ -795,6 +799,11 @@ export function MerchantWorkspace(props: MerchantWorkspaceProps) {
                 <div className="mvp-row">
                   <strong>Wave</strong>
                   <span>{props.subscriptionPaymentNumbers.wave}</span>
+                  {waveCheckoutUrl && (
+                    <a className="mvp-button" href={waveCheckoutUrl} target="_blank" rel="noopener noreferrer">
+                      Payer {formatPrice(subscriptionAmountXof)} avec Wave
+                    </a>
+                  )}
                 </div>
               )}
               {props.subscriptionPaymentNumbers.orangeMoney && (
@@ -804,6 +813,11 @@ export function MerchantWorkspace(props: MerchantWorkspaceProps) {
                 </div>
               )}
             </div>
+            {waveCheckoutUrl && (
+              <p className="mvp-alert">
+                Après le paiement Wave, revenez ici pour transmettre la référence de la transaction ci-dessous : votre abonnement est activé uniquement après confirmation.
+              </p>
+            )}
             {!hasSubscriptionPaymentChannel && (
               <p className="mvp-alert mvp-alert--warning">
                 Les numéros de paiement SunuShop ne sont pas encore configurés.

@@ -100,7 +100,7 @@ export default async function MarchandPage({ searchParams }: { searchParams: Pro
     .order("position");
   const platformPaymentSettingsPromise = admin ? (admin as any)
     .from("platform_payment_settings")
-    .select("channel, payment_number, account_holder")
+    .select("channel, payment_number, account_holder, payment_link")
     .eq("active", true) : Promise.resolve({ data: [] });
 
   if (!merchant) {
@@ -222,6 +222,7 @@ export default async function MarchandPage({ searchParams }: { searchParams: Pro
             subscriptionPaymentNumbers={{
               wave: platformPaymentSettings?.find((item: { channel: string }) => item.channel === "wave")?.payment_number ?? null,
               orangeMoney: platformPaymentSettings?.find((item: { channel: string }) => item.channel === "orange_money")?.payment_number ?? null,
+              waveLink: platformPaymentSettings?.find((item: { channel: string }) => item.channel === "wave")?.payment_link ?? null,
             }}
           />
         </div>

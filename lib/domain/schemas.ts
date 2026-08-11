@@ -671,6 +671,12 @@ export const platformPaymentSettingsSchema = z.object({
   paymentNumber: e164Phone,
   accountHolder: z.string().trim().min(2).max(120).nullable().optional(),
   active: z.boolean(),
+  paymentLink: z
+    .string()
+    .trim()
+    .regex(/^https:\/\/pay\.wave\.com\/m\/[A-Za-z0-9_-]+\/c\/sn\/$/)
+    .nullable()
+    .optional(),
 });
 
 export const disputeResolutionSchema = z.object({

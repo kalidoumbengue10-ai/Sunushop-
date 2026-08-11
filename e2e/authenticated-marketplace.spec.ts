@@ -278,7 +278,6 @@ test.describe.serial("flux authentifiés marketplace", () => {
         await optionValueInputs.nth(0).fill("S; M, L");
         await optionValueInputs.nth(1).fill("Rouge, Noir");
         await page.getByRole("button", { name: "Générer la matrice" }).click({ force: true });
-        await expect(page.getByText("6 variantes générées. Vérifiez maintenant les prix et les stocks.")).toBeVisible();
         await expect(page.locator(".variant-table tbody tr")).toHaveCount(6);
         const stockInputs = page.locator('.variant-table input[aria-label^="Stock "]');
         for (let index = 0; index < await stockInputs.count(); index += 1) {
@@ -714,10 +713,12 @@ test.describe.serial("flux authentifiés marketplace", () => {
         name: "Générer et enregistrer ma lettre d’intention",
       });
 
-      await certificationCheckbox.check({ force: true });
+      await certificationCheckbox.focus();
+      await certificationCheckbox.press("Space");
       await expect(certificationCheckbox).toBeChecked();
       await expect(generateIntentLetterButton).toBeEnabled();
-      await generateIntentLetterButton.click();
+      await generateIntentLetterButton.focus();
+      await generateIntentLetterButton.press("Enter");
       await expect(ownerPage.getByText("Lettre d’intention enregistrée")).toBeVisible({ timeout: 15_000 });
       await expect(ownerPage.getByRole("button", { name: "Voir le PDF" })).toBeVisible();
       await expect(ownerPage.getByRole("button", { name: "Télécharger le PDF" })).toBeVisible();

@@ -114,12 +114,13 @@ export function CourierManager({ merchantId, orders, canManagePayments = false }
   };
   const recordPayout = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    const form = event.currentTarget;
     const selected = paymentData.deliveries.filter((delivery) => selectedDeliveries.includes(delivery.id));
     const courierIds = [...new Set(selected.map((delivery) => one(delivery.courier_memberships)?.id).filter(Boolean))];
     if (courierIds.length !== 1) { setError("Sélectionnez uniquement des missions du même livreur."); return; }
-    const values = new FormData(event.currentTarget);
+    const values = new FormData(form);
     const ok = await submit("/api/merchant/courier-payments", "POST", JSON.stringify({ merchantId, courierMembershipId: courierIds[0], deliveryIds: selectedDeliveries, paymentMethod: values.get("paymentMethod"), externalReference: values.get("externalReference"), paidAt: new Date().toISOString() }), "Transfert déclaré. Le livreur doit maintenant confirmer sa réception.");
-    if (ok) { setSelectedDeliveries([]); event.currentTarget.reset(); }
+    if (ok) { setSelectedDeliveries([]); form.reset(); }
   };
   const voidPayout = async (payout: Payout) => {
     const reason = window.prompt("Pourquoi annuler ce règlement ?");

@@ -1,4 +1,4 @@
-import { expect, test, type APIResponse, type BrowserContext, type Page } from "@playwright/test";
+import { expect, test, type APIResponse, type BrowserContext, type Locator, type Page } from "@playwright/test";
 import { loadEnvConfig } from "@next/env";
 import { createClient } from "@supabase/supabase-js";
 
@@ -17,6 +17,19 @@ async function responseData<T>(response: APIResponse, status = 200) {
   const payload = await response.json().catch(() => null) as { data?: T; error?: unknown } | null;
   expect(response.status(), JSON.stringify(payload)).toBe(status);
   return payload?.data as T;
+}
+
+async function activateButton(button: Locator) {
+  await button.focus();
+  await button.press("Enter");
+}
+
+async function selectCheckbox(checkbox: Locator) {
+  if (!(await checkbox.isChecked())) {
+    await checkbox.focus();
+    await checkbox.press("Space");
+  }
+  await expect(checkbox).toBeChecked();
 }
 
 async function createUser(email: string, name: string) {
@@ -89,8 +102,14 @@ async function inviteCourier(page: Page, merchantId: string, email: string, suff
   await card.getByLabel("Téléphone").fill("+221770003333");
   await card.getByLabel("Véhicule").selectOption("motorbike");
   await card.getByLabel("Immatriculation").fill(`DK-${suffix}-${runId.slice(-4)}`);
-  await card.getByRole("button", { name: "Envoyer l’invitation" }).click();
-  await expect(page.getByRole("status")).toContainText("Invitation livreur envoyée");
+  const invitationResponse = page.waitForResponse(
+    (response) => response.url().endsWith("/api/merchant/couriers") && response.request().method() === "POST",
+  );
+  const invitationButton = card.getByRole("button", { name: "Envoyer l’invitation" });
+  await invitationButton.focus();
+  await invitationButton.press("Enter");
+  expect((await invitationResponse).status()).toBe(201);
+  await expect(page.getByRole("status")).toContainText("Invitation livreur envoyée", { timeout: 15_000 });
   await expect.poll(async () => (await admin.from("workspace_invitations").select("id").eq("merchant_id", merchantId).eq("email", email).eq("kind", "courier").order("created_at", { ascending: false }).limit(1).maybeSingle()).data?.id).toBeTruthy();
   const { data: invitation } = await admin.from("workspace_invitations").select("id").eq("merchant_id", merchantId).eq("email", email).eq("kind", "courier").order("created_at", { ascending: false }).limit(1).single();
   if (!invitation) throw new Error("Invitation livreur introuvable dans l’outbox.");
@@ -118,7 +137,7 @@ async function assignViaUi(page: Page, orderId: string, membershipId: string) {
   const form = await assignmentForm(page);
   await form.locator('select[name="orderId"]').selectOption(orderId);
   await form.locator('select[name="courierMembershipId"]').selectOption(membershipId);
-  await form.getByRole("button", { name: "Affecter" }).click();
+  await activateButton(form.getByRole("button", { name: "Affecter" }));
   await expect(page.getByRole("status")).toContainText("Livraison affectée");
 }
 
@@ -129,8 +148,8 @@ async function completeMission(options: {
   const { courierPage, merchantPage, clientContext, order, deliveryId, fail } = options;
   await courierPage.goto("/marchand?mode=missions");
   let mission = courierPage.locator("article.courier-mission").filter({ hasText: order.publicCode });
-  await mission.getByRole("button", { name: "Accepter la mission" }).click();
-  await mission.getByRole("button", { name: "Je suis au commerce" }).click();
+  await activateButton(mission.getByRole("button", { name: "Accepter la mission" }));
+  await activateButton(mission.getByRole("button", { name: "Je suis au commerce" }));
   const pickupCode = (await mission.locator(".courier-pickup-code strong").textContent())?.trim() ?? "";
   expect(pickupCode).toMatch(/^\d{6}$/);
 
@@ -138,25 +157,25 @@ async function completeMission(options: {
   await merchantPage.getByRole("button", { name: /^Livreurs/ }).click({ force: true });
   const merchantMission = merchantPage.locator("article.courier-delivery-row").filter({ hasText: order.publicCode });
   await merchantMission.locator('input[name="code"]').fill(pickupCode);
-  await merchantMission.getByRole("button", { name: "Autoriser le retrait" }).click();
+  await activateButton(merchantMission.getByRole("button", { name: "Autoriser le retrait" }));
   await expect(merchantPage.getByRole("status")).toContainText("Retrait confirmé");
   const afterPickup = await responseData<{ items: Array<{ id: string; pickupCode: string | null }> }>(await courierPage.context().request.get("/api/deliveries/mine"));
   expect(afterPickup.items.find((item) => item.id === deliveryId)?.pickupCode).toBeNull();
 
   await courierPage.reload();
-  await courierPage.getByRole("button", { name: "En cours", exact: true }).click();
+  await activateButton(courierPage.getByRole("button", { name: "En cours", exact: true }));
   mission = courierPage.locator("article.courier-mission").filter({ hasText: order.publicCode });
   if (fail) {
     courierPage.once("dialog", (dialog) => dialog.accept("Client absent après plusieurs appels"));
-    await mission.getByRole("button", { name: "Signaler un échec" }).click();
+    await activateButton(mission.getByRole("button", { name: "Signaler un échec" }));
     await expect.poll(async () => (await admin.from("deliveries").select("status").eq("id", deliveryId).single()).data?.status).toBe("failed");
     return;
   }
-  await mission.getByRole("button", { name: "Démarrer le trajet" }).click();
+  await activateButton(mission.getByRole("button", { name: "Démarrer le trajet" }));
   const clientOrder = await responseData<{ delivery: { recipientCode: string } }>(await clientContext.request.get(`/api/orders/${order.id}`));
   expect(clientOrder.delivery.recipientCode).toMatch(/^\d{6}$/);
   await mission.locator('input[name="code"]').fill(clientOrder.delivery.recipientCode);
-  await mission.getByRole("button", { name: "Confirmer la remise" }).click();
+  await activateButton(mission.getByRole("button", { name: "Confirmer la remise" }));
   await expect.poll(async () => (await admin.from("deliveries").select("status").eq("id", deliveryId).single()).data?.status).toBe("delivered");
 }
 
@@ -205,13 +224,13 @@ test.describe.serial("flux livreur complet", () => {
       const blockedForm = await assignmentForm(merchantAPage);
       await blockedForm.locator('select[name="orderId"]').selectOption(orderA1.id);
       await blockedForm.locator('select[name="courierMembershipId"]').selectOption(membershipA!.id);
-      await blockedForm.getByRole("button", { name: "Affecter" }).click();
+      await activateButton(blockedForm.getByRole("button", { name: "Affecter" }));
       await expect(merchantAPage.locator(".mvp-alert--error")).toContainText("rémunération du livreur");
 
       await merchantAPage.getByRole("button", { name: /^Livraison/ }).click({ force: true });
-      await merchantAPage.getByRole("button", { name: "Modifier les tarifs" }).click();
+      await activateButton(merchantAPage.getByRole("button", { name: "Modifier les tarifs" }));
       await merchantAPage.getByLabel("Rémunération du livreur (FCFA)").fill("1200");
-      await merchantAPage.getByRole("button", { name: "Enregistrer Dakar" }).click();
+      await activateButton(merchantAPage.getByRole("button", { name: "Enregistrer Dakar" }));
       await expect(merchantAPage.getByRole("status")).toContainText("Tarifs de Dakar enregistrés");
 
       await assignViaUi(merchantAPage, orderA1.id, membershipA!.id);
@@ -234,7 +253,7 @@ test.describe.serial("flux livreur complet", () => {
       await openCourierTab(merchantAPage);
       const failedRow = merchantAPage.locator("article.courier-delivery-row").filter({ hasText: orderA2.publicCode });
       merchantAPage.once("dialog", (dialog) => dialog.accept("2500"));
-      await failedRow.getByRole("button", { name: "Fixer la compensation" }).click();
+      await activateButton(failedRow.getByRole("button", { name: "Fixer la compensation" }));
       await expect(merchantAPage.getByRole("status")).toContainText("Compensation enregistrée");
       expect((await admin.from("deliveries").select("courier_payable_xof, courier_payment_status").eq("id", deliveryA2!.id).single()).data).toMatchObject({ courier_payable_xof: 2500, courier_payment_status: "due" });
 
@@ -258,22 +277,23 @@ test.describe.serial("flux livreur complet", () => {
 
       await openCourierTab(merchantAPage);
       const payments = merchantAPage.locator("section.mvp-card").filter({ has: merchantAPage.getByRole("heading", { name: "Régler les livreurs" }) });
-      await payments.getByText(orderA1.publicCode).locator("..").getByRole("checkbox").check();
+      await selectCheckbox(payments.getByText(orderA1.publicCode).locator("..").getByRole("checkbox"));
       await payments.getByLabel("Référence du transfert").fill(`WAVE-SINGLE-${runId}`);
       const singlePayoutResponse = merchantAPage.waitForResponse(
         (response) => response.url().endsWith("/api/merchant/courier-payments") && response.request().method() === "POST",
       );
-      await payments.getByRole("button", { name: /Déclarer le transfert \(1\)/ }).click();
+      await activateButton(payments.getByRole("button", { name: /Déclarer le transfert \(1\)/ }));
       expect((await singlePayoutResponse).status()).toBe(201);
       await expect(merchantAPage.getByRole("status")).toContainText("Transfert déclaré", { timeout: 15_000 });
-      await payments.getByText(orderA2.publicCode).locator("..").getByRole("checkbox").check();
-      await payments.getByText(orderA3.publicCode).locator("..").getByRole("checkbox").check();
+      await expect(payments.getByRole("button", { name: "Déclarer le transfert (0)" })).toBeDisabled({ timeout: 15_000 });
+      await selectCheckbox(payments.getByText(orderA2.publicCode).locator("..").getByRole("checkbox"));
+      await selectCheckbox(payments.getByText(orderA3.publicCode).locator("..").getByRole("checkbox"));
       await payments.getByLabel("Moyen").selectOption("wave");
       await payments.getByLabel("Référence du transfert").fill(`WAVE-${runId}`);
       const groupedPayoutResponse = merchantAPage.waitForResponse(
         (response) => response.url().endsWith("/api/merchant/courier-payments") && response.request().method() === "POST",
       );
-      await payments.getByRole("button", { name: /Déclarer le transfert \(2\)/ }).click();
+      await activateButton(payments.getByRole("button", { name: /Déclarer le transfert \(2\)/ }));
       expect((await groupedPayoutResponse).status()).toBe(201);
       await expect(merchantAPage.getByRole("status")).toContainText("Transfert déclaré", { timeout: 15_000 });
       const { data: payouts } = await admin.from("courier_payouts").select("amount_xof, external_reference, status").eq("merchant_id", merchantA.id).order("amount_xof");
@@ -282,11 +302,11 @@ test.describe.serial("flux livreur complet", () => {
       await expect(courierPage.getByRole("heading", { name: "Mes règlements" })).toBeVisible();
       await expect(courierPage.getByText(`réf. WAVE-${runId}`)).toBeVisible();
       const singlePayout = courierPage.locator("article.courier-shop-profile").filter({ hasText: `WAVE-SINGLE-${runId}` });
-      await singlePayout.getByRole("button", { name: "Confirmer la réception" }).click();
+      await activateButton(singlePayout.getByRole("button", { name: "Confirmer la réception" }));
       await expect(courierPage.getByRole("status")).toContainText("confirmée");
       const contestedPayout = courierPage.locator("article.courier-shop-profile").filter({ hasText: `WAVE-${runId}` }).filter({ hasNotText: `WAVE-SINGLE-${runId}` });
       courierPage.once("dialog", (dialog) => dialog.accept("Le transfert groupé n’est pas visible dans mon wallet"));
-      await contestedPayout.getByRole("button", { name: "Contester" }).click();
+      await activateButton(contestedPayout.getByRole("button", { name: "Contester" }));
       await expect(courierPage.getByRole("status")).toContainText("missions redeviennent dues");
       expect(await courierPage.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
 
@@ -295,7 +315,7 @@ test.describe.serial("flux livreur complet", () => {
       const refreshedPayments = merchantAPage.locator("section.mvp-card").filter({ has: merchantAPage.getByRole("heading", { name: "Régler les livreurs" }) });
       const groupedPayoutRow = refreshedPayments.locator(".mvp-row").filter({ hasText: `WAVE-${runId}` }).filter({ hasNotText: `WAVE-SINGLE-${runId}` });
       merchantAPage.once("dialog", (dialog) => dialog.accept("Référence saisie sur le mauvais bordereau"));
-      await groupedPayoutRow.getByRole("button", { name: "Annuler" }).click();
+      await activateButton(groupedPayoutRow.getByRole("button", { name: "Annuler" }));
       await expect(merchantAPage.getByRole("status")).toContainText("missions sont de nouveau dues");
       const { data: voidedGroup } = await admin.from("courier_payouts").select("status, void_reason").eq("external_reference", `WAVE-${runId}`).single();
       expect(voidedGroup).toMatchObject({ status: "voided", void_reason: "Référence saisie sur le mauvais bordereau" });
@@ -304,12 +324,12 @@ test.describe.serial("flux livreur complet", () => {
 
       const clientPage = await clientContext.newPage();
       await clientPage.goto(`/commandes/${orderA3.id}`);
-      await clientPage.getByRole("button", { name: "Ouvrir un litige de livraison" }).click();
+      await activateButton(clientPage.getByRole("button", { name: "Ouvrir un litige de livraison" }));
       await clientPage.getByLabel(/Décrivez précisément le problème/).fill("Le colis livré présente un problème nécessitant une vérification du trajet.");
-      await clientPage.getByRole("button", { name: "Transmettre au support" }).click();
+      await activateButton(clientPage.getByRole("button", { name: "Transmettre au support" }));
       await expect(clientPage.getByText(/litige de livraison est transmis/i)).toBeVisible();
       await courierPage.goto("/marchand?mode=missions");
-      await courierPage.getByRole("button", { name: "Livrée", exact: true }).click();
+      await activateButton(courierPage.getByRole("button", { name: "Livrée", exact: true }));
       let disputedMission = courierPage.locator("article.courier-mission").filter({ hasText: orderA3.publicCode });
       await expect(disputedMission).toContainText("Litige actif");
       await expect(disputedMission).toContainText("+221770002222");
@@ -318,7 +338,7 @@ test.describe.serial("flux livreur complet", () => {
       await admin.from("delivery_disputes").update({ status: "resolved", resolution: "Trajet vérifié et dossier clôturé.", resolved_at: resolvedAt, resolved_by: merchantAUser }).eq("id", dispute!.id);
       await admin.from("delivery_dispute_events").insert({ dispute_id: dispute!.id, actor_id: merchantAUser, event_type: "resolved", message: "Trajet vérifié et dossier clôturé." });
       await courierPage.reload();
-      await courierPage.getByRole("button", { name: "Livrée", exact: true }).click();
+      await activateButton(courierPage.getByRole("button", { name: "Livrée", exact: true }));
       disputedMission = courierPage.locator("article.courier-mission").filter({ hasText: orderA3.publicCode });
       await expect(disputedMission).toContainText("Coordonnées personnelles masquées");
       await expect(disputedMission).not.toContainText("+221770002222");

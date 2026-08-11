@@ -6,7 +6,7 @@ export async function GET() {
   const requestId = crypto.randomUUID();
   try {
     const { supabase } = await requireAdminRole(["admin"]);
-    const { data, error } = await (supabase as any).from("platform_payment_settings").select("channel, payment_number, account_holder, active, updated_at").order("channel");
+    const { data, error } = await (supabase as any).from("platform_payment_settings").select("channel, payment_number, account_holder, active, payment_link, updated_at").order("channel");
     if (error) throw error;
     return apiSuccess({ items: data ?? [] }, { requestId });
   } catch (error) {
@@ -22,6 +22,7 @@ export async function PUT(request: Request) {
     const { data, error } = await supabase.rpc("set_platform_payment_setting", {
       p_channel: input.channel, p_payment_number: input.paymentNumber,
       p_account_holder: input.accountHolder ?? "", p_active: input.active,
+      p_payment_link: input.paymentLink ?? null,
     });
     if (error) throw error;
     return apiSuccess(data, { requestId });
