@@ -56,6 +56,15 @@ const nextConfig: NextConfig = {
               ]),
         ],
       },
+      {
+        source: "/((?!_next/static|_next/image|icon\\.svg|favicon\\.ico).*)",
+        headers: [
+          {
+            key: "Cache-Control",
+            value: "no-cache, no-store, must-revalidate",
+          },
+        ],
+      },
     ];
   },
 };
