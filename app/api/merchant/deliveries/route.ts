@@ -33,7 +33,7 @@ export async function GET(request: Request) {
     const admin = requireAdminClient();
     const { data, error } = await admin
       .from("deliveries")
-      .select("id, order_id, status, assigned_at, pickup_snapshot, pickup_verified_at, delivered_at, failure_reason, pickup_code_attempts, code_attempt_limit, gross_delivery_fee_xof, platform_commission_rate_bps, platform_commission_xof, commission_status, courier_memberships!inner(id, display_name, phone), orders!inner(public_code, status, recipient_snapshot, delivery_fee_xof)")
+      .select("id, order_id, status, assigned_at, pickup_snapshot, pickup_verified_at, delivered_at, terminal_at, failure_reason, pickup_code_attempts, code_attempt_limit, gross_delivery_fee_xof, courier_fee_xof, courier_payable_xof, courier_payment_status, courier_payout_id, platform_commission_rate_bps, platform_commission_xof, commission_status, courier_memberships!inner(id, display_name, phone), orders!inner(public_code, merchant_sequence, created_at, status, recipient_snapshot, delivery_fee_xof, order_items(product_snapshot, sku_snapshot, quantity))")
       .eq("merchant_id", merchantId)
       .order("created_at", { ascending: false })
       .limit(200);
@@ -82,6 +82,18 @@ export async function POST(request: Request) {
       .maybeSingle();
     if (courierError) throw courierError;
     if (!courier) throw new ApiError(404, "COURIER_NOT_FOUND", "Livreur introuvable.");
+    const deliverySnapshot = order.delivery_snapshot as Record<string, unknown>;
+    const zoneId = typeof deliverySnapshot.zoneId === "string" ? deliverySnapshot.zoneId : "";
+    const { data: zone, error: zoneError } = await admin
+      .from("delivery_zones")
+      .select("courier_fee_xof")
+      .eq("id", zoneId)
+      .eq("merchant_id", order.merchant_id)
+      .maybeSingle();
+    if (zoneError) throw zoneError;
+    if (!zone || zone.courier_fee_xof == null) {
+      throw new ApiError(409, "COURIER_FEE_NOT_CONFIGURED", "Fixez d’abord la rémunération du livreur pour cette zone.");
+    }
 
     const { data: existing } = await admin.from("deliveries").select("id, status, courier_membership_id").eq("order_id", order.id).maybeSingle();
     if (existing) {
@@ -90,7 +102,7 @@ export async function POST(request: Request) {
       }
       const { data, error } = await admin
         .from("deliveries")
-        .update({ courier_membership_id: courier.id, status: "assigned", assigned_by: user.id, assigned_at: new Date().toISOString(), pickup_code_attempts: 0 })
+        .update({ courier_membership_id: courier.id, status: "assigned", assigned_by: user.id, assigned_at: new Date().toISOString(), pickup_code_attempts: 0, courier_fee_xof: zone.courier_fee_xof, courier_payable_xof: 0, courier_payment_status: "not_due", courier_payout_id: null, terminal_at: null })
         .eq("id", existing.id)
         .select("id, status")
         .single();
@@ -135,6 +147,7 @@ export async function POST(request: Request) {
         pickup_code_hash: hashDeliveryCode(pickupCode),
         recipient_code_hash: hashDeliveryCode(recipientCode),
         gross_delivery_fee_xof: order.delivery_fee_xof,
+        courier_fee_xof: zone.courier_fee_xof,
         platform_commission_rate_bps: 0,
         platform_commission_xof: 0,
         commission_status: "disabled",

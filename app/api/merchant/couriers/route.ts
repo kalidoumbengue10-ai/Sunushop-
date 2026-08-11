@@ -37,7 +37,7 @@ export async function GET(request: Request) {
     const [{ data: couriers, error }, { data: invitations, error: invitationError }, { data: deliveries, error: deliveryError }] = await Promise.all([
       admin
         .from("courier_memberships")
-        .select("id, courier_user_id, display_name, email, phone, vehicle_type, vehicle_registration, photo_storage_path, status, accepted_at")
+        .select("id, courier_user_id, display_name, email, phone, vehicle_type, vehicle_registration, photo_storage_path, status, accepted_at, wave_payment_number, orange_money_payment_number, preferred_payment_channel")
         .eq("merchant_id", merchantId)
         .order("created_at", { ascending: false }),
       admin

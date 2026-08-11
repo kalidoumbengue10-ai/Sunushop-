@@ -62,6 +62,7 @@ type VerificationCase = {
 type DocumentRow = VerificationDocumentRow;
 
 type MerchantWorkspaceProps = {
+  memberRole: "owner" | "manager" | "catalog" | "fulfillment";
   merchant: Merchant | null;
   verificationCase: VerificationCase | null;
   documents: DocumentRow[];
@@ -77,13 +78,17 @@ type MerchantWorkspaceProps = {
   subscription: {
     plan_id: string;
     status: string;
+    billing_cycle: string;
     current_period_ends_at: string | null;
     grace_ends_at: string | null;
   } | null;
   payments: Array<{
     id: string;
     plan_id: string;
-    channel: string;
+    billing_cycle: string;
+    period_months: number;
+      channel: string;
+      destination_number: string | null;
     external_reference: string;
     amount_xof: number;
     status: string;
@@ -94,11 +99,15 @@ type MerchantWorkspaceProps = {
     public_code: string;
     merchant_sequence: number;
     status: string;
+    payment_method: string;
+    payment_status: string;
     total_xof: number;
     created_at: string;
     direct_payment_declarations: Array<{
       id: string;
       external_reference: string;
+      status: string;
+      rejection_reason: string | null;
       confirmed_by_merchant_at: string | null;
     }>;
   }>;
@@ -175,6 +184,12 @@ const nextMerchantOrderLabel: Record<string, string> = {
   in_transit: "Remise au livreur",
   delivered: "Livrée",
 };
+const orderPaymentStatusLabels: Record<string, string> = {
+  awaiting_payment: "À payer", cash_due: "Espèces dues au retrait",
+  pending_confirmation: "Validation en attente", paid: "Payé",
+  payment_refused: "Paiement refusé", refund_pending: "Remboursement en attente",
+  refunded: "Remboursé",
+};
 
 type MerchantTab =
   | "dashboard"
@@ -225,6 +240,8 @@ export function MerchantWorkspace(props: MerchantWorkspaceProps) {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [showIntentLetterForm, setShowIntentLetterForm] = useState(false);
+  const [subscriptionPlanId, setSubscriptionPlanId] = useState(props.plans[0]?.id ?? "");
+  const [subscriptionCycle, setSubscriptionCycle] = useState<"monthly" | "quarterly" | "annual">("monthly");
 
   const submitJson = async (
     url: string,
@@ -332,33 +349,24 @@ export function MerchantWorkspace(props: MerchantWorkspaceProps) {
       {
         merchantId: props.merchant.id,
         planId: plan.id,
+        billingCycle: form.get("billingCycle"),
         channel,
         externalReference: form.get("externalReference"),
-        amountXof: plan.monthly_price_xof,
         paidAt: new Date(String(form.get("paidAt"))).toISOString(),
       },
       "Paiement transmis pour validation.",
     );
   };
 
-  const payWithPaytech = async (planId: string) => {
-    if (!props.merchant) return;
-    setBusy(true);
-    setError("");
-    setMessage("");
-    try {
-      const response = await fetch("/api/merchant/subscriptions/paytech", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ merchantId: props.merchant.id, planId }),
-      });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error?.message ?? "Paiement impossible.");
-      window.location.href = payload.data.redirectUrl;
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Paiement impossible.");
-      setBusy(false);
-    }
+  const declareRefund = async (order: MerchantWorkspaceProps["orders"][number]) => {
+    const amount = Number(window.prompt("Montant remboursé en FCFA", String(order.total_xof)));
+    if (!Number.isInteger(amount) || amount <= 0 || amount > order.total_xof) return;
+    const channel = window.prompt("Canal du remboursement : wave ou orange_money", "wave");
+    if (channel !== "wave" && channel !== "orange_money") return;
+    const destinationNumber = window.prompt("Numéro du client au format +221...");
+    const externalReference = window.prompt("Référence du transfert");
+    if (!destinationNumber || !externalReference) return;
+    await submitJson(`/api/orders/${order.id}/refunds`, { amountXof: amount, channel, destinationNumber, externalReference }, "Remboursement transmis au client pour confirmation.");
   };
 
   const saveRecoveryEmail = async (event: FormEvent<HTMLFormElement>) => {
@@ -456,6 +464,9 @@ export function MerchantWorkspace(props: MerchantWorkspaceProps) {
     props.subscriptionPaymentNumbers.wave ||
       props.subscriptionPaymentNumbers.orangeMoney,
   );
+  const selectedSubscriptionPlan = props.plans.find((plan) => plan.id === subscriptionPlanId) ?? props.plans[0];
+  const subscriptionMonths = subscriptionCycle === "monthly" ? 1 : subscriptionCycle === "quarterly" ? 3 : 12;
+  const subscriptionAmountXof = (selectedSubscriptionPlan?.monthly_price_xof ?? 0) * subscriptionMonths;
   const subscriptionReady = ["active", "grace"].includes(props.merchant.subscription_status);
   const visibleNavigation = merchantNavigation;
   const currentSection = merchantSectionTitles[tab];
@@ -535,7 +546,7 @@ export function MerchantWorkspace(props: MerchantWorkspaceProps) {
         {tab === "dashboard" && <section className="merchant-content-surface merchant-content-surface--dashboard"><MerchantDashboard merchantId={props.merchant.id} /></section>}
 
         {tab === "livreurs" && (
-          <CourierManager merchantId={props.merchant.id} orders={props.orders} />
+          <CourierManager merchantId={props.merchant.id} orders={props.orders} canManagePayments={["owner", "manager"].includes(props.memberRole)} />
         )}
 
         {tab === "fidelite" && <MerchantLoyalty merchantId={props.merchant.id} />}
@@ -766,42 +777,19 @@ export function MerchantWorkspace(props: MerchantWorkspaceProps) {
             {props.subscription && (
               <p className="mvp-alert">
                 Plan {planMap.get(props.subscription.plan_id)?.name} ·{" "}
-                {props.subscription.status}
+                {props.subscription.billing_cycle} · {props.subscription.status}
                 {props.subscription.current_period_ends_at &&
                   ` jusqu’au ${new Date(
                     props.subscription.current_period_ends_at,
                   ).toLocaleDateString("fr-SN")}`}
               </p>
             )}
-            <div className="mvp-form__grid">
-              <label className="mvp-field">
-                Payer en ligne (carte, Wave, Orange Money)
-                <select id="paytech-plan-select" defaultValue={props.plans[0]?.id}>
-                  {props.plans.map((plan) => (
-                    <option value={plan.id} key={plan.id}>
-                      {plan.name} · {formatPrice(plan.monthly_price_xof)}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <button
-                type="button"
-                className="mvp-button"
-                disabled={busy}
-                onClick={() => {
-                  const select = document.getElementById("paytech-plan-select") as HTMLSelectElement | null;
-                  if (select?.value) payWithPaytech(select.value);
-                }}
-              >
-                Payer mon abonnement par carte / Wave / Orange Money
-              </button>
-            </div>
-            <div className="mvp-divider" />
             <p>
-              Vous pouvez aussi envoyer le montant du plan directement au
-              numéro SunuShop correspondant, puis transmettre la référence du
-              paiement pour validation manuelle.
+              Envoyez directement le montant au numéro SunuShop correspondant,
+              puis transmettez la référence. Votre abonnement est prolongé
+              uniquement après contrôle et confirmation dans le CRM.
             </p>
+            <p className="mvp-alert">Orange Money permet de programmer un transfert récurrent depuis votre wallet. Cette programmation reste externe à SunuShop : chaque référence doit toujours être transmise et validée.</p>
             <div className="mvp-list">
               {props.subscriptionPaymentNumbers.wave && (
                 <div className="mvp-row">
@@ -826,12 +814,20 @@ export function MerchantWorkspace(props: MerchantWorkspaceProps) {
               <div className="mvp-form__grid">
                 <label className="mvp-field">
                   Plan
-                  <select name="planId">
+                  <select name="planId" value={subscriptionPlanId} onChange={(event) => setSubscriptionPlanId(event.target.value)}>
                     {props.plans.map((plan) => (
                       <option value={plan.id} key={plan.id}>
                         {plan.name} · {formatPrice(plan.monthly_price_xof)}
                       </option>
                     ))}
+                  </select>
+                </label>
+                <label className="mvp-field">
+                  Fréquence
+                  <select name="billingCycle" value={subscriptionCycle} onChange={(event) => setSubscriptionCycle(event.target.value as "monthly" | "quarterly" | "annual")}>
+                    <option value="monthly">Mensuelle · 1 mois</option>
+                    <option value="quarterly">Trimestrielle · 3 mois</option>
+                    <option value="annual">Annuelle · 12 mois</option>
                   </select>
                 </label>
                 <label className="mvp-field">
@@ -854,6 +850,7 @@ export function MerchantWorkspace(props: MerchantWorkspaceProps) {
                   <input name="paidAt" type="datetime-local" required />
                 </label>
               </div>
+              <p className="mvp-alert"><strong>Montant exact à envoyer : {formatPrice(subscriptionAmountXof)}</strong><br />{selectedSubscriptionPlan?.name} · {subscriptionMonths} mois, sans remise.</p>
               <button
                 className="mvp-button"
                 disabled={!hasSubscriptionPaymentChannel || busy}
@@ -867,7 +864,7 @@ export function MerchantWorkspace(props: MerchantWorkspaceProps) {
                   <div>
                     <strong>{payment.external_reference}</strong>
                     <small>
-                      {payment.channel} · {formatPrice(payment.amount_xof)}
+                      {payment.channel} vers {payment.destination_number ?? "numéro historique"} · {payment.billing_cycle} · {formatPrice(payment.amount_xof)}
                     </small>
                   </div>
                   <span
@@ -923,35 +920,33 @@ export function MerchantWorkspace(props: MerchantWorkspaceProps) {
                     <span className="mvp-status" data-status={order.status}>
                       {merchantStatusLabel(order.status)}
                     </span>
+                    <span className="mvp-status" data-status={order.payment_status}>{orderPaymentStatusLabels[order.payment_status] ?? order.payment_status}</span>
                     {order.direct_payment_declarations
-                      .filter(
-                        (declaration) =>
-                          !declaration.confirmed_by_merchant_at,
-                      )
+                      .filter((declaration) => declaration.status === "pending")
                       .map((declaration) => (
-                        <button
-                          key={declaration.id}
-                          className="mvp-button mvp-button--secondary"
-                          onClick={async () => {
-                            await fetch(
-                              `/api/orders/${order.id}/payment-declarations`,
-                              {
-                                method: "PATCH",
-                                headers: {
-                                  "content-type": "application/json",
-                                },
-                                body: JSON.stringify({
-                                  declarationId: declaration.id,
-                                }),
-                              },
-                            );
+                        <div className="mvp-actions" key={declaration.id}>
+                          <button className="mvp-button mvp-button--secondary" onClick={async () => {
+                            await fetch(`/api/orders/${order.id}/payment-declarations`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ declarationId: declaration.id, decision: "confirmed" }) });
                             router.refresh();
-                          }}
-                        >
-                          Confirmer paiement {declaration.external_reference}
-                        </button>
+                          }}>Confirmer {declaration.external_reference}</button>
+                          <button className="mvp-button mvp-button--danger" onClick={async () => {
+                            const reason = window.prompt("Pourquoi refusez-vous ce paiement ?");
+                            if (!reason || reason.trim().length < 4) return;
+                            await fetch(`/api/orders/${order.id}/payment-declarations`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ declarationId: declaration.id, decision: "rejected", rejectionReason: reason }) });
+                            router.refresh();
+                          }}>Refuser</button>
+                        </div>
                       ))}
-                    {nextMerchantOrderStatus[order.status] && (
+                    {order.payment_method === "cash_on_delivery" && order.payment_status === "cash_due" && order.status === "ready_for_handoff" && (
+                      <button className="mvp-button mvp-button--secondary" onClick={async () => {
+                        await fetch(`/api/orders/${order.id}/cash-payment`, { method: "POST" });
+                        router.refresh();
+                      }}>Confirmer les espèces reçues</button>
+                    )}
+                    {["paid", "refund_pending"].includes(order.payment_status) && (
+                      <button className="mvp-button mvp-button--secondary" onClick={() => void declareRefund(order)}>Déclarer un remboursement</button>
+                    )}
+                    {nextMerchantOrderStatus[order.status] && (order.payment_method === "cash_on_delivery" || order.payment_status === "paid") && (
                       <button
                         className="mvp-button"
                         onClick={() =>

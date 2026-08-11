@@ -1,4 +1,4 @@
-﻿export type Json =
+export type Json =
   | string
   | number
   | boolean
@@ -368,12 +368,15 @@ export type Database = {
           id: string
           invited_by: string
           merchant_id: string
+          orange_money_payment_number: string | null
           phone: string
           photo_storage_path: string | null
+          preferred_payment_channel: string | null
           status: Database["public"]["Enums"]["courier_membership_status"]
           updated_at: string
           vehicle_registration: string | null
           vehicle_type: string | null
+          wave_payment_number: string | null
         }
         Insert: {
           accepted_at?: string
@@ -384,12 +387,15 @@ export type Database = {
           id?: string
           invited_by: string
           merchant_id: string
+          orange_money_payment_number?: string | null
           phone: string
           photo_storage_path?: string | null
+          preferred_payment_channel?: string | null
           status?: Database["public"]["Enums"]["courier_membership_status"]
           updated_at?: string
           vehicle_registration?: string | null
           vehicle_type?: string | null
+          wave_payment_number?: string | null
         }
         Update: {
           accepted_at?: string
@@ -400,12 +406,15 @@ export type Database = {
           id?: string
           invited_by?: string
           merchant_id?: string
+          orange_money_payment_number?: string | null
           phone?: string
           photo_storage_path?: string | null
+          preferred_payment_channel?: string | null
           status?: Database["public"]["Enums"]["courier_membership_status"]
           updated_at?: string
           vehicle_registration?: string | null
           vehicle_type?: string | null
+          wave_payment_number?: string | null
         }
         Relationships: [
           {
@@ -427,6 +436,138 @@ export type Database = {
             columns: ["merchant_id"]
             isOneToOne: false
             referencedRelation: "merchant_accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      courier_payout_deliveries: {
+        Row: {
+          amount_xof: number
+          created_at: string
+          delivery_id: string
+          payout_id: string
+        }
+        Insert: {
+          amount_xof: number
+          created_at?: string
+          delivery_id: string
+          payout_id: string
+        }
+        Update: {
+          amount_xof?: number
+          created_at?: string
+          delivery_id?: string
+          payout_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "courier_payout_deliveries_delivery_id_fkey"
+            columns: ["delivery_id"]
+            isOneToOne: false
+            referencedRelation: "deliveries"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "courier_payout_deliveries_payout_id_fkey"
+            columns: ["payout_id"]
+            isOneToOne: false
+            referencedRelation: "courier_payouts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      courier_payouts: {
+        Row: {
+          amount_xof: number
+          contest_reason: string | null
+          courier_membership_id: string
+          created_at: string
+          destination_number: string | null
+          external_reference: string | null
+          id: string
+          merchant_id: string
+          paid_at: string
+          payment_method: string
+          recorded_by: string
+          reviewed_at: string | null
+          reviewed_by: string | null
+          status: string
+          void_reason: string | null
+          voided_at: string | null
+          voided_by: string | null
+        }
+        Insert: {
+          amount_xof: number
+          contest_reason?: string | null
+          courier_membership_id: string
+          created_at?: string
+          destination_number?: string | null
+          external_reference?: string | null
+          id?: string
+          merchant_id: string
+          paid_at: string
+          payment_method: string
+          recorded_by: string
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          status?: string
+          void_reason?: string | null
+          voided_at?: string | null
+          voided_by?: string | null
+        }
+        Update: {
+          amount_xof?: number
+          contest_reason?: string | null
+          courier_membership_id?: string
+          created_at?: string
+          destination_number?: string | null
+          external_reference?: string | null
+          id?: string
+          merchant_id?: string
+          paid_at?: string
+          payment_method?: string
+          recorded_by?: string
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          status?: string
+          void_reason?: string | null
+          voided_at?: string | null
+          voided_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "courier_payouts_courier_membership_id_fkey"
+            columns: ["courier_membership_id"]
+            isOneToOne: false
+            referencedRelation: "courier_memberships"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "courier_payouts_merchant_id_fkey"
+            columns: ["merchant_id"]
+            isOneToOne: false
+            referencedRelation: "merchant_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "courier_payouts_recorded_by_fkey"
+            columns: ["recorded_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "courier_payouts_reviewed_by_fkey"
+            columns: ["reviewed_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "courier_payouts_voided_by_fkey"
+            columns: ["voided_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
         ]
@@ -669,7 +810,11 @@ export type Database = {
           assigned_by: string
           code_attempt_limit: number
           commission_status: string
+          courier_fee_xof: number | null
           courier_membership_id: string
+          courier_payable_xof: number
+          courier_payment_status: string
+          courier_payout_id: string | null
           created_at: string
           delivered_at: string | null
           failure_reason: string | null
@@ -686,6 +831,7 @@ export type Database = {
           recipient_code_attempts: number
           recipient_code_hash: string
           status: Database["public"]["Enums"]["delivery_status"]
+          terminal_at: string | null
           updated_at: string
         }
         Insert: {
@@ -693,7 +839,11 @@ export type Database = {
           assigned_by: string
           code_attempt_limit?: number
           commission_status?: string
+          courier_fee_xof?: number | null
           courier_membership_id: string
+          courier_payable_xof?: number
+          courier_payment_status?: string
+          courier_payout_id?: string | null
           created_at?: string
           delivered_at?: string | null
           failure_reason?: string | null
@@ -710,6 +860,7 @@ export type Database = {
           recipient_code_attempts?: number
           recipient_code_hash: string
           status?: Database["public"]["Enums"]["delivery_status"]
+          terminal_at?: string | null
           updated_at?: string
         }
         Update: {
@@ -717,7 +868,11 @@ export type Database = {
           assigned_by?: string
           code_attempt_limit?: number
           commission_status?: string
+          courier_fee_xof?: number | null
           courier_membership_id?: string
+          courier_payable_xof?: number
+          courier_payment_status?: string
+          courier_payout_id?: string | null
           created_at?: string
           delivered_at?: string | null
           failure_reason?: string | null
@@ -734,6 +889,7 @@ export type Database = {
           recipient_code_attempts?: number
           recipient_code_hash?: string
           status?: Database["public"]["Enums"]["delivery_status"]
+          terminal_at?: string | null
           updated_at?: string
         }
         Relationships: [
@@ -749,6 +905,13 @@ export type Database = {
             columns: ["courier_membership_id"]
             isOneToOne: false
             referencedRelation: "courier_memberships"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deliveries_courier_payout_id_fkey"
+            columns: ["courier_payout_id"]
+            isOneToOne: false
+            referencedRelation: "courier_payouts"
             referencedColumns: ["id"]
           },
           {
@@ -815,6 +978,139 @@ export type Database = {
             columns: ["merchant_id"]
             isOneToOne: false
             referencedRelation: "merchant_accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      delivery_dispute_events: {
+        Row: {
+          actor_id: string | null
+          created_at: string
+          dispute_id: string
+          event_type: string
+          id: number
+          message: string
+        }
+        Insert: {
+          actor_id?: string | null
+          created_at?: string
+          dispute_id: string
+          event_type: string
+          id?: never
+          message: string
+        }
+        Update: {
+          actor_id?: string | null
+          created_at?: string
+          dispute_id?: string
+          event_type?: string
+          id?: never
+          message?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "delivery_dispute_events_actor_id_fkey"
+            columns: ["actor_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "delivery_dispute_events_dispute_id_fkey"
+            columns: ["dispute_id"]
+            isOneToOne: false
+            referencedRelation: "delivery_disputes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      delivery_disputes: {
+        Row: {
+          buyer_id: string
+          courier_membership_id: string
+          created_at: string
+          delivery_id: string
+          id: string
+          merchant_id: string
+          opened_at: string
+          order_id: string
+          reason: string
+          resolution: string | null
+          resolved_at: string | null
+          resolved_by: string | null
+          status: string
+        }
+        Insert: {
+          buyer_id: string
+          courier_membership_id: string
+          created_at?: string
+          delivery_id: string
+          id?: string
+          merchant_id: string
+          opened_at?: string
+          order_id: string
+          reason: string
+          resolution?: string | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          status?: string
+        }
+        Update: {
+          buyer_id?: string
+          courier_membership_id?: string
+          created_at?: string
+          delivery_id?: string
+          id?: string
+          merchant_id?: string
+          opened_at?: string
+          order_id?: string
+          reason?: string
+          resolution?: string | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "delivery_disputes_buyer_id_fkey"
+            columns: ["buyer_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "delivery_disputes_courier_membership_id_fkey"
+            columns: ["courier_membership_id"]
+            isOneToOne: false
+            referencedRelation: "courier_memberships"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "delivery_disputes_delivery_id_fkey"
+            columns: ["delivery_id"]
+            isOneToOne: false
+            referencedRelation: "deliveries"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "delivery_disputes_merchant_id_fkey"
+            columns: ["merchant_id"]
+            isOneToOne: false
+            referencedRelation: "merchant_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "delivery_disputes_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "delivery_disputes_resolved_by_fkey"
+            columns: ["resolved_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
         ]
@@ -992,6 +1288,7 @@ export type Database = {
         Row: {
           active: boolean
           city: string | null
+          courier_fee_xof: number | null
           created_at: string
           delivery_method_id: string
           fee_xof: number
@@ -1006,6 +1303,7 @@ export type Database = {
         Insert: {
           active?: boolean
           city?: string | null
+          courier_fee_xof?: number | null
           created_at?: string
           delivery_method_id: string
           fee_xof: number
@@ -1020,6 +1318,7 @@ export type Database = {
         Update: {
           active?: boolean
           city?: string | null
+          courier_fee_xof?: number | null
           created_at?: string
           delivery_method_id?: string
           fee_xof?: number
@@ -1060,6 +1359,11 @@ export type Database = {
           id: string
           merchant_id: string
           order_id: string
+          rejection_reason: string | null
+          reviewed_at: string | null
+          reviewed_by: string | null
+          status: string
+          updated_at: string
         }
         Insert: {
           amount_xof: number
@@ -1072,6 +1376,11 @@ export type Database = {
           id?: string
           merchant_id: string
           order_id: string
+          rejection_reason?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          status?: string
+          updated_at?: string
         }
         Update: {
           amount_xof?: number
@@ -1084,6 +1393,11 @@ export type Database = {
           id?: string
           merchant_id?: string
           order_id?: string
+          rejection_reason?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          status?: string
+          updated_at?: string
         }
         Relationships: [
           {
@@ -1105,6 +1419,13 @@ export type Database = {
             columns: ["order_id"]
             isOneToOne: false
             referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "direct_payment_declarations_reviewed_by_fkey"
+            columns: ["reviewed_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
         ]
@@ -1782,6 +2103,7 @@ export type Database = {
       }
       merchant_subscriptions: {
         Row: {
+          billing_cycle: string
           cancelled_at: string | null
           created_at: string
           current_period_ends_at: string | null
@@ -1794,6 +2116,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          billing_cycle?: string
           cancelled_at?: string | null
           created_at?: string
           current_period_ends_at?: string | null
@@ -1806,6 +2129,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          billing_cycle?: string
           cancelled_at?: string | null
           created_at?: string
           current_period_ends_at?: string | null
@@ -1967,6 +2291,87 @@ export type Database = {
           },
         ]
       }
+      order_disputes: {
+        Row: {
+          buyer_id: string
+          id: string
+          merchant_id: string
+          opened_at: string
+          opened_by: string
+          order_id: string
+          reason: string
+          resolution: string | null
+          resolution_note: string | null
+          resolved_at: string | null
+          resolved_by: string | null
+          status: string
+        }
+        Insert: {
+          buyer_id: string
+          id?: string
+          merchant_id: string
+          opened_at?: string
+          opened_by: string
+          order_id: string
+          reason: string
+          resolution?: string | null
+          resolution_note?: string | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          status?: string
+        }
+        Update: {
+          buyer_id?: string
+          id?: string
+          merchant_id?: string
+          opened_at?: string
+          opened_by?: string
+          order_id?: string
+          reason?: string
+          resolution?: string | null
+          resolution_note?: string | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "order_disputes_buyer_id_fkey"
+            columns: ["buyer_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "order_disputes_merchant_id_fkey"
+            columns: ["merchant_id"]
+            isOneToOne: false
+            referencedRelation: "merchant_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "order_disputes_opened_by_fkey"
+            columns: ["opened_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "order_disputes_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "order_disputes_resolved_by_fkey"
+            columns: ["resolved_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       order_events: {
         Row: {
           actor_id: string | null
@@ -2099,6 +2504,99 @@ export type Database = {
           },
         ]
       }
+      order_refunds: {
+        Row: {
+          amount_xof: number
+          buyer_id: string
+          channel: Database["public"]["Enums"]["payment_channel"]
+          contest_reason: string | null
+          created_at: string
+          declared_at: string
+          declared_by: string
+          destination_number: string
+          external_reference: string
+          id: string
+          merchant_id: string
+          order_id: string
+          reviewed_at: string | null
+          reviewed_by: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          amount_xof: number
+          buyer_id: string
+          channel: Database["public"]["Enums"]["payment_channel"]
+          contest_reason?: string | null
+          created_at?: string
+          declared_at?: string
+          declared_by: string
+          destination_number: string
+          external_reference: string
+          id?: string
+          merchant_id: string
+          order_id: string
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          amount_xof?: number
+          buyer_id?: string
+          channel?: Database["public"]["Enums"]["payment_channel"]
+          contest_reason?: string | null
+          created_at?: string
+          declared_at?: string
+          declared_by?: string
+          destination_number?: string
+          external_reference?: string
+          id?: string
+          merchant_id?: string
+          order_id?: string
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "order_refunds_buyer_id_fkey"
+            columns: ["buyer_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "order_refunds_declared_by_fkey"
+            columns: ["declared_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "order_refunds_merchant_id_fkey"
+            columns: ["merchant_id"]
+            isOneToOne: false
+            referencedRelation: "merchant_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "order_refunds_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "order_refunds_reviewed_by_fkey"
+            columns: ["reviewed_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       orders: {
         Row: {
           batch_id: string
@@ -2121,6 +2619,7 @@ export type Database = {
           merchant_sequence: number
           payment_instructions_snapshot: Json
           payment_method: Database["public"]["Enums"]["order_payment_method"]
+          payment_status: string
           public_code: string
           recipient_snapshot: Json
           seller_confirm_by: string | null
@@ -2150,6 +2649,7 @@ export type Database = {
           merchant_sequence: number
           payment_instructions_snapshot?: Json
           payment_method: Database["public"]["Enums"]["order_payment_method"]
+          payment_status?: string
           public_code: string
           recipient_snapshot: Json
           seller_confirm_by?: string | null
@@ -2179,6 +2679,7 @@ export type Database = {
           merchant_sequence?: number
           payment_instructions_snapshot?: Json
           payment_method?: Database["public"]["Enums"]["order_payment_method"]
+          payment_status?: string
           public_code?: string
           recipient_snapshot?: Json
           seller_confirm_by?: string | null
@@ -2375,6 +2876,44 @@ export type Database = {
             columns: ["plan_id"]
             isOneToOne: false
             referencedRelation: "subscription_plans"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      platform_payment_settings: {
+        Row: {
+          account_holder: string | null
+          active: boolean
+          channel: Database["public"]["Enums"]["payment_channel"]
+          created_at: string
+          payment_number: string
+          updated_at: string
+          updated_by: string
+        }
+        Insert: {
+          account_holder?: string | null
+          active?: boolean
+          channel: Database["public"]["Enums"]["payment_channel"]
+          created_at?: string
+          payment_number: string
+          updated_at?: string
+          updated_by: string
+        }
+        Update: {
+          account_holder?: string | null
+          active?: boolean
+          channel?: Database["public"]["Enums"]["payment_channel"]
+          created_at?: string
+          payment_number?: string
+          updated_at?: string
+          updated_by?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "platform_payment_settings_updated_by_fkey"
+            columns: ["updated_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
         ]
@@ -2631,6 +3170,89 @@ export type Database = {
           },
         ]
       }
+      subscription_billing_periods: {
+        Row: {
+          amount_xof: number
+          billing_cycle: string
+          created_at: string
+          due_at: string
+          id: string
+          merchant_id: string
+          paid_at: string | null
+          payment_submission_id: string | null
+          period_months: number
+          plan_id: string
+          service_period_end: string
+          service_period_start: string
+          status: string
+          subscription_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          amount_xof: number
+          billing_cycle: string
+          created_at?: string
+          due_at: string
+          id?: string
+          merchant_id: string
+          paid_at?: string | null
+          payment_submission_id?: string | null
+          period_months: number
+          plan_id: string
+          service_period_end: string
+          service_period_start: string
+          status?: string
+          subscription_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          amount_xof?: number
+          billing_cycle?: string
+          created_at?: string
+          due_at?: string
+          id?: string
+          merchant_id?: string
+          paid_at?: string | null
+          payment_submission_id?: string | null
+          period_months?: number
+          plan_id?: string
+          service_period_end?: string
+          service_period_start?: string
+          status?: string
+          subscription_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "subscription_billing_periods_merchant_id_fkey"
+            columns: ["merchant_id"]
+            isOneToOne: false
+            referencedRelation: "merchant_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "subscription_billing_periods_payment_submission_id_fkey"
+            columns: ["payment_submission_id"]
+            isOneToOne: true
+            referencedRelation: "subscription_payment_submissions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "subscription_billing_periods_plan_id_fkey"
+            columns: ["plan_id"]
+            isOneToOne: false
+            referencedRelation: "subscription_plans"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "subscription_billing_periods_subscription_id_fkey"
+            columns: ["subscription_id"]
+            isOneToOne: false
+            referencedRelation: "merchant_subscriptions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       subscription_grants: {
         Row: {
           created_at: string
@@ -2689,12 +3311,16 @@ export type Database = {
       subscription_payment_submissions: {
         Row: {
           amount_xof: number
+          billing_cycle: string
+          billing_period_id: string | null
           channel: Database["public"]["Enums"]["payment_channel"]
           created_at: string
+          destination_number: string | null
           external_reference: string
           id: string
           merchant_id: string
           paid_at: string
+          period_months: number
           plan_id: string
           rejection_reason: string | null
           reviewed_at: string | null
@@ -2705,12 +3331,16 @@ export type Database = {
         }
         Insert: {
           amount_xof: number
+          billing_cycle?: string
+          billing_period_id?: string | null
           channel: Database["public"]["Enums"]["payment_channel"]
           created_at?: string
+          destination_number?: string | null
           external_reference: string
           id?: string
           merchant_id: string
           paid_at: string
+          period_months?: number
           plan_id: string
           rejection_reason?: string | null
           reviewed_at?: string | null
@@ -2721,12 +3351,16 @@ export type Database = {
         }
         Update: {
           amount_xof?: number
+          billing_cycle?: string
+          billing_period_id?: string | null
           channel?: Database["public"]["Enums"]["payment_channel"]
           created_at?: string
+          destination_number?: string | null
           external_reference?: string
           id?: string
           merchant_id?: string
           paid_at?: string
+          period_months?: number
           plan_id?: string
           rejection_reason?: string | null
           reviewed_at?: string | null
@@ -2736,6 +3370,13 @@ export type Database = {
           subscription_id?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "subscription_payment_submissions_billing_period_id_fkey"
+            columns: ["billing_period_id"]
+            isOneToOne: false
+            referencedRelation: "subscription_billing_periods"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "subscription_payment_submissions_merchant_id_fkey"
             columns: ["merchant_id"]
@@ -3189,6 +3830,7 @@ export type Database = {
           p_ref_command: string
         }
         Returns: {
+          billing_cycle: string
           cancelled_at: string | null
           created_at: string
           current_period_ends_at: string | null
@@ -3210,6 +3852,7 @@ export type Database = {
       admin_activate_test_subscription: {
         Args: { p_days?: number; p_merchant_id: string; p_plan_id?: string }
         Returns: {
+          billing_cycle: string
           cancelled_at: string | null
           created_at: string
           current_period_ends_at: string | null
@@ -3240,6 +3883,7 @@ export type Database = {
           p_reason: string
         }
         Returns: {
+          billing_cycle: string
           cancelled_at: string | null
           created_at: string
           current_period_ends_at: string | null
@@ -3310,7 +3954,11 @@ export type Database = {
           assigned_by: string
           code_attempt_limit: number
           commission_status: string
+          courier_fee_xof: number | null
           courier_membership_id: string
+          courier_payable_xof: number
+          courier_payment_status: string
+          courier_payout_id: string | null
           created_at: string
           delivered_at: string | null
           failure_reason: string | null
@@ -3327,6 +3975,7 @@ export type Database = {
           recipient_code_attempts: number
           recipient_code_hash: string
           status: Database["public"]["Enums"]["delivery_status"]
+          terminal_at: string | null
           updated_at: string
         }
         SetofOptions: {
@@ -3485,6 +4134,39 @@ export type Database = {
         }
         Returns: string
       }
+      declare_order_refund: {
+        Args: {
+          p_amount_xof: number
+          p_channel: Database["public"]["Enums"]["payment_channel"]
+          p_destination_number: string
+          p_external_reference: string
+          p_order_id: string
+        }
+        Returns: {
+          amount_xof: number
+          buyer_id: string
+          channel: Database["public"]["Enums"]["payment_channel"]
+          contest_reason: string | null
+          created_at: string
+          declared_at: string
+          declared_by: string
+          destination_number: string
+          external_reference: string
+          id: string
+          merchant_id: string
+          order_id: string
+          reviewed_at: string | null
+          reviewed_by: string | null
+          status: string
+          updated_at: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "order_refunds"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
       document_retention_candidates: {
         Args: { p_closed_days?: number; p_rejected_days?: number }
         Returns: {
@@ -3642,39 +4324,187 @@ export type Database = {
         Args: { p_document_id: string }
         Returns: undefined
       }
-      open_order_dispute: {
-        Args: { p_order_id: string; p_reason: string }
+      open_delivery_dispute: {
+        Args: { p_actor_id: string; p_order_id: string; p_reason: string }
         Returns: {
-          amount_xof: number
+          buyer_id: string
+          courier_membership_id: string
           created_at: string
-          dispute_opened_at: string | null
-          dispute_reason: string | null
-          dispute_resolution: string | null
-          dispute_resolved_at: string | null
-          held_at: string
+          delivery_id: string
           id: string
           merchant_id: string
+          opened_at: string
           order_id: string
-          payment_intent_id: string
-          refunded_at: string | null
-          releasable_at: string | null
-          released_at: string | null
-          released_by: string | null
-          status: Database["public"]["Enums"]["escrow_status"]
+          reason: string
+          resolution: string | null
+          resolved_at: string | null
+          resolved_by: string | null
+          status: string
         }
         SetofOptions: {
           from: "*"
-          to: "payment_escrows"
+          to: "delivery_disputes"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      open_order_dispute: {
+        Args: { p_order_id: string; p_reason: string }
+        Returns: {
+          buyer_id: string
+          id: string
+          merchant_id: string
+          opened_at: string
+          opened_by: string
+          order_id: string
+          reason: string
+          resolution: string | null
+          resolution_note: string | null
+          resolved_at: string | null
+          resolved_by: string | null
+          status: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "order_disputes"
           isOneToOne: true
           isSetofReturn: false
         }
       }
       prepare_loyalty_credit_payouts: { Args: never; Returns: number }
+      record_courier_payout: {
+        Args: {
+          p_actor_id: string
+          p_courier_membership_id: string
+          p_delivery_ids: string[]
+          p_external_reference: string
+          p_merchant_id: string
+          p_paid_at: string
+          p_payment_method: string
+        }
+        Returns: {
+          amount_xof: number
+          contest_reason: string | null
+          courier_membership_id: string
+          created_at: string
+          destination_number: string | null
+          external_reference: string | null
+          id: string
+          merchant_id: string
+          paid_at: string
+          payment_method: string
+          recorded_by: string
+          reviewed_at: string | null
+          reviewed_by: string | null
+          status: string
+          void_reason: string | null
+          voided_at: string | null
+          voided_by: string | null
+        }
+        SetofOptions: {
+          from: "*"
+          to: "courier_payouts"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      record_pickup_cash_payment: {
+        Args: { p_order_id: string }
+        Returns: {
+          batch_id: string
+          buyer_id: string
+          cancelled_at: string | null
+          created_at: string
+          currency: string
+          delivered_at: string | null
+          delivery_fee_xof: number
+          delivery_snapshot: Json
+          id: string
+          loyalty_accrual_enabled: boolean
+          loyalty_discount_xof: number
+          loyalty_merchant_share_xof: number
+          loyalty_platform_share_xof: number
+          loyalty_points_earned: number
+          loyalty_points_redeemed: number
+          loyalty_processed_at: string | null
+          merchant_id: string
+          merchant_sequence: number
+          payment_instructions_snapshot: Json
+          payment_method: Database["public"]["Enums"]["order_payment_method"]
+          payment_status: string
+          public_code: string
+          recipient_snapshot: Json
+          seller_confirm_by: string | null
+          status: Database["public"]["Enums"]["order_status"]
+          subtotal_xof: number
+          total_xof: number
+          updated_at: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "orders"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      refresh_subscription_billing_periods: { Args: never; Returns: number }
       refresh_subscription_states: { Args: never; Returns: number }
       release_due_escrows: { Args: { p_limit?: number }; Returns: Json }
       reorder_merchant_product_media: {
         Args: { p_media_ids: string[]; p_product_id: string }
         Returns: Json
+      }
+      resolve_delivery_dispute: {
+        Args: {
+          p_actor_id: string
+          p_dispute_id: string
+          p_outcome: string
+          p_resolution: string
+        }
+        Returns: {
+          buyer_id: string
+          courier_membership_id: string
+          created_at: string
+          delivery_id: string
+          id: string
+          merchant_id: string
+          opened_at: string
+          order_id: string
+          reason: string
+          resolution: string | null
+          resolved_at: string | null
+          resolved_by: string | null
+          status: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "delivery_disputes"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      resolve_direct_order_dispute: {
+        Args: { p_dispute_id: string; p_note: string; p_resolution: string }
+        Returns: {
+          buyer_id: string
+          id: string
+          merchant_id: string
+          opened_at: string
+          opened_by: string
+          order_id: string
+          reason: string
+          resolution: string | null
+          resolution_note: string | null
+          resolved_at: string | null
+          resolved_by: string | null
+          status: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "order_disputes"
+          isOneToOne: true
+          isSetofReturn: false
+        }
       }
       resolve_order_dispute: {
         Args: { p_note?: string; p_order_id: string; p_resolution: string }
@@ -3707,6 +4537,99 @@ export type Database = {
         Args: { p_order_id: string }
         Returns: undefined
       }
+      review_courier_payout: {
+        Args: {
+          p_contest_reason?: string
+          p_decision: string
+          p_payout_id: string
+        }
+        Returns: {
+          amount_xof: number
+          contest_reason: string | null
+          courier_membership_id: string
+          created_at: string
+          destination_number: string | null
+          external_reference: string | null
+          id: string
+          merchant_id: string
+          paid_at: string
+          payment_method: string
+          recorded_by: string
+          reviewed_at: string | null
+          reviewed_by: string | null
+          status: string
+          void_reason: string | null
+          voided_at: string | null
+          voided_by: string | null
+        }
+        SetofOptions: {
+          from: "*"
+          to: "courier_payouts"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      review_direct_payment: {
+        Args: {
+          p_decision: string
+          p_declaration_id: string
+          p_rejection_reason?: string
+        }
+        Returns: {
+          amount_xof: number
+          buyer_id: string
+          channel: Database["public"]["Enums"]["payment_channel"]
+          confirmed_by_merchant_at: string | null
+          created_at: string
+          declared_at: string
+          external_reference: string
+          id: string
+          merchant_id: string
+          order_id: string
+          rejection_reason: string | null
+          reviewed_at: string | null
+          reviewed_by: string | null
+          status: string
+          updated_at: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "direct_payment_declarations"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      review_order_refund: {
+        Args: {
+          p_contest_reason?: string
+          p_decision: string
+          p_refund_id: string
+        }
+        Returns: {
+          amount_xof: number
+          buyer_id: string
+          channel: Database["public"]["Enums"]["payment_channel"]
+          contest_reason: string | null
+          created_at: string
+          declared_at: string
+          declared_by: string
+          destination_number: string
+          external_reference: string
+          id: string
+          merchant_id: string
+          order_id: string
+          reviewed_at: string | null
+          reviewed_by: string | null
+          status: string
+          updated_at: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "order_refunds"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
       review_subscription_payment: {
         Args: {
           p_approved: boolean
@@ -3715,12 +4638,16 @@ export type Database = {
         }
         Returns: {
           amount_xof: number
+          billing_cycle: string
+          billing_period_id: string | null
           channel: Database["public"]["Enums"]["payment_channel"]
           created_at: string
+          destination_number: string | null
           external_reference: string
           id: string
           merchant_id: string
           paid_at: string
+          period_months: number
           plan_id: string
           rejection_reason: string | null
           reviewed_at: string | null
@@ -3777,6 +4704,48 @@ export type Database = {
         }
         Returns: Json
       }
+      set_failed_delivery_compensation: {
+        Args: {
+          p_actor_id: string
+          p_amount_xof: number
+          p_delivery_id: string
+        }
+        Returns: {
+          assigned_at: string
+          assigned_by: string
+          code_attempt_limit: number
+          commission_status: string
+          courier_fee_xof: number | null
+          courier_membership_id: string
+          courier_payable_xof: number
+          courier_payment_status: string
+          courier_payout_id: string | null
+          created_at: string
+          delivered_at: string | null
+          failure_reason: string | null
+          gross_delivery_fee_xof: number
+          id: string
+          merchant_id: string
+          order_id: string
+          pickup_code_attempts: number
+          pickup_code_hash: string
+          pickup_snapshot: Json
+          pickup_verified_at: string | null
+          platform_commission_rate_bps: number
+          platform_commission_xof: number
+          recipient_code_attempts: number
+          recipient_code_hash: string
+          status: Database["public"]["Enums"]["delivery_status"]
+          terminal_at: string | null
+          updated_at: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "deliveries"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
       set_merchant_product_publication: {
         Args: { p_product_id: string; p_publish: boolean }
         Returns: {
@@ -3799,11 +4768,35 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      set_platform_payment_setting: {
+        Args: {
+          p_account_holder: string
+          p_active: boolean
+          p_channel: Database["public"]["Enums"]["payment_channel"]
+          p_payment_number: string
+        }
+        Returns: {
+          account_holder: string | null
+          active: boolean
+          channel: Database["public"]["Enums"]["payment_channel"]
+          created_at: string
+          payment_number: string
+          updated_at: string
+          updated_by: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "platform_payment_settings"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
       show_limit: { Args: never; Returns: number }
       show_trgm: { Args: { "": string }; Returns: string[] }
       submit_subscription_payment: {
         Args: {
           p_amount_xof: number
+          p_billing_cycle: string
           p_channel: Database["public"]["Enums"]["payment_channel"]
           p_external_reference: string
           p_merchant_id: string
@@ -3812,12 +4805,16 @@ export type Database = {
         }
         Returns: {
           amount_xof: number
+          billing_cycle: string
+          billing_period_id: string | null
           channel: Database["public"]["Enums"]["payment_channel"]
           created_at: string
+          destination_number: string | null
           external_reference: string
           id: string
           merchant_id: string
           paid_at: string
+          period_months: number
           plan_id: string
           rejection_reason: string | null
           reviewed_at: string | null
@@ -3885,6 +4882,7 @@ export type Database = {
           merchant_sequence: number
           payment_instructions_snapshot: Json
           payment_method: Database["public"]["Enums"]["order_payment_method"]
+          payment_status: string
           public_code: string
           recipient_snapshot: Json
           seller_confirm_by: string | null
@@ -3900,9 +4898,89 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      update_courier_payment_profile: {
+        Args: {
+          p_orange_money_number: string
+          p_preferred_channel: string
+          p_wave_number: string
+        }
+        Returns: number
+      }
+      update_merchant_payment_numbers: {
+        Args: {
+          p_merchant_id: string
+          p_orange_money_number: string
+          p_wave_number: string
+        }
+        Returns: {
+          address_hint: string | null
+          city: string | null
+          closed_at: string | null
+          created_at: string
+          description: string | null
+          email: string | null
+          id: string
+          kind: Database["public"]["Enums"]["merchant_kind"]
+          legal_name: string | null
+          ninea: string | null
+          orange_money_payment_number: string | null
+          owner_user_id: string
+          phone: string
+          pickup_address_line: string | null
+          pickup_enabled: boolean
+          pickup_hours: string | null
+          pickup_instructions: string | null
+          pickup_latitude: number | null
+          pickup_longitude: number | null
+          public_name: string
+          rccm: string | null
+          region: string | null
+          representative_is_legal_owner: boolean
+          slug: string
+          status: Database["public"]["Enums"]["merchant_status"]
+          subscription_status: Database["public"]["Enums"]["subscription_status"]
+          updated_at: string
+          verification_status: Database["public"]["Enums"]["verification_status"]
+          wave_payment_number: string | null
+        }
+        SetofOptions: {
+          from: "*"
+          to: "merchant_accounts"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
       verification_case_is_complete: {
         Args: { p_case_id: string }
         Returns: boolean
+      }
+      void_courier_payout: {
+        Args: { p_actor_id: string; p_payout_id: string; p_reason: string }
+        Returns: {
+          amount_xof: number
+          contest_reason: string | null
+          courier_membership_id: string
+          created_at: string
+          destination_number: string | null
+          external_reference: string | null
+          id: string
+          merchant_id: string
+          paid_at: string
+          payment_method: string
+          recorded_by: string
+          reviewed_at: string | null
+          reviewed_by: string | null
+          status: string
+          void_reason: string | null
+          voided_at: string | null
+          voided_by: string | null
+        }
+        SetofOptions: {
+          from: "*"
+          to: "courier_payouts"
+          isOneToOne: true
+          isSetofReturn: false
+        }
       }
     }
     Enums: {

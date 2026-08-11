@@ -140,9 +140,9 @@ export const verificationDecisionSchema = z
 export const subscriptionPaymentSchema = z.object({
   merchantId: uuid,
   planId: z.enum(["essential", "pro", "network"]),
+  billingCycle: z.enum(["monthly", "quarterly", "annual"]),
   channel: z.enum(["wave", "orange_money"]),
   externalReference: z.string().trim().min(4).max(120),
-  amountXof: z.int().positive(),
   paidAt: z.iso.datetime(),
 });
 
@@ -167,7 +167,7 @@ export const quoteGroupSchema = z
     merchantId: uuid,
     deliveryZoneId: uuid.optional(),
     methodKind: z.enum(["pickup", "merchant_delivery"]).default("merchant_delivery"),
-    applyLoyalty: z.boolean().default(true),
+    applyLoyalty: z.boolean().default(false).transform(() => false),
     items: z.array(quoteItemSchema).min(1).max(50),
   })
   .superRefine((value, context) => {
@@ -223,7 +223,6 @@ export const orderBatchSchema = z
             "cash_on_delivery",
             "wave_direct",
             "orange_money_direct",
-            "paytech",
           ]),
         }),
       )
@@ -238,6 +237,13 @@ export const orderBatchSchema = z
           code: "custom",
           path: ["groups", index, "merchantId"],
           message: "Une seule commande doit être créée par boutique.",
+        });
+      }
+      if (group.paymentMethod === "cash_on_delivery" && group.methodKind !== "pickup") {
+        context.addIssue({
+          code: "custom",
+          path: ["groups", index, "paymentMethod"],
+          message: "Les espèces sont réservées au retrait en boutique.",
         });
       }
       merchants.add(group.merchantId);
@@ -334,15 +340,18 @@ export const deliveryZoneInputSchema = z.object({
   city: z.string().trim().max(120).optional(),
   label: z.string().trim().min(2).max(160),
   feeXof: z.int().min(0),
+  courierFeeXof: z.int().min(0).nullable().optional(),
   minDelayMinutes: z.int().min(0).max(43_200),
   maxDelayMinutes: z.int().min(0).max(43_200),
 });
 
 export const deliveryRegionInputSchema = z.object({
   merchantId: uuid,
+  zoneId: uuid.optional(),
   region: z.string().trim().min(2).max(120),
   enabled: z.boolean().default(true),
   feeXof: z.int().min(0),
+  courierFeeXof: z.int().min(0).nullable(),
   minDelayDays: z.int().min(0).max(30),
   maxDelayDays: z.int().min(0).max(30),
   categoryRates: z.array(z.object({
@@ -575,17 +584,93 @@ export const deliveryCodeSchema = z.object({
   code: z.string().regex(/^\d{6}$/, "Le code doit contenir six chiffres."),
 });
 
-export const paytechOrderCheckoutSchema = z.object({
-  orderBatchId: uuid,
+export const directPaymentDecisionSchema = z.object({
+  declarationId: uuid,
+  decision: z.enum(["confirmed", "rejected"]),
+  rejectionReason: z.string().trim().min(4).max(500).nullable().optional(),
+}).superRefine((value, context) => {
+  if (value.decision === "rejected" && !value.rejectionReason) {
+    context.addIssue({ code: "custom", path: ["rejectionReason"], message: "Le motif du refus est obligatoire." });
+  }
 });
 
-export const paytechSubscriptionCheckoutSchema = z.object({
+export const orderRefundDeclarationSchema = z.object({
+  amountXof: z.int().positive(),
+  channel: z.enum(["wave", "orange_money"]),
+  externalReference: z.string().trim().min(2).max(120),
+  destinationNumber: e164Phone,
+});
+
+export const orderRefundDecisionSchema = z.object({
+  refundId: uuid,
+  decision: z.enum(["confirmed", "contested"]),
+  contestReason: z.string().trim().min(4).max(500).nullable().optional(),
+}).superRefine((value, context) => {
+  if (value.decision === "contested" && !value.contestReason) {
+    context.addIssue({ code: "custom", path: ["contestReason"], message: "Le motif de contestation est obligatoire." });
+  }
+});
+
+export const courierCompensationSchema = z.object({
+  amountXof: z.int().min(0).max(100_000_000),
+});
+
+export const courierPayoutSchema = z.object({
   merchantId: uuid,
-  planId: z.enum(["essential", "pro", "network"]),
+  courierMembershipId: uuid,
+  deliveryIds: z.array(uuid).min(1).max(200).refine((ids) => new Set(ids).size === ids.length, {
+    message: "Une livraison ne peut être ajoutée qu’une fois.",
+  }),
+  paymentMethod: z.enum(["wave", "orange_money"]),
+  externalReference: z.string().trim().min(2).max(120),
+  paidAt: z.iso.datetime(),
+});
+
+export const courierPaymentProfileSchema = z.object({
+  wavePaymentNumber: e164Phone.nullable(),
+  orangeMoneyPaymentNumber: e164Phone.nullable(),
+  preferredPaymentChannel: z.enum(["wave", "orange_money"]).nullable(),
+}).superRefine((value, context) => {
+  if (value.preferredPaymentChannel === "wave" && !value.wavePaymentNumber) {
+    context.addIssue({ code: "custom", path: ["wavePaymentNumber"], message: "Le numéro Wave préféré est obligatoire." });
+  }
+  if (value.preferredPaymentChannel === "orange_money" && !value.orangeMoneyPaymentNumber) {
+    context.addIssue({ code: "custom", path: ["orangeMoneyPaymentNumber"], message: "Le numéro Orange Money préféré est obligatoire." });
+  }
+});
+
+export const courierPayoutDecisionSchema = z.object({
+  decision: z.enum(["confirmed", "contested"]),
+  contestReason: z.string().trim().min(4).max(500).nullable().optional(),
+}).superRefine((value, context) => {
+  if (value.decision === "contested" && !value.contestReason) {
+    context.addIssue({ code: "custom", path: ["contestReason"], message: "Le motif de contestation est obligatoire." });
+  }
+});
+
+export const courierPayoutVoidSchema = z.object({
+  reason: z.string().trim().min(4).max(500),
+});
+
+export const deliveryDisputeResolutionSchema = z.object({
+  outcome: z.enum(["resolved", "dismissed"]),
+  resolution: z.string().trim().min(4).max(1000),
 });
 
 export const orderDisputeSchema = z.object({
   reason: z.string().trim().min(20).max(1000),
+});
+
+export const directDisputeResolutionSchema = z.object({
+  resolution: z.enum(["refund_required", "no_refund"]),
+  note: z.string().trim().min(4).max(1000),
+});
+
+export const platformPaymentSettingsSchema = z.object({
+  channel: z.enum(["wave", "orange_money"]),
+  paymentNumber: e164Phone,
+  accountHolder: z.string().trim().min(2).max(120).nullable().optional(),
+  active: z.boolean(),
 });
 
 export const disputeResolutionSchema = z.object({

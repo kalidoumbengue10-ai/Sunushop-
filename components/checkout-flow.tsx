@@ -86,7 +86,6 @@ export function CheckoutFlow() {
   const [methodKinds, setMethodKinds] = useState<Record<string, "pickup" | "merchant_delivery">>({});
   const [paymentMethods, setPaymentMethods] = useState<Record<string, CheckoutGroupDraft["paymentMethod"]>>({});
   const [applyLoyalty, setApplyLoyalty] = useState<Record<string, boolean>>({});
-  const [payOnline, setPayOnline] = useState(false);
   const [recipient, setRecipient] = useState<CheckoutRecipient>(emptyRecipient);
   const [quote, setQuote] = useState<{ groups: QuoteGroupResult[]; totalXof: number } | null>(null);
   const [authenticated, setAuthenticated] = useState<boolean | null>(null);
@@ -124,7 +123,7 @@ export function CheckoutFlow() {
               ? current
               : {
                   ...current,
-                  [group.merchantId]: shop.paymentMethods.cashOnDelivery
+                  [group.merchantId]: shop.pickup?.enabled && shop.paymentMethods.cashOnDelivery
                     ? "cash_on_delivery"
                     : shop.paymentMethods.wave
                       ? "wave_direct"
@@ -173,7 +172,7 @@ export function CheckoutFlow() {
         merchantId: group.merchantId,
         methodKind,
         deliveryZoneId: methodKind === "pickup" ? undefined : zones[group.merchantId],
-        applyLoyalty: loyalty[group.merchantId] ?? true,
+        applyLoyalty: false,
         items: group.lines.map((line) => ({ variantId: line.product.variant.id, quantity: line.quantity })),
       };
     });
@@ -218,15 +217,14 @@ export function CheckoutFlow() {
     let cancelled = false;
     const draftZones = Object.fromEntries(draft.groups.filter((group) => group.deliveryZoneId).map((group) => [group.merchantId, group.deliveryZoneId as string]));
     const draftMethodKinds = Object.fromEntries(draft.groups.map((group) => [group.merchantId, group.methodKind]));
-    const draftLoyalty = Object.fromEntries(draft.groups.map((group) => [group.merchantId, group.applyLoyalty ?? true]));
+    const draftLoyalty = Object.fromEntries(draft.groups.map((group) => [group.merchantId, false]));
     queueMicrotask(async () => {
       if (cancelled) return;
       setRecipient(draft.recipient);
       setSelectedZones(draftZones);
       setMethodKinds(draftMethodKinds);
-      setPaymentMethods(Object.fromEntries(draft.groups.map((group) => [group.merchantId, group.paymentMethod])));
+      setPaymentMethods(Object.fromEntries(draft.groups.map((group) => [group.merchantId, group.paymentMethod === "cash_on_delivery" && group.methodKind !== "pickup" ? "wave_direct" : group.paymentMethod])));
       setApplyLoyalty(draftLoyalty);
-      setPayOnline(draft.groups.some((group) => group.paymentMethod === "paytech"));
       await cart.merge();
       if (cancelled) return;
       if (await requestQuote(draftMethodKinds, draftZones, draftLoyalty)) setStep("confirmation");
@@ -240,20 +238,26 @@ export function CheckoutFlow() {
     if (await requestQuote()) setStep("livraison");
   };
 
-  const toggleLoyalty = async (merchantId: string, enabled: boolean) => {
-    const next = { ...applyLoyalty, [merchantId]: enabled };
-    setApplyLoyalty(next);
-    await requestQuote(undefined, undefined, next);
+  const changeMethodKind = (merchantId: string, kind: "pickup" | "merchant_delivery") => {
+    setMethodKinds((current) => ({ ...current, [merchantId]: kind }));
+    if (kind === "merchant_delivery" && paymentMethods[merchantId] === "cash_on_delivery") {
+      const shop = shops[merchantId];
+      setPaymentMethods((current) => ({ ...current, [merchantId]: shop?.paymentMethods.wave ? "wave_direct" : "orange_money_direct" }));
+    }
   };
-
-  // Paiement en ligne PayTech : un seul paiement pour tout le panier, prioritaire
-  // sur les moyens déclaratifs par boutique (espèces/Wave/OM) le temps qu'il est actif.
-  const effectivePaymentMethod = (merchantId: string): CheckoutGroupDraft["paymentMethod"] =>
-    payOnline ? "paytech" : paymentMethods[merchantId];
 
   const confirmLivraison = async () => {
     if (!recipient.name || !recipient.phone || !recipient.region || !recipient.city || !recipient.addressHint) {
       setError("Merci de renseigner toutes les informations de livraison.");
+      return;
+    }
+    const invalidPayment = groups.some((group) => {
+      const methodKind = methodKinds[group.merchantId] ?? "merchant_delivery";
+      const paymentMethod = paymentMethods[group.merchantId];
+      return !paymentMethod || (methodKind === "merchant_delivery" && paymentMethod === "cash_on_delivery");
+    });
+    if (invalidPayment) {
+      setError("La livraison doit être payée directement par Wave ou Orange Money.");
       return;
     }
     if (!(await requestQuote())) return;
@@ -265,8 +269,8 @@ export function CheckoutFlow() {
           merchantId: group.merchantId,
           methodKind,
           deliveryZoneId: methodKind === "pickup" ? undefined : selectedZones[group.merchantId],
-          paymentMethod: effectivePaymentMethod(group.merchantId),
-          applyLoyalty: applyLoyalty[group.merchantId] ?? true,
+          paymentMethod: paymentMethods[group.merchantId],
+          applyLoyalty: false,
         };
       }),
     });
@@ -289,8 +293,8 @@ export function CheckoutFlow() {
               merchantId: group.merchantId,
               methodKind,
               deliveryZoneId: methodKind === "pickup" ? undefined : selectedZones[group.merchantId],
-              paymentMethod: effectivePaymentMethod(group.merchantId),
-              applyLoyalty: applyLoyalty[group.merchantId] ?? true,
+              paymentMethod: paymentMethods[group.merchantId],
+              applyLoyalty: false,
               items: group.lines.map((line) => ({ variantId: line.product.variant.id, quantity: line.quantity })),
             };
           }),
@@ -305,25 +309,6 @@ export function CheckoutFlow() {
           return;
         }
         throw new Error(payload?.error?.message ?? "La commande n’a pas pu être créée.");
-      }
-
-      if (payOnline) {
-        // Un seul paiement PayTech pour tout le lot : on redirige vers la
-        // page de paiement PayTech au lieu d'afficher la confirmation statique.
-        const batchId = payload.data.batchId as string;
-        const checkoutResponse = await fetch("/api/payments/paytech/checkout", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ orderBatchId: batchId }),
-        });
-        const checkoutPayload = await checkoutResponse.json();
-        if (!checkoutResponse.ok || !checkoutPayload?.data?.redirectUrl) {
-          throw new Error(checkoutPayload?.error?.message ?? "Le paiement en ligne n’a pas pu être initié.");
-        }
-        clearCheckoutDraft();
-        cart.clear();
-        window.location.href = checkoutPayload.data.redirectUrl as string;
-        return;
       }
 
       clearCheckoutDraft();
@@ -385,7 +370,7 @@ export function CheckoutFlow() {
                         <input
                           type="radio"
                           checked={(methodKinds[group.merchantId] ?? "merchant_delivery") === "pickup"}
-                          onChange={() => setMethodKinds((current) => ({ ...current, [group.merchantId]: "pickup" }))}
+                          onChange={() => changeMethodKind(group.merchantId, "pickup")}
                         />{" "}
                         Retrait en boutique — 0 F
                       </label>
@@ -395,7 +380,7 @@ export function CheckoutFlow() {
                         <input
                           type="radio"
                           checked={(methodKinds[group.merchantId] ?? "merchant_delivery") === "merchant_delivery"}
-                          onChange={() => setMethodKinds((current) => ({ ...current, [group.merchantId]: "merchant_delivery" }))}
+                          onChange={() => changeMethodKind(group.merchantId, "merchant_delivery")}
                         />{" "}
                         Livraison
                       </label>
@@ -468,24 +453,9 @@ export function CheckoutFlow() {
             </label>
           </div>
 
-          <div className="mvp-card">
-            <h3>Comment voulez-vous payer ?</h3>
-            <div className="mvp-actions">
-              <label>
-                <input type="radio" checked={payOnline} onChange={() => setPayOnline(true)} /> Payer en ligne maintenant (Carte, Wave, Orange Money)
-              </label>
-              <label>
-                <input type="radio" checked={!payOnline} onChange={() => setPayOnline(false)} /> Payer à la réception ou par transfert direct
-              </label>
-            </div>
-            {payOnline && (
-              <p className="mvp-lede">
-                Un seul paiement sécurisé pour l’ensemble du panier. Les fonds sont conservés jusqu’à votre confirmation de réception.
-              </p>
-            )}
-          </div>
+          <div className="mvp-card"><h3>Paiement direct par boutique</h3><p>Chaque transfert est envoyé directement au marchand concerné. Après la commande, vous recevrez son numéro et devrez transmettre la référence du paiement.</p></div>
 
-          {!payOnline && groups.map((group) => {
+          {groups.map((group) => {
             const shop = shops[group.merchantId];
             if (!shop) return null;
             const isPickup = (methodKinds[group.merchantId] ?? "merchant_delivery") === "pickup";
@@ -493,10 +463,10 @@ export function CheckoutFlow() {
               <div className="mvp-card" key={group.merchantId}>
                 <h3>{group.merchantName}</h3>
                 <div className="mvp-actions">
-                  {shop.paymentMethods.cashOnDelivery && (
+                  {isPickup && shop.paymentMethods.cashOnDelivery && (
                     <label>
                       <input type="radio" checked={paymentMethods[group.merchantId] === "cash_on_delivery"} onChange={() => setPaymentMethods((current) => ({ ...current, [group.merchantId]: "cash_on_delivery" }))} />{" "}
-                      {isPickup ? "Espèces au retrait en boutique" : "Espèces à la livraison"}
+                      Espèces au retrait en boutique
                     </label>
                   )}
                   {shop.paymentMethods.wave && (
@@ -517,9 +487,7 @@ export function CheckoutFlow() {
                 {quote.groups.map((group) => (
                   <li className="mvp-row" key={group.merchantId}>
                     <div><span>{group.merchantName} · {group.methodKind === "pickup" ? "Retrait en boutique — 0 F" : `livraison ${formatPrice(group.deliveryFeeXof)}`}</span>
-                      {group.availablePoints > 0 && <label className="checkout-loyalty-toggle"><input type="checkbox" checked={applyLoyalty[group.merchantId] ?? true} onChange={(event) => void toggleLoyalty(group.merchantId, event.target.checked)} /> Utiliser mes points ({group.availablePoints} disponibles)</label>}
-                      {group.loyaltyDiscountXof > 0 && <small>Remise fidélité : −{formatPrice(group.loyaltyDiscountXof)} · {group.pointsApplied} points utilisés</small>}
-                      {group.loyaltyAccrualEnabled && <small>Cette commande rapportera {group.pointsEarnable} points après livraison.</small>}
+                      {group.availablePoints > 0 && <small>Vos {group.availablePoints} points restent visibles mais leur utilisation est temporairement suspendue.</small>}
                     </div>
                     <strong>{formatPrice(group.totalXof)}</strong>
                   </li>
@@ -558,7 +526,7 @@ export function CheckoutFlow() {
           <ul className="mvp-list">
             {quote.groups.map((group) => (
               <li className="mvp-row" key={group.merchantId}>
-                <div><span>{group.merchantName}</span>{group.loyaltyDiscountXof > 0 && <small>−{formatPrice(group.loyaltyDiscountXof)} avec {group.pointsApplied} points</small>}{group.loyaltyAccrualEnabled && <small>{group.pointsEarnable} points à gagner</small>}</div>
+                <div><span>{group.merchantName}</span></div>
                 <strong>{formatPrice(group.totalXof)}</strong>
               </li>
             ))}

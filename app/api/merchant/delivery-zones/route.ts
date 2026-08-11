@@ -6,7 +6,7 @@ export async function POST(request: Request) {
   const requestId = crypto.randomUUID();
   try {
     const input = deliveryZoneInputSchema.parse(await request.json());
-    const { supabase } = await requireActiveMerchantAccess(input.merchantId, ["owner", "manager", "fulfillment"]);
+    const { supabase, admin } = await requireActiveMerchantAccess(input.merchantId, ["owner", "manager", "fulfillment"]);
     const { data, error } = await supabase.rpc("create_delivery_zone", {
       p_merchant_id: input.merchantId,
       p_method_kind: input.methodKind,
@@ -19,6 +19,14 @@ export async function POST(request: Request) {
       p_max_delay_minutes: input.maxDelayMinutes,
     });
     if (error) throw error;
+    if (input.courierFeeXof !== undefined) {
+      const zoneId = (data as { zoneId: string }).zoneId;
+      const { error: updateError } = await admin
+        .from("delivery_zones")
+        .update({ courier_fee_xof: input.courierFeeXof })
+        .eq("id", zoneId);
+      if (updateError) throw updateError;
+    }
     return apiSuccess(data, { status: 201, requestId });
   } catch (error) {
     return apiFailure(error, requestId);

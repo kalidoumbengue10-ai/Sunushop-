@@ -8,8 +8,12 @@ export async function GET(request: Request) {
   try {
     requireCron(request);
     const admin = requireAdminClient();
-    const { data, error } = await admin.rpc("refresh_subscription_states");
+    const [{ data, error }, { data: billingChanged, error: billingError }] = await Promise.all([
+      admin.rpc("refresh_subscription_states"),
+      admin.rpc("refresh_subscription_billing_periods"),
+    ]);
     if (error) throw error;
+    if (billingError) throw billingError;
     const today = new Date();
     const inSevenDays = new Date(today.getTime() + 7 * 86400000).toISOString();
     const { data: subscriptions } = await admin.from("merchant_subscriptions")
@@ -25,7 +29,7 @@ export async function GET(request: Request) {
       const sent = await enqueueEmail(admin, { dedupeKey: `subscription-email:${subscription.id}:${template}:${new Date(subscription.current_period_ends_at).toISOString().slice(0, 10)}`, template, to: merchant?.email, recipientUserId: merchant?.owner_user_id, payload: { currentPeriodEndsAt: subscription.current_period_ends_at, url: new URL("/marchand", request.url).toString() } }).catch(() => false);
       if (sent) queued += 1;
     }
-    return apiSuccess({ changed: data ?? 0, emailsQueued: queued }, { requestId });
+    return apiSuccess({ changed: data ?? 0, billingChanged: billingChanged ?? 0, emailsQueued: queued }, { requestId });
   } catch (error) {
     return apiFailure(error, requestId);
   }

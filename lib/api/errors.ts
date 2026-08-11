@@ -138,33 +138,57 @@ const databaseErrorMap: Record<string, { status: number; message: string }> = {
     status: 429,
     message: "Trop de tentatives. Contactez le commerçant.",
   },
-  PAYTECH_NOT_CONFIGURED: {
-    status: 503,
-    message: "Le paiement en ligne n’est pas encore disponible.",
-  },
-  PAYTECH_UNAVAILABLE: {
-    status: 502,
-    message: "Le service de paiement est momentanément indisponible. Réessayez dans un instant.",
-  },
-  PAYMENT_INTENT_NOT_FOUND: {
+  ORDER_NOT_FOUND: {
     status: 404,
-    message: "Cette intention de paiement est introuvable.",
+    message: "Commande introuvable.",
   },
-  PAYMENT_ALREADY_CAPTURED: {
+  COURIER_FEE_NOT_CONFIGURED: {
     status: 409,
-    message: "Ce paiement a déjà été enregistré.",
+    message: "Fixez d’abord la rémunération du livreur pour cette zone.",
   },
-  ESCROW_NOT_HELD: {
-    status: 409,
-    message: "Les fonds de cette commande ne sont pas retenus.",
+  COURIER_COMPENSATION_INVALID: {
+    status: 422,
+    message: "La compensation du livreur est invalide.",
   },
-  ESCROW_NOT_RELEASABLE: {
+  DELIVERY_NOT_FAILED: {
     status: 409,
-    message: "Les fonds de cette commande ne peuvent pas encore être libérés.",
+    message: "Seule une livraison en échec peut recevoir une compensation manuelle.",
   },
-  ESCROW_DISPUTED: {
+  COURIER_DELIVERIES_REQUIRED: {
+    status: 422,
+    message: "Sélectionnez au moins une livraison à régler.",
+  },
+  COURIER_DELIVERY_NOT_PAYABLE: {
     status: 409,
-    message: "Un litige est en cours sur cette commande.",
+    message: "Une livraison sélectionnée n’est pas payable ou appartient à un autre livreur.",
+  },
+  COURIER_PAYOUT_NOT_FOUND: {
+    status: 404,
+    message: "Ce règlement livreur est introuvable.",
+  },
+  COURIER_PAYOUT_VOID_REASON_REQUIRED: {
+    status: 422,
+    message: "Indiquez la raison de l’annulation du règlement.",
+  },
+  DELIVERY_DISPUTE_NOT_ALLOWED: {
+    status: 409,
+    message: "Aucun litige livraison ne peut être ouvert à ce stade.",
+  },
+  DELIVERY_DISPUTE_NOT_FOUND: {
+    status: 404,
+    message: "Ce litige livraison est introuvable.",
+  },
+  DELIVERY_DISPUTE_ALREADY_OPEN: {
+    status: 409,
+    message: "Un litige de livraison est déjà ouvert.",
+  },
+  DELIVERY_DISPUTE_ALREADY_RESOLVED: {
+    status: 409,
+    message: "Ce litige de livraison a déjà été traité.",
+  },
+  DELIVERY_DISPUTE_OUTCOME_INVALID: {
+    status: 422,
+    message: "La décision du litige de livraison est invalide.",
   },
   ORDER_NOT_DELIVERED: {
     status: 409,
@@ -178,14 +202,29 @@ const databaseErrorMap: Record<string, { status: number; message: string }> = {
     status: 409,
     message: "Le délai pour signaler un problème est dépassé.",
   },
-  PAYOUT_ALREADY_SENT: {
-    status: 409,
-    message: "Ce reversement a déjà été envoyé.",
-  },
-  MERCHANT_PAYOUT_NUMBER_MISSING: {
-    status: 409,
-    message: "Le commerçant n’a renseigné aucun numéro Wave ou Orange Money pour être payé.",
-  },
+  ADMIN_AAL2_REQUIRED: { status: 403, message: "Une authentification renforcée est requise." },
+  PAYTECH_DISABLED: { status: 422, message: "Cet ancien moyen de paiement n’est plus disponible." },
+  CASH_PICKUP_ONLY: { status: 422, message: "Les espèces sont disponibles uniquement pour un retrait en boutique." },
+  CASH_NOT_YET_COLLECTIBLE: { status: 409, message: "Marquez les espèces reçues uniquement lorsque la commande est prête à être retirée." },
+  CASH_PAYMENT_NOT_CONFIRMED: { status: 409, message: "Confirmez la réception des espèces avant de remettre la commande." },
+  DIRECT_PAYMENT_NOT_CONFIRMED: { status: 409, message: "Confirmez d’abord le transfert direct reçu." },
+  DIRECT_PAYMENT_CHANNEL_REQUIRED: { status: 422, message: "Choisissez Wave ou Orange Money." },
+  PAYMENT_CHANNEL_UNAVAILABLE: { status: 409, message: "Aucun numéro actif n’est configuré pour ce canal." },
+  PAYMENT_ALREADY_CONFIRMED: { status: 409, message: "Ce paiement a déjà été confirmé." },
+  PAYMENT_REFERENCE_REQUIRED: { status: 422, message: "La référence du transfert est obligatoire." },
+  PAYMENT_DECLARATION_ALREADY_REVIEWED: { status: 409, message: "Cette déclaration a déjà été contrôlée." },
+  PAYMENT_REJECTION_REASON_REQUIRED: { status: 422, message: "Indiquez le motif du refus." },
+  PAYMENT_ALREADY_REVIEWED: { status: 409, message: "Ce paiement d’abonnement a déjà été contrôlé." },
+  BILLING_CYCLE_INVALID: { status: 422, message: "Le cycle de facturation est invalide." },
+  ORDER_NOT_PAID: { status: 409, message: "Cette commande n’est pas encore payée." },
+  REFUND_AMOUNT_INVALID: { status: 422, message: "Le montant remboursé dépasse le montant encore remboursable." },
+  REFUND_ALREADY_REVIEWED: { status: 409, message: "Ce remboursement a déjà été contrôlé." },
+  DIRECT_REFUND_CHANNEL_REQUIRED: { status: 422, message: "Le remboursement doit utiliser Wave ou Orange Money." },
+  COURIER_PAYMENT_NUMBER_MISSING: { status: 409, message: "Le livreur n’a pas renseigné de numéro pour ce canal." },
+  COURIER_PAYOUT_REFERENCE_REQUIRED: { status: 422, message: "La référence du transfert au livreur est obligatoire." },
+  COURIER_PAYOUT_ALREADY_REVIEWED: { status: 409, message: "Ce règlement a déjà été contrôlé par le livreur." },
+  COURIER_PAYOUT_NOT_VOIDABLE: { status: 409, message: "Ce règlement confirmé ne peut plus être annulé." },
+  LOYALTY_PROGRAM_FROZEN: { status: 409, message: "Le programme de fidélité est temporairement suspendu." },
   PICKUP_NOT_AVAILABLE: {
     status: 409,
     message: "Le retrait en boutique n’est pas disponible pour cette boutique.",

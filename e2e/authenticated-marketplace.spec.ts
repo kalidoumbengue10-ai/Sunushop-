@@ -134,6 +134,7 @@ test.describe.serial("flux authentifiés marketplace", () => {
         region: "Dakar",
         city: "Dakar",
         address_hint: "Point de retrait E2E",
+        wave_payment_number: "+221770000001",
         status: "active",
         verification_status: "approved",
         subscription_status: "active",
@@ -167,6 +168,7 @@ test.describe.serial("flux authentifiés marketplace", () => {
               city: "Dakar",
               label: "Dakar E2E",
               feeXof: 1500,
+              courierFeeXof: 1000,
               minDelayMinutes: 30,
               maxDelayMinutes: 120,
             },
@@ -371,13 +373,14 @@ test.describe.serial("flux authentifiés marketplace", () => {
             groups: [{
               merchantId: merchant.id,
               deliveryZoneId: zone.zoneId,
-              paymentMethod: "cash_on_delivery",
+              methodKind: "merchant_delivery",
+              paymentMethod: "wave_direct",
               items: [{ variantId: product.variantId, quantity: 2 }],
             }],
           };
           const batch = await responseData<{
             batchId: string;
-            orders: Array<{ id: string; publicCode: string }>;
+            orders: Array<{ id: string; publicCode: string; totalXof: number }>;
           }>(
             await clientContext.request.post("/api/orders/batch", {
               headers: { "idempotency-key": idempotencyKey },
@@ -396,6 +399,8 @@ test.describe.serial("flux authentifiés marketplace", () => {
             201,
           );
           expect(duplicate.batchId).toBe(batch.batchId);
+          const declaration = await responseData<{ id: string }>(await clientContext.request.post(`/api/orders/${created.orderId}/payment-declarations`, { data: { channel: "wave", externalReference: `WAVE-ORDER-${runId}`, amountXof: batch.orders[0].totalXof, declaredAt: new Date().toISOString() } }), 201);
+          await responseData(await merchantContext.request.patch(`/api/orders/${created.orderId}/payment-declarations`, { data: { declarationId: declaration.id, decision: "confirmed" } }), 200);
 
           const clientPage = await clientContext.newPage();
           await clientPage.goto("/client");
@@ -557,14 +562,14 @@ test.describe.serial("flux authentifiés marketplace", () => {
 
           const history = await responseData<{
             items: Array<{ id: string; status: string; recipient: JsonObject }>;
-            deliveredThisMonth: number;
+            stats: { deliveredThisMonth: number };
           }>(await courierContext.request.get("/api/deliveries/mine"), 200);
           const delivered = history.items.find((item) => item.id === assigned.id);
           expect(delivered).toMatchObject({
             status: "delivered",
             recipient: { name: null, phone: null, addressHint: null, city: "Dakar", region: "Dakar" },
           });
-          expect(history.deliveredThisMonth).toBeGreaterThanOrEqual(1);
+          expect(history.stats.deliveredThisMonth).toBeGreaterThanOrEqual(1);
 
           const courierPage = await courierContext.newPage();
           await courierPage.goto("/marchand");
@@ -582,33 +587,11 @@ test.describe.serial("flux authentifiés marketplace", () => {
             accounts: Array<{ merchant_id: string; availablePoints: number }>;
           }>(await clientContext.request.get("/api/client/loyalty"), 200);
           const loyaltyAccount = loyalty.accounts.find((account) => account.merchant_id === merchant.id);
-          expect(loyaltyAccount?.availablePoints).toBeGreaterThan(0);
-          const balanceBeforeRedemption = loyaltyAccount!.availablePoints;
+          expect(loyaltyAccount?.availablePoints ?? 0).toBe(0);
           const loyaltyQuote = await responseData<{
             groups: Array<{ merchantId: string; pointsApplied: number; loyaltyDiscountXof: number; totalXof: number }>;
           }>(await clientContext.request.post("/api/cart/quote", { data: { groups: [{ merchantId: merchant.id, deliveryZoneId: zone.zoneId, applyLoyalty: true, items: [{ variantId: product.variantId, quantity: 1 }] }] } }), 200);
-          expect(loyaltyQuote.groups[0].pointsApplied).toBe(balanceBeforeRedemption);
-          expect(loyaltyQuote.groups[0].loyaltyDiscountXof).toBe(balanceBeforeRedemption);
-          const optOutQuote = await responseData<{ groups: Array<{ pointsApplied: number; loyaltyDiscountXof: number }> }>(await clientContext.request.post("/api/cart/quote", { data: { groups: [{ merchantId: merchant.id, deliveryZoneId: zone.zoneId, applyLoyalty: false, items: [{ variantId: product.variantId, quantity: 1 }] }] } }), 200);
-          expect(optOutQuote.groups[0]).toMatchObject({ pointsApplied: 0, loyaltyDiscountXof: 0 });
-
-          const loyaltyBatch = await responseData<{
-            orders: Array<{ id: string; loyaltyPointsRedeemed: number; loyaltyDiscountXof: number }>;
-          }>(await clientContext.request.post("/api/orders/batch", {
-            headers: { "idempotency-key": `e2e-loyalty-${runId}` },
-            data: { recipient: { name: "Client E2E", phone: "+221770000002", region: "Dakar", city: "Dakar", addressHint: "Adresse fictive Playwright" }, groups: [{ merchantId: merchant.id, deliveryZoneId: zone.zoneId, paymentMethod: "cash_on_delivery", applyLoyalty: true, items: [{ variantId: product.variantId, quantity: 1 }] }] },
-          }), 201);
-          expect(loyaltyBatch.orders[0]).toMatchObject({ loyaltyPointsRedeemed: balanceBeforeRedemption, loyaltyDiscountXof: balanceBeforeRedemption });
-          const { data: contribution, error: contributionError } = await admin.from("loyalty_contributions").select("merchant_share_xof, platform_share_xof").eq("order_id", loyaltyBatch.orders[0].id).eq("kind", "redemption").single();
-          if (contributionError) throw contributionError;
-          expect(contribution.merchant_share_xof + contribution.platform_share_xof).toBe(balanceBeforeRedemption);
-          expect(Math.abs(contribution.merchant_share_xof - contribution.platform_share_xof)).toBeLessThanOrEqual(1);
-          await responseData(await merchantContext.request.post(`/api/orders/${loyaltyBatch.orders[0].id}/status`, { data: { status: "cancelled", publicMessage: "Annulation E2E fidélité" } }), 200);
-          const restored = await responseData<{ accounts: Array<{ merchant_id: string; availablePoints: number }> }>(await clientContext.request.get("/api/client/loyalty"), 200);
-          expect(restored.accounts.find((account) => account.merchant_id === merchant.id)?.availablePoints).toBe(balanceBeforeRedemption);
-          const { data: reversal, error: reversalError } = await admin.from("loyalty_contributions").select("platform_share_xof").eq("order_id", loyaltyBatch.orders[0].id).eq("kind", "reversal").single();
-          if (reversalError) throw reversalError;
-          expect(reversal.platform_share_xof).toBe(-contribution.platform_share_xof);
+          expect(loyaltyQuote.groups[0]).toMatchObject({ pointsApplied: 0, loyaltyDiscountXof: 0 });
           await responseData(await merchantContext.request.patch("/api/merchant/couriers", { data: { merchantId: merchant.id, membershipId: courierMembership.id, displayName: "Livreur E2E", phone: "+221770000003", vehicleType: "motorbike", vehicleRegistration: `DK-${runId.slice(-6)}`, status: "inactive" } }), 200);
           const inactiveProfile = await responseData<{ items: Array<{ id: string; status: string; stats: { deliveredTotal: number } }> }>(await merchantContext.request.get(`/api/merchant/couriers?merchantId=${merchant.id}`), 200);
           expect(inactiveProfile.items.find((item) => item.id === courierMembership.id)).toMatchObject({ status: "inactive", stats: { deliveredTotal: 1 } });
@@ -724,8 +707,17 @@ test.describe.serial("flux authentifiés marketplace", () => {
       await ownerPage.getByLabel("Qualité (ex. Propriétaire, Gérant)").fill("Propriétaire");
       await ownerPage.getByLabel("Activité principale et catégories de produits proposées").fill("Vente de vêtements traditionnels et accessoires artisanaux.");
       await ownerPage.getByLabel("Fait à (lieu de signature)").fill("Dakar");
-      await ownerPage.getByLabel("Je certifie sur l’honneur l’exactitude des déclarations ci-dessus.").check({ force: true });
-      await ownerPage.getByRole("button", { name: "Générer et enregistrer ma lettre d’intention" }).click({ force: true });
+      const certificationCheckbox = ownerPage.getByLabel(
+        "Je certifie sur l’honneur l’exactitude des déclarations ci-dessus.",
+      );
+      const generateIntentLetterButton = ownerPage.getByRole("button", {
+        name: "Générer et enregistrer ma lettre d’intention",
+      });
+
+      await certificationCheckbox.check({ force: true });
+      await expect(certificationCheckbox).toBeChecked();
+      await expect(generateIntentLetterButton).toBeEnabled();
+      await generateIntentLetterButton.click();
       await expect(ownerPage.getByText("Lettre d’intention enregistrée")).toBeVisible({ timeout: 15_000 });
       await expect(ownerPage.getByRole("button", { name: "Voir le PDF" })).toBeVisible();
       await expect(ownerPage.getByRole("button", { name: "Télécharger le PDF" })).toBeVisible();

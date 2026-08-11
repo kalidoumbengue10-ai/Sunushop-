@@ -3,7 +3,7 @@ import "server-only";
 import { requireAdminClient, requireUser } from "@/lib/api/auth";
 import { ApiError } from "@/lib/api/errors";
 
-export type MerchantWorkspaceRole = "owner" | "manager" | "catalog" | "fulfillment" | "finance";
+export type MerchantWorkspaceRole = "owner" | "manager" | "catalog" | "fulfillment";
 
 export async function requireActiveMerchantAccess(
   merchantId: string,

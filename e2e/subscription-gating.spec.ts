@@ -292,7 +292,8 @@ test.describe.serial("blocage des vendeurs non abonnés", () => {
               {
                 merchantId: merchant.id,
                 deliveryZoneId: zone.id,
-                paymentMethod: "cash_on_delivery",
+                methodKind: "merchant_delivery",
+                paymentMethod: "wave_direct",
                 items: [{ variantId: variant.id, quantity: 1 }],
               },
             ],

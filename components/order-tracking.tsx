@@ -14,6 +14,7 @@ type OrderPayload = {
     merchant_id: string;
     public_code: string;
     status: string;
+    payment_status: string;
     total_xof: number;
     loyalty_points_redeemed: number;
     loyalty_discount_xof: number;
@@ -48,6 +49,9 @@ type OrderPayload = {
     external_reference: string;
     amount_xof: number;
     declared_at: string;
+    status: "pending" | "confirmed" | "rejected";
+    reviewed_at: string | null;
+    rejection_reason: string | null;
     confirmed_by_merchant_at: string | null;
   }>;
   delivery: {
@@ -57,26 +61,42 @@ type OrderPayload = {
     pickup_verified_at: string | null;
     delivered_at: string | null;
   } | null;
-  escrow: {
+  refunds: Array<{
+    id: string; amount_xof: number; channel: string; external_reference: string;
+    status: "pending_confirmation" | "confirmed" | "contested"; declared_at: string;
+    reviewed_at: string | null; contest_reason: string | null;
+  }>;
+  orderDisputes: Array<{
+    id: string; reason: string; status: string; resolution: string | null;
+    resolution_note: string | null; opened_at: string; resolved_at: string | null;
+  }>;
+  deliveryDisputes: Array<{
     id: string;
-    status: string;
-    releasable_at: string | null;
-    dispute_opened_at: string | null;
-    dispute_reason: string | null;
-    dispute_resolved_at: string | null;
-    dispute_resolution: string | null;
-  } | null;
+    reason: string;
+    status: "open" | "resolved" | "dismissed";
+    resolution: string | null;
+    opened_at: string;
+    resolved_at: string | null;
+    delivery_dispute_events: Array<{ id: number; event_type: string; message: string; created_at: string }>;
+  }>;
 };
 
 function formatDateTime(value: string) {
   return new Intl.DateTimeFormat("fr-SN", { dateStyle: "long", timeStyle: "short", timeZone: "Africa/Dakar" }).format(new Date(value));
 }
+const paymentStatusLabels: Record<string, string> = {
+  awaiting_payment: "à payer", cash_due: "espèces dues au retrait",
+  pending_confirmation: "validation en attente", paid: "payé",
+  payment_refused: "paiement refusé", refund_pending: "remboursement en attente",
+  refunded: "remboursé",
+};
 
 export function OrderTracking({ orderId }: { orderId: string }) {
   const [payload, setPayload] = useState<OrderPayload>();
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [showDisputeForm, setShowDisputeForm] = useState(false);
+  const [showDeliveryDisputeForm, setShowDeliveryDisputeForm] = useState(false);
   const [savMessage, setSavMessage] = useState("");
 
   const loadOrder = () =>
@@ -128,24 +148,6 @@ export function OrderTracking({ orderId }: { orderId: string }) {
     await loadOrder();
   };
 
-  const confirmReception = async () => {
-    if (!window.confirm("Confirmer que vous avez bien reçu une commande conforme ? Le marchand sera payé.")) return;
-    setBusy(true);
-    setError("");
-    setSavMessage("");
-    try {
-      const response = await fetch(`/api/orders/${orderId}/reception`, { method: "POST" });
-      const body = await response.json();
-      if (!response.ok) throw new Error(body.error?.message ?? "Confirmation impossible.");
-      setSavMessage("Merci ! La réception est confirmée et le marchand va être payé.");
-      await loadOrder();
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Confirmation impossible.");
-    } finally {
-      setBusy(false);
-    }
-  };
-
   const submitDispute = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setBusy(true);
@@ -160,8 +162,50 @@ export function OrderTracking({ orderId }: { orderId: string }) {
       });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error?.message ?? "Signalement impossible.");
-      setSavMessage("Votre signalement est transmis à l’équipe SunuShop. Les fonds sont gelés en attendant l’arbitrage.");
+      setSavMessage("Votre signalement est transmis à l’équipe SunuShop. Le support va examiner le dossier avec le marchand.");
       setShowDisputeForm(false);
+      await loadOrder();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Signalement impossible.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const reviewRefund = async (refundId: string, decision: "confirmed" | "contested") => {
+    const contestReason = decision === "contested" ? window.prompt("Pourquoi contestez-vous la réception du remboursement ?") : null;
+    if (decision === "contested" && (!contestReason || contestReason.trim().length < 4)) return;
+    setBusy(true); setError("");
+    try {
+      const response = await fetch(`/api/orders/${orderId}/refunds`, {
+        method: "PATCH", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ refundId, decision, contestReason }),
+      });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error?.message ?? "Décision impossible.");
+      setSavMessage(decision === "confirmed" ? "Remboursement confirmé." : "Remboursement contesté et transmis au support.");
+      await loadOrder();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Décision impossible.");
+    } finally { setBusy(false); }
+  };
+
+  const submitDeliveryDispute = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setBusy(true);
+    setError("");
+    setSavMessage("");
+    const form = new FormData(event.currentTarget);
+    try {
+      const response = await fetch(`/api/orders/${orderId}/delivery-disputes`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ reason: form.get("reason") }),
+      });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error?.message ?? "Signalement impossible.");
+      setSavMessage("Votre litige de livraison est transmis au support SunuShop.");
+      setShowDeliveryDisputeForm(false);
       await loadOrder();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Signalement impossible.");
@@ -230,6 +274,7 @@ export function OrderTracking({ orderId }: { orderId: string }) {
           <>
             <div className="mvp-divider" />
             <h2>Paiement direct au vendeur</h2>
+            <p className="mvp-status" data-status={payload.order.payment_status}>Statut : {paymentStatusLabels[payload.order.payment_status] ?? payload.order.payment_status}</p>
             <p>
               Envoyez {formatPrice(payload.order.total_xof)} par{" "}
               {payload.order.payment_method === "wave_direct"
@@ -241,7 +286,7 @@ export function OrderTracking({ orderId }: { orderId: string }) {
               </strong>
               , puis indiquez la référence.
             </p>
-            {!payload.paymentDeclarations.length ? (
+            {!payload.paymentDeclarations.some((item) => item.status === "pending") && !["paid", "refund_pending", "refunded"].includes(payload.order.payment_status) ? (
               <form className="mvp-form" onSubmit={declarePayment}>
                 <label className="mvp-field">
                   Référence du transfert
@@ -251,44 +296,60 @@ export function OrderTracking({ orderId }: { orderId: string }) {
                   {busy ? "Envoi…" : "Déclarer le paiement"}
                 </button>
               </form>
+            ) : null}
+            {payload.paymentDeclarations.map((declaration) => <p className="mvp-alert" key={declaration.id}>
+              Paiement {declaration.external_reference} · {declaration.status === "confirmed" ? "confirmé par le vendeur" : declaration.status === "rejected" ? "refusé par le vendeur" : "en attente de confirmation"}
+              {declaration.rejection_reason ? <><br />Motif : {declaration.rejection_reason}</> : null}
+            </p>)}
+          </>
+        )}
+        {payload.refunds.map((refund) => <div className="mvp-alert" key={refund.id}>
+          <strong>Remboursement de {formatPrice(refund.amount_xof)}</strong><br />
+          {refund.channel} · référence {refund.external_reference} · {refund.status.replaceAll("_", " ")}
+          {refund.status === "pending_confirmation" && <div className="mvp-actions">
+            <button className="mvp-button" onClick={() => void reviewRefund(refund.id, "confirmed")} disabled={busy}>Confirmer la réception</button>
+            <button className="mvp-button mvp-button--secondary" onClick={() => void reviewRefund(refund.id, "contested")} disabled={busy}>Contester</button>
+          </div>}
+          {refund.contest_reason && <p>Motif : {refund.contest_reason}</p>}
+        </div>)}
+        {savMessage && <p className="mvp-alert">{savMessage}</p>}
+        {payload.delivery && ["assigned", "accepted", "at_pickup", "picked_up", "in_transit", "delivered", "failed"].includes(payload.delivery.status) && !payload.deliveryDisputes.some((item) => item.status === "open") && (
+          <>
+            <div className="mvp-divider" />
+            <h2>Problème de livraison</h2>
+            <p>Vous pouvez ouvrir un dossier pendant la livraison ou jusqu’à trois jours après sa fin, quel que soit votre moyen de paiement.</p>
+            {!showDeliveryDisputeForm ? (
+              <button type="button" className="mvp-button mvp-button--secondary" onClick={() => setShowDeliveryDisputeForm(true)} disabled={busy}>
+                Ouvrir un litige de livraison
+              </button>
             ) : (
-              <p className="mvp-alert">
-                Paiement déclaré :{" "}
-                {payload.paymentDeclarations[0].external_reference} ·{" "}
-                {payload.paymentDeclarations[0].confirmed_by_merchant_at
-                  ? "confirmé par le vendeur"
-                  : "en attente de confirmation"}
-              </p>
+              <form className="mvp-form" onSubmit={submitDeliveryDispute}>
+                <label className="mvp-field">
+                  Décrivez précisément le problème (20 caractères minimum)
+                  <textarea name="reason" required minLength={20} maxLength={1000} rows={4} />
+                </label>
+                <div className="mvp-actions">
+                  <button className="mvp-button mvp-button--danger" disabled={busy}>{busy ? "Envoi…" : "Transmettre au support"}</button>
+                  <button type="button" className="mvp-button mvp-button--secondary" onClick={() => setShowDeliveryDisputeForm(false)} disabled={busy}>Annuler</button>
+                </div>
+              </form>
             )}
           </>
         )}
-        {savMessage && <p className="mvp-alert">{savMessage}</p>}
-        {payload.escrow?.status === "held" && payload.order.status === "delivered" && (
+        {payload.deliveryDisputes.map((dispute) => (
+          <div className="mvp-alert" key={dispute.id}>
+            <strong>Litige de livraison {dispute.status === "open" ? "en cours" : "traité"}</strong>
+            <p>{dispute.reason}</p>
+            <small>Ouvert le {formatDateTime(dispute.opened_at)}</small>
+            {dispute.resolution && <p><strong>Décision du support :</strong> {dispute.resolution}</p>}
+          </div>
+        ))}
+        {["paid", "refund_pending"].includes(payload.order.payment_status) && !payload.orderDisputes.some((item) => ["open", "refund_required"].includes(item.status)) && (
           <>
             <div className="mvp-divider" />
-            <h2>Réception de la commande</h2>
-            {payload.escrow.releasable_at && (
-              <p>
-                Sans action de votre part, la commande sera validée
-                automatiquement le{" "}
-                <strong>{formatDateTime(payload.escrow.releasable_at)}</strong>{" "}
-                et le marchand sera payé.
-              </p>
-            )}
+            <h2>Problème avec la commande</h2>
             {!showDisputeForm ? (
-              <div className="mvp-actions">
-                <button className="mvp-button" onClick={confirmReception} disabled={busy}>
-                  J’ai bien reçu ma commande, elle est conforme
-                </button>
-                <button
-                  type="button"
-                  className="mvp-button mvp-button--secondary"
-                  onClick={() => setShowDisputeForm(true)}
-                  disabled={busy}
-                >
-                  Signaler un problème
-                </button>
-              </div>
+              <button type="button" className="mvp-button mvp-button--secondary" onClick={() => setShowDisputeForm(true)} disabled={busy}>Signaler un problème de commande ou de paiement</button>
             ) : (
               <form className="mvp-form" onSubmit={submitDispute}>
                 <label className="mvp-field">
@@ -312,29 +373,11 @@ export function OrderTracking({ orderId }: { orderId: string }) {
             )}
           </>
         )}
-        {payload.escrow?.status === "disputed" && (
-          <>
-            <div className="mvp-divider" />
-            <h2>Litige en cours</h2>
-            <p className="mvp-alert">
-              Un litige est ouvert sur cette commande depuis le{" "}
-              {payload.escrow.dispute_opened_at && formatDateTime(payload.escrow.dispute_opened_at)}
-              . Les fonds sont gelés en attendant l’arbitrage de l’équipe
-              SunuShop.
-            </p>
-          </>
-        )}
-        {payload.escrow?.dispute_resolution && (
-          <>
-            <div className="mvp-divider" />
-            <p className="mvp-alert">
-              Litige résolu —{" "}
-              {payload.escrow.dispute_resolution === "refund"
-                ? "vous avez été remboursé."
-                : "le marchand a été payé."}
-            </p>
-          </>
-        )}
+        {payload.orderDisputes.map((dispute) => <div className="mvp-alert" key={dispute.id}>
+          <strong>Litige de commande · {dispute.status.replaceAll("_", " ")}</strong>
+          <p>{dispute.reason}</p><small>Ouvert le {formatDateTime(dispute.opened_at)}</small>
+          {dispute.resolution_note && <p>Décision du support : {dispute.resolution_note}</p>}
+        </div>)}
       </section>
       <section className="mvp-card">
         <h2>Besoin d’aide ?</h2>

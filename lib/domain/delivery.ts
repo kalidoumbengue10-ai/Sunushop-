@@ -18,8 +18,8 @@ export function canTransitionDelivery(from: DeliveryStatus, to: DeliveryStatus) 
 export function anonymizeCompletedDelivery<T extends {
   status: DeliveryStatus;
   recipient?: Record<string, unknown> | null;
-}>(delivery: T) {
-  if (!['delivered', 'failed', 'cancelled'].includes(delivery.status)) return delivery;
+}>(delivery: T, options: { allowTerminalDetails?: boolean } = {}) {
+  if (options.allowTerminalDetails || !['delivered', 'failed', 'cancelled'].includes(delivery.status)) return delivery;
   const recipient = delivery.recipient ?? {};
   return {
     ...delivery,

@@ -29,7 +29,12 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     }
     const { data, error: updateError } = await admin
       .from("deliveries")
-      .update({ status: input.status, failure_reason: input.status === "failed" ? input.note : null })
+      .update({
+        status: input.status,
+        failure_reason: input.status === "failed" ? input.note : null,
+        terminal_at: ["failed", "cancelled"].includes(input.status) ? new Date().toISOString() : null,
+        ...(input.status === "failed" ? { courier_payment_status: "review_required", courier_payable_xof: 0 } : {}),
+      })
       .eq("id", id)
       .select("id, status")
       .single();

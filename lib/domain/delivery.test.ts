@@ -31,4 +31,13 @@ describe("livraison marchande", () => {
     });
     expect(result.recipient).toEqual({ name: null, phone: null, addressHint: null, region: "Dakar", city: "Dakar" });
   });
+
+  it("ne rend les coordonnées terminales que pendant un litige actif", () => {
+    const delivery = {
+      status: "failed" as const,
+      recipient: { name: "Client", phone: "+221770000000", addressHint: "Rue 1", region: "Dakar", city: "Dakar" },
+    };
+    expect(anonymizeCompletedDelivery(delivery).recipient?.phone).toBeNull();
+    expect(anonymizeCompletedDelivery(delivery, { allowTerminalDetails: true }).recipient?.phone).toBe("+221770000000");
+  });
 });

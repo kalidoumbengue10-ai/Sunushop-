@@ -4,7 +4,6 @@ import { MerchantWorkspace } from "@/components/merchant-workspace";
 import { CourierWorkspace } from "@/components/courier-workspace";
 import { MvpShell } from "@/components/mvp-shell";
 import { SetupRequired } from "@/components/setup-required";
-import { pilotConfig } from "@/lib/config/env";
 import {
   getAdminSupabase,
   getServerSupabase,
@@ -99,6 +98,10 @@ export default async function MarchandPage({ searchParams }: { searchParams: Pro
     .select("id, name, monthly_price_xof, product_limit")
     .eq("active", true)
     .order("position");
+  const platformPaymentSettingsPromise = admin ? (admin as any)
+    .from("platform_payment_settings")
+    .select("channel, payment_number, account_holder")
+    .eq("active", true) : Promise.resolve({ data: [] });
 
   if (!merchant) {
     return (
@@ -128,6 +131,7 @@ export default async function MarchandPage({ searchParams }: { searchParams: Pro
     { data: payments },
     { data: orders },
     { data: notifications },
+    { data: platformPaymentSettings },
   ] = await Promise.all([
     admin!
       .from("verification_cases")
@@ -153,13 +157,13 @@ export default async function MarchandPage({ searchParams }: { searchParams: Pro
     admin!
       .from("delivery_zones")
       .select(
-        "id, label, region, city, fee_xof, min_delay_minutes, max_delay_minutes, active, delivery_methods(kind), delivery_category_rates(category_id, fee_xof)",
+        "id, label, region, city, fee_xof, courier_fee_xof, min_delay_minutes, max_delay_minutes, active, delivery_methods(kind), delivery_category_rates(category_id, fee_xof)",
       )
       .eq("merchant_id", merchant.id)
       .order("created_at", { ascending: false }),
     admin!
       .from("merchant_subscriptions")
-      .select("plan_id, status, current_period_ends_at, grace_ends_at")
+      .select("plan_id, status, billing_cycle, current_period_ends_at, grace_ends_at")
       .eq("merchant_id", merchant.id)
       .in("status", ["pending", "active", "grace"])
       .order("created_at", { ascending: false })
@@ -168,14 +172,14 @@ export default async function MarchandPage({ searchParams }: { searchParams: Pro
     admin!
       .from("subscription_payment_submissions")
       .select(
-        "id, plan_id, channel, external_reference, amount_xof, status, created_at",
+        "id, plan_id, billing_cycle, period_months, channel, destination_number, external_reference, amount_xof, status, created_at",
       )
       .eq("merchant_id", merchant.id)
       .order("created_at", { ascending: false }),
     admin!
       .from("orders")
       .select(
-        "id, public_code, merchant_sequence, status, total_xof, created_at, direct_payment_declarations(id, external_reference, confirmed_by_merchant_at)",
+        "id, public_code, merchant_sequence, status, payment_method, payment_status, total_xof, created_at, direct_payment_declarations(id, external_reference, status, rejection_reason, confirmed_by_merchant_at)",
       )
       .eq("merchant_id", merchant.id)
       .order("created_at", { ascending: false })
@@ -186,6 +190,7 @@ export default async function MarchandPage({ searchParams }: { searchParams: Pro
       .eq("recipient_user_id", user.id)
       .order("created_at", { ascending: false })
       .limit(20),
+    platformPaymentSettingsPromise,
   ]);
 
   const productsWithMediaUrls = (products ?? []).map((product) => ({
@@ -202,6 +207,7 @@ export default async function MarchandPage({ searchParams }: { searchParams: Pro
         <div className="mvp-shell">
           {courierMembership && <div className="merchant-role-switch"><span className="mvp-button">Ma boutique</span><Link className="mvp-button mvp-button--secondary" href="/marchand?mode=missions">Mes missions</Link></div>}
           <MerchantWorkspace
+            memberRole={membership!.role}
             merchant={merchant}
             verificationCase={verificationCase}
             documents={documents ?? []}
@@ -214,8 +220,8 @@ export default async function MarchandPage({ searchParams }: { searchParams: Pro
             orders={orders ?? []}
             notifications={notifications ?? []}
             subscriptionPaymentNumbers={{
-              wave: pilotConfig.waveMerchantNumber || null,
-              orangeMoney: pilotConfig.orangeMoneyMerchantNumber || null,
+              wave: platformPaymentSettings?.find((item: { channel: string }) => item.channel === "wave")?.payment_number ?? null,
+              orangeMoney: platformPaymentSettings?.find((item: { channel: string }) => item.channel === "orange_money")?.payment_number ?? null,
             }}
           />
         </div>

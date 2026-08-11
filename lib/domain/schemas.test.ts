@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   cartQuoteSchema,
+  courierPayoutSchema,
   crmLeadUpdateSchema,
   intentLetterSubmissionSchema,
   merchantApplicationSchema,
@@ -9,6 +10,7 @@ import {
   productMediaOrderSchema,
   prelaunchLeadIngestSchema,
   signUpWithPasswordSchema,
+  subscriptionPaymentSchema,
 } from "./schemas";
 
 const merchantA = "00000000-0000-4000-8000-000000000001";
@@ -165,5 +167,33 @@ describe("validation des entrées métier", () => {
 
   it("refuse une mise à jour CRM vide", () => {
     expect(crmLeadUpdateSchema.safeParse({}).success).toBe(false);
+  });
+});
+
+describe("règlements livreur", () => {
+  it("limite le règlement groupé à Wave/Orange Money avec une référence unique", () => {
+    const base = { merchantId: merchantA, courierMembershipId: zoneA, deliveryIds: [variantA], paidAt: "2026-08-10T12:00:00.000Z" };
+    expect(courierPayoutSchema.safeParse({ ...base, paymentMethod: "cash" }).success).toBe(false);
+    expect(courierPayoutSchema.safeParse({ ...base, paymentMethod: "wave" }).success).toBe(false);
+    expect(courierPayoutSchema.safeParse({ ...base, paymentMethod: "wave", externalReference: "WAVE-42" }).success).toBe(true);
+    expect(courierPayoutSchema.safeParse({ ...base, paymentMethod: "orange_money", externalReference: "OM-42", deliveryIds: [variantA, variantA] }).success).toBe(false);
+  });
+});
+
+describe("paiements directs et abonnements", () => {
+  const recipient = { name: "Awa Ndiaye", phone: "+221770000001", region: "Dakar", city: "Dakar", addressHint: "Près du marché" };
+
+  it("autorise les espèces uniquement pour un retrait boutique", () => {
+    const group = { merchantId: merchantA, paymentMethod: "cash_on_delivery" as const, items: [{ variantId: variantA, quantity: 1 }] };
+    expect(orderBatchSchema.safeParse({ recipient, groups: [{ ...group, methodKind: "merchant_delivery", deliveryZoneId: zoneA }] }).success).toBe(false);
+    expect(orderBatchSchema.safeParse({ recipient, groups: [{ ...group, methodKind: "pickup" }] }).success).toBe(true);
+  });
+
+  it("accepte les trois cycles sans montant fourni par le marchand", () => {
+    for (const billingCycle of ["monthly", "quarterly", "annual"] as const) {
+      expect(subscriptionPaymentSchema.safeParse({ merchantId: merchantA, planId: "pro", billingCycle, channel: "wave", externalReference: `REF-${billingCycle}`, paidAt: "2026-08-11T12:00:00.000Z" }).success).toBe(true);
+    }
+    const parsed = subscriptionPaymentSchema.parse({ merchantId: merchantA, planId: "pro", billingCycle: "annual", channel: "wave", externalReference: "REF-ANNUAL", paidAt: "2026-08-11T12:00:00.000Z", amountXof: 1 });
+    expect("amountXof" in parsed).toBe(false);
   });
 });

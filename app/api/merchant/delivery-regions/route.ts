@@ -14,12 +14,14 @@ export async function PUT(request: Request) {
     }
     const { supabase } = await requireActiveMerchantAccess(input.merchantId, ["owner", "manager", "fulfillment"]);
     const admin = requireAdminClient();
-    const { data: existing, error: existingError } = await admin
+    let existingQuery = admin
       .from("delivery_zones")
       .select("id")
-      .eq("merchant_id", input.merchantId)
-      .eq("region", input.region)
-      .is("city", null)
+      .eq("merchant_id", input.merchantId);
+    existingQuery = input.zoneId
+      ? existingQuery.eq("id", input.zoneId)
+      : existingQuery.eq("region", input.region).is("city", null);
+    const { data: existing, error: existingError } = await existingQuery
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();
@@ -44,12 +46,21 @@ export async function PUT(request: Request) {
       const { error } = await admin.from("delivery_zones").update({
         label: input.region,
         fee_xof: input.feeXof,
+        courier_fee_xof: input.courierFeeXof,
         min_delay_minutes: input.minDelayDays * 1440,
         max_delay_minutes: input.maxDelayDays * 1440,
         active: input.enabled,
         city: null,
       }).eq("id", zoneId);
       if (error) throw error;
+    }
+
+    if (!existing?.id) {
+      const { error: courierFeeError } = await admin
+        .from("delivery_zones")
+        .update({ courier_fee_xof: input.courierFeeXof })
+        .eq("id", zoneId);
+      if (courierFeeError) throw courierFeeError;
     }
 
     const { error: deleteError } = await admin

@@ -1,77 +1,32 @@
 import { requireAdminClient, requireAdminRole } from "@/lib/api/auth";
 import { apiFailure, apiSuccess } from "@/lib/api/response";
-import { disputeResolutionSchema } from "@/lib/domain/schemas";
+import { directDisputeResolutionSchema } from "@/lib/domain/schemas";
 import { enqueueEmail } from "@/lib/notifications/outbox";
-import { refundPayment } from "@/lib/providers/paytech";
 
-export async function POST(
-  request: Request,
-  context: { params: Promise<{ orderId: string }> },
-) {
+export async function POST(request: Request, context: { params: Promise<{ orderId: string }> }) {
   const requestId = crypto.randomUUID();
   try {
-    const { orderId } = await context.params;
-    const input = disputeResolutionSchema.parse(await request.json());
+    const { orderId: disputeId } = await context.params;
+    const input = directDisputeResolutionSchema.parse(await request.json());
     const { supabase } = await requireAdminRole(["support", "admin"]);
-
-    const { data: escrow, error } = await supabase.rpc("resolve_order_dispute", {
-      p_order_id: orderId,
+    const { data, error } = await supabase.rpc("resolve_direct_order_dispute", {
+      p_dispute_id: disputeId,
       p_resolution: input.resolution,
-      p_note: input.note ?? null,
+      p_note: input.note,
     });
     if (error) throw error;
-
-    const admin = requireAdminClient();
-    if (input.resolution === "refund") {
-      const { error: loyaltyError } = await admin.rpc("reverse_order_loyalty", { p_order_id: orderId });
-      if (loyaltyError) throw loyaltyError;
+    const dispute = data as unknown as { order_id?: string; merchant_id?: string; buyer_id?: string };
+    if (dispute?.order_id) {
+      const admin = requireAdminClient();
+      const { data: order } = await admin.from("orders").select("public_code, buyer_id, merchant_accounts(email, owner_user_id)").eq("id", dispute.order_id).maybeSingle();
+      const merchant = Array.isArray(order?.merchant_accounts) ? order?.merchant_accounts[0] : order?.merchant_accounts;
+      const payload = { orderCode: order?.public_code, resolution: input.resolution, message: input.note, url: new URL(`/commandes/${dispute.order_id}`, request.url).toString() };
+      await Promise.allSettled([
+        enqueueEmail(admin, { dedupeKey: `direct-dispute:${disputeId}:buyer`, template: "order_dispute_resolved", recipientUserId: order?.buyer_id, payload }),
+        enqueueEmail(admin, { dedupeKey: `direct-dispute:${disputeId}:merchant`, template: "order_dispute_resolved", to: merchant?.email, recipientUserId: merchant?.owner_user_id, payload }),
+      ]);
     }
-    const { data: order } = await admin
-      .from("orders")
-      .select("public_code, total_xof, buyer_id, merchant_id, batch_id, merchant_accounts(public_name, email, owner_user_id)")
-      .eq("id", orderId)
-      .maybeSingle();
-    const merchant = order
-      ? Array.isArray(order.merchant_accounts)
-        ? order.merchant_accounts[0]
-        : order.merchant_accounts
-      : null;
-
-    if (input.resolution === "refund" && order?.batch_id) {
-      // refundPayment appelle PayTech (application/x-www-form-urlencoded,
-      // ref_command=...). L'IPN refund_complete finalisera l'escrow en
-      // 'refunded' via mark_escrow_refunded — resolve_order_dispute ne fait
-      // que tracer la décision côté escrow pour ce cas.
-      const { data: intent } = await admin
-        .from("payment_intents")
-        .select("ref_command")
-        .eq("order_batch_id", order.batch_id)
-        .eq("kind", "order")
-        .maybeSingle();
-      if (intent?.ref_command) {
-        await refundPayment(intent.ref_command);
-      }
-    }
-
-    if (order) {
-      await enqueueEmail(admin, {
-        dedupeKey: `dispute-resolved:${orderId}:buyer`,
-        template: "order_dispute_resolved",
-        recipientUserId: order.buyer_id,
-        payload: { orderCode: order.public_code, resolution: input.resolution, shopName: merchant?.public_name },
-      }).catch(() => false);
-      if (merchant?.email) {
-        await enqueueEmail(admin, {
-          dedupeKey: `dispute-resolved:${orderId}:merchant`,
-          template: "order_dispute_resolved",
-          to: merchant.email,
-          recipientUserId: merchant.owner_user_id,
-          payload: { orderCode: order.public_code, resolution: input.resolution, shopName: merchant.public_name },
-        }).catch(() => false);
-      }
-    }
-
-    return apiSuccess(escrow, { requestId });
+    return apiSuccess(data, { requestId });
   } catch (error) {
     return apiFailure(error, requestId);
   }

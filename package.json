@@ -17,6 +17,7 @@
     "supabase:types": "supabase gen types typescript --local --schema public > lib/infrastructure/supabase/database.generated.ts",
     "db:dump": "supabase db dump --local --file reports/sunushop-local.sql",
     "admin:bootstrap": "node --env-file=.env.local scripts/bootstrap-admin.mjs",
+    "payments:legacy-report": "node --env-file=.env.local scripts/report-legacy-paytech.mjs",
     "export:db": "node scripts/dump-database.mjs",
     "export:auth": "node scripts/export-auth-users.mjs",
     "export:storage": "node scripts/export-storage.mjs",

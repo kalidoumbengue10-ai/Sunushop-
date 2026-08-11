@@ -50,6 +50,14 @@ describe("contrat statique des migrations", () => {
       "loyalty_entries",
       "loyalty_contributions",
       "loyalty_credit_payouts",
+      "courier_payouts",
+      "courier_payout_deliveries",
+      "delivery_disputes",
+      "delivery_dispute_events",
+      "order_refunds",
+      "order_disputes",
+      "platform_payment_settings",
+      "subscription_billing_periods",
     ].forEach((table) => {
       expect(sql).toContain(
         `alter table public.${table} enable row level security;`,
@@ -72,6 +80,21 @@ describe("contrat statique des migrations", () => {
     expect(sql).toContain("create function public.reverse_order_loyalty");
     expect(sql).toContain("create function public.prepare_loyalty_credit_payouts");
     expect(sql).toContain("'courier-profiles', 'courier-profiles', false");
+    expect(sql).toContain("create function public.record_courier_payout");
+    expect(sql).toContain("create function public.void_courier_payout");
+    expect(sql).toContain("create function public.set_failed_delivery_compensation");
+    expect(sql).toContain("delivery_disputes_one_open_idx");
+    expect(sql).toContain("create function public.open_delivery_dispute");
+    expect(sql).toContain("create function public.resolve_delivery_dispute");
+    expect(sql).toContain("create function public.review_direct_payment");
+    expect(sql).toContain("create function public.declare_order_refund");
+    expect(sql).toContain("create function public.review_order_refund");
+    expect(sql).toContain("create function public.resolve_direct_order_dispute");
+    expect(sql).toContain("create function public.refresh_subscription_billing_periods");
+    expect(sql).toContain("create function public.review_courier_payout");
+    expect(sql).toContain("PAYTECH_DISABLED");
+    expect(sql).toContain("revoke insert, update, delete on public.payment_intents");
+    expect(sql).toContain("LOYALTY_PROGRAM_FROZEN");
   });
 
   it("modernise l’espace marchand via une migration additive", () => {

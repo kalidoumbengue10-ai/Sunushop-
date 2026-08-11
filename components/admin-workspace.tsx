@@ -43,12 +43,25 @@ type PaymentItem = {
   id: string;
   plan_id: string;
   channel: string;
+  destination_number: string | null;
   external_reference: string;
   amount_xof: number;
   paid_at: string;
   status: string;
+  billing_cycle: "monthly" | "quarterly" | "annual";
+  period_months: number;
   merchant_accounts: { public_name: string } | Array<{ public_name: string }>;
 };
+
+type BillingItem = {
+  id: string; merchant_id: string; plan_id: string; billing_cycle: string; period_months: number;
+  amount_xof: number; service_period_start: string; service_period_end: string; due_at: string;
+  status: string; displayStatus: string; paid_at: string | null;
+  merchant_accounts: { public_name: string; slug: string } | Array<{ public_name: string; slug: string }>;
+  subscription_payment_submissions: { channel: string; external_reference: string } | Array<{ channel: string; external_reference: string }> | null;
+};
+
+type PlatformPaymentSetting = { channel: "wave" | "orange_money"; payment_number: string; account_holder: string | null; active: boolean; updated_at: string };
 
 type MerchantSearchResult = {
   id: string;
@@ -73,12 +86,23 @@ type DisputeItem = {
   id: string;
   order_id: string;
   merchant_id: string;
-  amount_xof: number;
   status: string;
-  dispute_opened_at: string | null;
-  dispute_reason: string | null;
-  orders: { public_code: string; buyer_id: string } | Array<{ public_code: string; buyer_id: string }>;
+  opened_at: string;
+  reason: string;
+  orders: { public_code: string; buyer_id: string; total_xof: number } | Array<{ public_code: string; buyer_id: string; total_xof: number }>;
   merchant_accounts: { public_name: string } | Array<{ public_name: string }>;
+};
+
+type DeliveryDisputeItem = {
+  id: string;
+  order_id: string;
+  reason: string;
+  status: "open" | "resolved" | "dismissed";
+  resolution: string | null;
+  opened_at: string;
+  orders: { public_code: string; merchant_sequence: number } | Array<{ public_code: string; merchant_sequence: number }>;
+  merchant_accounts: { public_name: string } | Array<{ public_name: string }>;
+  courier_memberships: { display_name: string } | Array<{ display_name: string }>;
 };
 
 const verificationLabels: Record<string, string> = {
@@ -116,7 +140,15 @@ export function AdminWorkspace({ initialTab = "overview" }: { initialTab?: Admin
   const [tab, setTab] = useState<AdminTab>(initialTab);
   const [queue, setQueue] = useState<VerificationQueueItem[]>([]);
   const [payments, setPayments] = useState<PaymentItem[]>([]);
+  const [billingItems, setBillingItems] = useState<BillingItem[]>([]);
+  const [billingMonth, setBillingMonth] = useState(new Date().toISOString().slice(0, 7));
+  const [billingStatus, setBillingStatus] = useState("");
+  const [billingPlan, setBillingPlan] = useState("");
+  const [billingCycle, setBillingCycle] = useState("");
+  const [billingMerchant, setBillingMerchant] = useState("");
+  const [platformSettings, setPlatformSettings] = useState<PlatformPaymentSetting[]>([]);
   const [disputes, setDisputes] = useState<DisputeItem[]>([]);
+  const [deliveryDisputes, setDeliveryDisputes] = useState<DeliveryDisputeItem[]>([]);
   const [leads, setLeads] = useState<CrmLead[]>([]);
   const [grants, setGrants] = useState<SubscriptionGrantItem[]>([]);
   const [merchantResults, setMerchantResults] = useState<MerchantSearchResult[]>([]);
@@ -134,10 +166,22 @@ export function AdminWorkspace({ initialTab = "overview" }: { initialTab?: Admin
     setQueue(payload.data.items as VerificationQueueItem[]);
   };
   const loadPayments = async () => {
-    const response = await fetch("/api/admin/subscription-payments");
+    const params = new URLSearchParams({ month: billingMonth });
+    if (billingStatus) params.set("status", billingStatus);
+    if (billingPlan) params.set("plan", billingPlan);
+    if (billingCycle) params.set("cycle", billingCycle);
+    if (billingMerchant) params.set("merchant", billingMerchant);
+    const response = await fetch(`/api/admin/subscription-payments?${params}`);
     const payload = await response.json();
     if (!response.ok) throw new Error(payload.error?.message ?? "Abonnements indisponibles.");
     setPayments(payload.data.items as PaymentItem[]);
+    setBillingItems(payload.data.billingItems as BillingItem[]);
+  };
+  const loadPlatformSettings = async () => {
+    const response = await fetch("/api/admin/payment-settings");
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error?.message ?? "Numéros SunuShop indisponibles.");
+    setPlatformSettings(payload.data.items as PlatformPaymentSetting[]);
   };
   const loadLeads = async () => {
     const response = await fetch("/api/admin/crm/leads");
@@ -158,15 +202,25 @@ export function AdminWorkspace({ initialTab = "overview" }: { initialTab?: Admin
     setGrants(payload.data.items as SubscriptionGrantItem[]);
   };
 
+  const loadDeliveryDisputes = async () => {
+    const response = await fetch("/api/admin/delivery-disputes");
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error?.message ?? "Litiges de livraison indisponibles.");
+    setDeliveryDisputes(payload.data.items as DeliveryDisputeItem[]);
+  };
+
   useEffect(() => {
     // Chaque module se charge indépendamment pour préserver les accès plus restreints.
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    Promise.allSettled([loadQueue(), loadPayments(), loadLeads(), loadDisputes(), loadGrants()]).then((results) => {
+    Promise.allSettled([loadQueue(), loadPayments(), loadPlatformSettings(), loadLeads(), loadDisputes(), loadDeliveryDisputes(), loadGrants()]).then((results) => {
       const failures = results.filter((result) => result.status === "rejected");
       if (failures.length === results.length) {
         setError("Votre espace ne peut pas être chargé pour le moment.");
       }
     });
+    // Le chargement initial conserve les filtres par défaut ; les changements
+    // sont appliqués explicitement par le bouton du CRM financier.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const qualified = leads.filter((lead) => ["qualified", "onboarding"].includes(lead.status)).length;
@@ -242,7 +296,7 @@ export function AdminWorkspace({ initialTab = "overview" }: { initialTab?: Admin
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error?.message ?? "Décision impossible.");
-      setMessage(approved ? "L’accès du commerçant est maintenant actif pour 30 jours." : "Le paiement n’a pas été validé.");
+      setMessage(approved ? "Le paiement est validé et la période facturée est couverte." : "Le paiement n’a pas été validé.");
       await loadPayments();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Décision impossible.");
@@ -251,30 +305,64 @@ export function AdminWorkspace({ initialTab = "overview" }: { initialTab?: Admin
     }
   };
 
-  const resolveDispute = async (orderId: string, resolution: "release" | "refund") => {
-    const confirmed = window.confirm(
-      resolution === "release"
-        ? "Payer le marchand et clôturer ce litige ?"
-        : "Rembourser le client et clôturer ce litige ?",
-    );
-    if (!confirmed) return;
+  const resolveDispute = async (disputeId: string, resolution: "no_refund" | "refund_required") => {
+    const note = window.prompt(resolution === "refund_required" ? "Indiquez la décision et le montant à rembourser au marchand" : "Indiquez pourquoi aucun remboursement n’est requis");
+    if (!note) return;
     setBusy(true);
     setError("");
     try {
-      const response = await fetch(`/api/admin/disputes/${orderId}/resolve`, {
+      const response = await fetch(`/api/admin/disputes/${disputeId}/resolve`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ resolution }),
+        body: JSON.stringify({ resolution, note }),
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error?.message ?? "Résolution impossible.");
-      setMessage(resolution === "release" ? "Le marchand a été payé, le litige est clos." : "Le client a été remboursé, le litige est clos.");
+      setMessage(resolution === "refund_required" ? "Le remboursement direct a été demandé au marchand." : "Le litige est clos sans remboursement.");
       await loadDisputes();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Résolution impossible.");
     } finally {
       setBusy(false);
     }
+  };
+
+  const resolveDeliveryDispute = async (id: string, outcome: "resolved" | "dismissed") => {
+    const resolution = window.prompt(outcome === "resolved" ? "Décrivez la décision communiquée aux parties" : "Pourquoi classer ce dossier sans suite ?");
+    if (!resolution || resolution.trim().length < 4) return;
+    setBusy(true); setError("");
+    try {
+      const response = await fetch(`/api/admin/delivery-disputes/${id}/resolve`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ outcome, resolution }),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error?.message ?? "Résolution impossible.");
+      setMessage("Le litige de livraison est clos et les coordonnées client sont de nouveau masquées au livreur.");
+      await loadDeliveryDisputes();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Résolution impossible.");
+    } finally { setBusy(false); }
+  };
+
+  const savePlatformSetting = async (event: FormEvent<HTMLFormElement>, channel: "wave" | "orange_money") => {
+    event.preventDefault(); setBusy(true); setError("");
+    const form = new FormData(event.currentTarget);
+    try {
+      const response = await fetch("/api/admin/payment-settings", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ channel, paymentNumber: form.get("paymentNumber"), accountHolder: form.get("accountHolder") || null, active: form.get("active") === "on" }) });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error?.message ?? "Numéro impossible à enregistrer.");
+      setMessage(`Numéro ${channel === "wave" ? "Wave" : "Orange Money"} SunuShop enregistré.`);
+      await loadPlatformSettings();
+    } catch (caught) { setError(caught instanceof Error ? caught.message : "Numéro impossible à enregistrer."); }
+    finally { setBusy(false); }
+  };
+
+  const applyBillingFilters = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault(); setBusy(true); setError("");
+    try { await loadPayments(); } catch (caught) { setError(caught instanceof Error ? caught.message : "Échéances indisponibles."); }
+    finally { setBusy(false); }
   };
 
   const searchMerchants = async (event: FormEvent<HTMLFormElement>) => {
@@ -331,7 +419,7 @@ export function AdminWorkspace({ initialTab = "overview" }: { initialTab?: Admin
     { id: "crm" as const, label: "Prospects", icon: UsersRound, badge: leads.filter((lead) => lead.status === "new").length },
     { id: "verifications" as const, label: "Dossiers commerçants", icon: FileCheck2, badge: queue.length },
     { id: "subscriptions" as const, label: "Abonnements", icon: ReceiptText, badge: payments.length },
-    { id: "litiges" as const, label: "Litiges", icon: AlertTriangle, badge: disputes.length },
+    { id: "litiges" as const, label: "Litiges", icon: AlertTriangle, badge: disputes.length + deliveryDisputes.filter((item) => item.status === "open").length },
     { id: "support" as const, label: "Support", icon: MessageSquare },
     { id: "categories" as const, label: "Catégories", icon: Store },
   ];
@@ -341,7 +429,7 @@ export function AdminWorkspace({ initialTab = "overview" }: { initialTab?: Admin
     crm: ["Prospects", "Transformez chaque demande en prochaine étape claire."],
     verifications: ["Dossiers commerçants", "Validez les informations avec un parcours lisible et traçable."],
     subscriptions: ["Abonnements", "Activez les accès après confirmation des paiements."],
-    litiges: ["Litiges", "Arbitrez les commandes signalées et débloquez les fonds gelés."],
+    litiges: ["Litiges", "Arbitrez les commandes signalées et suivez les remboursements directs."],
     support: ["Support", "Répondez aux acheteurs qui contactent l’équipe SunuShop."],
     categories: ["Catégories", "Organisez la navigation et le classement des boutiques."],
   }[tab];
@@ -416,8 +504,15 @@ export function AdminWorkspace({ initialTab = "overview" }: { initialTab?: Admin
 
         {tab === "subscriptions" && (
           <section className="admin-panel admin-operation-panel">
+            <div className="admin-panel__heading"><div><span className="admin-kicker">Coordonnées bénéficiaire</span><h2>Numéros SunuShop</h2><p>Les abonnements restent indisponibles tant qu’aucun numéro actif n’est configuré.</p></div></div>
+            <div className="mvp-grid">{(["wave", "orange_money"] as const).map((channel) => { const setting = platformSettings.find((item) => item.channel === channel); return <form className="mvp-form" key={`${channel}-${setting?.updated_at ?? "new"}`} onSubmit={(event) => void savePlatformSetting(event, channel)}><h3>{channel === "wave" ? "Wave" : "Orange Money"}</h3><label className="mvp-field">Numéro bénéficiaire<input name="paymentNumber" inputMode="tel" defaultValue={setting?.payment_number ?? ""} required /></label><label className="mvp-field">Titulaire<input name="accountHolder" defaultValue={setting?.account_holder ?? ""} /></label><label><input name="active" type="checkbox" defaultChecked={setting?.active ?? false} /> Actif</label><button className="admin-primary-button" disabled={busy}>Enregistrer</button></form>; })}</div>
+
             <div className="admin-panel__heading"><div><span className="admin-kicker">Accès commerçants</span><h2>Paiements à confirmer</h2><p>Validez le règlement avant d’activer les services du commerce.</p></div><span className="admin-count">{payments.length} en attente</span></div>
-            <div className="admin-record-list">{payments.map((payment) => { const merchant = relationOne(payment.merchant_accounts); return <div className="admin-payment-row" key={payment.id}><span className="admin-avatar"><ReceiptText /></span><span><b>{merchant?.public_name}</b><small>{payment.plan_id} · {payment.channel === "wave" ? "Wave" : "Orange Money"} · {payment.external_reference}</small></span><strong>{formatPrice(payment.amount_xof)}</strong><div><button className="admin-primary-button" onClick={() => decidePayment(payment.id, true)} disabled={busy}>Confirmer</button><button className="admin-danger-button" onClick={() => decidePayment(payment.id, false)} disabled={busy}>Refuser</button></div></div>; })}{!payments.length && <div className="admin-empty"><CheckCircle2 /><h3>Aucun paiement en attente</h3><p>Les prochaines demandes apparaîtront ici.</p></div>}</div>
+            <div className="admin-record-list">{payments.map((payment) => { const merchant = relationOne(payment.merchant_accounts); return <div className="admin-payment-row" key={payment.id}><span className="admin-avatar"><ReceiptText /></span><span><b>{merchant?.public_name}</b><small>{payment.plan_id} · {payment.billing_cycle === "monthly" ? "mensuel" : payment.billing_cycle === "quarterly" ? "trimestriel" : "annuel"} · {payment.channel === "wave" ? "Wave" : "Orange Money"} vers {payment.destination_number ?? "numéro historique"} · réf. {payment.external_reference}</small></span><strong>{formatPrice(payment.amount_xof)}</strong><div><button className="admin-primary-button" onClick={() => decidePayment(payment.id, true)} disabled={busy}>Confirmer</button><button className="admin-danger-button" onClick={() => decidePayment(payment.id, false)} disabled={busy}>Refuser</button></div></div>; })}{!payments.length && <div className="admin-empty"><CheckCircle2 /><h3>Aucun paiement en attente</h3><p>Les prochaines demandes apparaîtront ici.</p></div>}</div>
+
+            <div className="admin-panel__heading"><div><span className="admin-kicker">Contrôle mensuel</span><h2>Échéances d’abonnement</h2><p>Chaque ligne permet de savoir qui a payé, ce qui est couvert et ce qui reste dû.</p></div><a className="admin-secondary-button" href={`/api/admin/subscription-payments?month=${billingMonth}&status=${billingStatus}&plan=${billingPlan}&cycle=${billingCycle}&merchant=${billingMerchant}&format=csv`}>Exporter le CSV</a></div>
+            <form className="admin-decision-form" onSubmit={applyBillingFilters}><label>Mois<input type="month" value={billingMonth} onChange={(event) => setBillingMonth(event.target.value)} /></label><label>Statut<select value={billingStatus} onChange={(event) => setBillingStatus(event.target.value)}><option value="">Tous</option><option value="covered">Couvert</option><option value="upcoming">À venir</option><option value="due">À payer</option><option value="pending_validation">Validation en attente</option><option value="paid">Payée</option><option value="overdue">En retard</option><option value="refused">Refusée</option><option value="expired">Expirée</option></select></label><label>Plan<select value={billingPlan} onChange={(event) => setBillingPlan(event.target.value)}><option value="">Tous</option><option value="essential">Essentiel</option><option value="pro">Pro</option><option value="network">Réseau</option></select></label><label>Cycle<select value={billingCycle} onChange={(event) => setBillingCycle(event.target.value)}><option value="">Tous</option><option value="monthly">Mensuel</option><option value="quarterly">Trimestriel</option><option value="annual">Annuel</option></select></label><label>Identifiant marchand<input value={billingMerchant} onChange={(event) => setBillingMerchant(event.target.value)} placeholder="UUID (facultatif)" /></label><div><button className="admin-secondary-button" disabled={busy}>Appliquer</button></div></form>
+            <div className="admin-record-list">{billingItems.map((item) => { const merchant = relationOne(item.merchant_accounts); const submission = relationOne(item.subscription_payment_submissions ?? []); const labels: Record<string, string> = { covered: "Couvert", upcoming: "À venir", due: "À payer", pending_validation: "Validation en attente", paid: "Payée", overdue: "En retard", refused: "Refusée", expired: "Expirée" }; return <div className="admin-payment-row" key={item.id}><span className="admin-avatar"><ReceiptText /></span><span><b>{merchant?.public_name}</b><small>{item.plan_id} · {item.billing_cycle === "monthly" ? "mensuel" : item.billing_cycle === "quarterly" ? "trimestriel" : "annuel"} · du {formatDate(item.service_period_start)} au {formatDate(item.service_period_end)}</small><small>Échéance : {formatDate(item.due_at)}{submission ? ` · ${submission.channel === "wave" ? "Wave" : "Orange Money"} · réf. ${submission.external_reference}` : ""}</small></span><strong>{formatPrice(item.amount_xof)}</strong><i className="crm-status" data-status={item.displayStatus}>{labels[item.displayStatus] ?? item.displayStatus}</i></div>; })}{!billingItems.length && <div className="admin-empty"><ReceiptText /><h3>Aucune échéance pour ce filtre</h3><p>Modifiez le mois ou les filtres pour afficher d’autres périodes.</p></div>}</div>
 
             <div className="admin-panel__heading"><div><span className="admin-kicker">Geste commercial</span><h2>Octroyer un abonnement manuellement</h2><p>Paiement espèces, partenariat, geste commercial… le motif est conservé dans l’historique.</p></div></div>
             <form className="admin-decision-form" onSubmit={searchMerchants}>
@@ -475,7 +570,18 @@ export function AdminWorkspace({ initialTab = "overview" }: { initialTab?: Admin
 
         {tab === "litiges" && (
           <section className="admin-panel admin-operation-panel">
-            <div className="admin-panel__heading"><div><span className="admin-kicker">Service après-vente</span><h2>Commandes en litige</h2><p>Les fonds sont gelés tant qu’aucune décision n’est prise.</p></div><span className="admin-count">{disputes.length} en attente</span></div>
+            <div className="admin-panel__heading"><div><span className="admin-kicker">Livraison · tous moyens de paiement</span><h2>Litiges de livraison</h2><p>Ces dossiers sont indépendants des transferts financiers. Les détails client restent visibles au livreur uniquement pendant leur traitement.</p></div><span className="admin-count">{deliveryDisputes.filter((item) => item.status === "open").length} en attente</span></div>
+            <div className="admin-record-list">
+              {deliveryDisputes.filter((item) => item.status === "open").map((dispute) => {
+                const merchant = relationOne(dispute.merchant_accounts);
+                const order = relationOne(dispute.orders);
+                const courier = relationOne(dispute.courier_memberships);
+                return <div className="admin-payment-row" key={dispute.id}><span className="admin-avatar"><AlertTriangle /></span><span><b>{order?.public_code} · N° interne {order?.merchant_sequence}</b><small>{merchant?.public_name} · livreur {courier?.display_name} · {formatDate(dispute.opened_at)}</small><small>Motif : {dispute.reason}</small></span><div><button className="admin-primary-button" onClick={() => void resolveDeliveryDispute(dispute.id, "resolved")} disabled={busy}>Enregistrer la décision</button><button className="admin-danger-button" onClick={() => void resolveDeliveryDispute(dispute.id, "dismissed")} disabled={busy}>Classer sans suite</button></div></div>;
+              })}
+              {!deliveryDisputes.some((item) => item.status === "open") && <div className="admin-empty"><CheckCircle2 /><h3>Aucun litige de livraison en cours</h3><p>Les signalements de livraison apparaîtront ici, quel que soit le moyen de paiement.</p></div>}
+            </div>
+            <div className="mvp-divider" />
+            <div className="admin-panel__heading"><div><span className="admin-kicker">Service après-vente</span><h2>Commandes en litige</h2><p>Ces dossiers sont indépendants des transferts : si nécessaire, le remboursement direct sera déclaré par le marchand puis confirmé par le client.</p></div><span className="admin-count">{disputes.length} en attente</span></div>
             <div className="admin-record-list">
               {disputes.map((dispute) => {
                 const merchant = relationOne(dispute.merchant_accounts);
@@ -485,13 +591,13 @@ export function AdminWorkspace({ initialTab = "overview" }: { initialTab?: Admin
                     <span className="admin-avatar"><AlertTriangle /></span>
                     <span>
                       <b>{order?.public_code}</b>
-                      <small>{merchant?.public_name} · {dispute.dispute_opened_at ? formatDate(dispute.dispute_opened_at) : "Date inconnue"}</small>
-                      {dispute.dispute_reason && <small>Motif : {dispute.dispute_reason}</small>}
+                      <small>{merchant?.public_name} · {formatDate(dispute.opened_at)}</small>
+                      <small>Motif : {dispute.reason}</small>
                     </span>
-                    <strong>{formatPrice(dispute.amount_xof)}</strong>
+                    <strong>{formatPrice(order?.total_xof ?? 0)}</strong>
                     <div>
-                      <button className="admin-primary-button" onClick={() => resolveDispute(dispute.order_id, "release")} disabled={busy}>Payer le marchand</button>
-                      <button className="admin-danger-button" onClick={() => resolveDispute(dispute.order_id, "refund")} disabled={busy}>Rembourser le client</button>
+                      <button className="admin-primary-button" onClick={() => resolveDispute(dispute.id, "no_refund")} disabled={busy}>Clore sans remboursement</button>
+                      <button className="admin-danger-button" onClick={() => resolveDispute(dispute.id, "refund_required")} disabled={busy}>Demander un remboursement</button>
                     </div>
                   </div>
                 );

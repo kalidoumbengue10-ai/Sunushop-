@@ -6,24 +6,13 @@ export async function PATCH(request: Request) {
   const requestId = crypto.randomUUID();
   try {
     const input = merchantSettingsSchema.parse(await request.json());
-    const { user, admin } = await requireActiveMerchantAccess(input.merchantId, ["owner", "manager"]);
-    const { error } = await admin
-      .from("merchant_accounts")
-      .update({
-        wave_payment_number: input.wavePaymentNumber,
-        orange_money_payment_number: input.orangeMoneyPaymentNumber,
-      })
-      .eq("id", input.merchantId);
-    if (error) throw error;
-
-    await admin.from("audit_events").insert({
-      actor_id: user.id,
-      merchant_id: input.merchantId,
-      action: "merchant.payment_settings.update",
-      entity_type: "merchant_account",
-      entity_id: input.merchantId,
-      request_id: requestId,
+    const { supabase } = await requireActiveMerchantAccess(input.merchantId, ["owner", "manager"]);
+    const { error } = await supabase.rpc("update_merchant_payment_numbers", {
+      p_merchant_id: input.merchantId,
+      p_wave_number: input.wavePaymentNumber,
+      p_orange_money_number: input.orangeMoneyPaymentNumber,
     });
+    if (error) throw error;
 
     return apiSuccess({ updated: true }, { requestId });
   } catch (error) {
