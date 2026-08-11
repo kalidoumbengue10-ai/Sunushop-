@@ -36,7 +36,7 @@ export async function GET(request: Request) {
     // Le cast reste compatible avec une base pas encore migrée localement.
     let billingQuery = (supabase as any)
       .from("subscription_billing_periods")
-      .select("id, merchant_id, plan_id, billing_cycle, period_months, amount_xof, service_period_start, service_period_end, due_at, status, paid_at, payment_submission_id, merchant_accounts!inner(public_name, slug), subscription_payment_submissions(channel, external_reference)")
+      .select("id, merchant_id, plan_id, billing_cycle, period_months, amount_xof, service_period_start, service_period_end, due_at, status, paid_at, payment_submission_id, merchant_accounts!inner(public_name, slug), subscription_payment_submissions!subscription_billing_periods_payment_submission_id_fkey(channel, external_reference)")
       .lt("service_period_start", monthEnd.toISOString())
       .gt("service_period_end", monthStart.toISOString())
       .order("due_at", { ascending: true });
