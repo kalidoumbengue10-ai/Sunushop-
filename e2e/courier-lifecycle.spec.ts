@@ -1,3 +1,4 @@
+import { createHmac } from "node:crypto";
 import { expect, test, type APIResponse, type BrowserContext, type Locator, type Page } from "@playwright/test";
 import { loadEnvConfig } from "@next/env";
 import { createClient } from "@supabase/supabase-js";
@@ -20,8 +21,8 @@ async function responseData<T>(response: APIResponse, status = 200) {
 }
 
 async function activateButton(button: Locator) {
-  await button.focus();
-  await button.press("Enter");
+  await button.focus({ timeout: 15_000 });
+  await button.press("Enter", { timeout: 15_000 });
 }
 
 async function selectCheckbox(checkbox: Locator) {
@@ -40,7 +41,46 @@ async function createUser(email: string, name: string) {
 }
 
 async function signIn(context: BrowserContext, email: string) {
-  await responseData(await context.request.post("/api/auth/password/sign-in", { data: { email, password } }));
+  let lastResponse: APIResponse | undefined;
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    lastResponse = await context.request.post("/api/auth/password/sign-in", { data: { email, password } });
+    if (lastResponse.status() === 200) return;
+    await new Promise((resolve) => setTimeout(resolve, 750));
+  }
+  await responseData(lastResponse!);
+}
+
+function decodeBase32(secret: string) {
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+  let bits = "";
+  for (const character of secret.toUpperCase().replace(/=+$/u, "")) {
+    const index = alphabet.indexOf(character);
+    if (index >= 0) bits += index.toString(2).padStart(5, "0");
+  }
+  const bytes: number[] = [];
+  for (let index = 0; index + 8 <= bits.length; index += 8) bytes.push(Number.parseInt(bits.slice(index, index + 8), 2));
+  return Buffer.from(bytes);
+}
+
+function totp(secret: string) {
+  const message = Buffer.alloc(8);
+  message.writeBigUInt64BE(BigInt(Math.floor(Date.now() / 30_000)));
+  const digest = createHmac("sha1", decodeBase32(secret)).update(message).digest();
+  const offset = digest[digest.length - 1] & 0x0f;
+  const binary = ((digest[offset] & 0x7f) << 24) | ((digest[offset + 1] & 0xff) << 16) | ((digest[offset + 2] & 0xff) << 8) | (digest[offset + 3] & 0xff);
+  return String(binary % 1_000_000).padStart(6, "0");
+}
+
+async function enableAdminMfa(page: Page) {
+  await page.goto("/admin/securite");
+  const enrollment = page.waitForResponse((response) => response.url().includes("/auth/v1/factors") && response.request().method() === "POST");
+  await activateButton(page.getByRole("button", { name: /Configurer la vérification en deux étapes/i }));
+  const payload = await (await enrollment).json() as { totp?: { secret?: string } };
+  const secret = payload.totp?.secret;
+  if (!secret) throw new Error("Secret TOTP absent de la reponse Supabase MFA.");
+  await page.getByLabel(/Code à 6 chiffres/i).fill(totp(secret));
+  await activateButton(page.getByRole("button", { name: /Activer la protection/i }));
+  await page.waitForURL("**/admin/crm", { timeout: 20_000 });
 }
 
 async function createMerchant(ownerUserId: string, ownerEmail: string, suffix: string) {
@@ -49,7 +89,7 @@ async function createMerchant(ownerUserId: string, ownerEmail: string, suffix: s
     slug: `boutique-livreur-${suffix.toLowerCase()}-${runId}`, description: "Boutique éphémère du test livreur.",
     phone: "+221770001111", email: ownerEmail, region: "Dakar", city: "Dakar",
     wave_payment_number: "+221770001111",
-    address_hint: `Point de retrait ${suffix}`, pickup_address_line: `12 rue ${suffix}, Dakar`,
+    address_hint: `Point de retrait ${suffix}`, pickup_address_line: `12 rue ${suffix}, Dakar`, pickup_latitude: 14.7167, pickup_longitude: -17.4677,
     pickup_instructions: `Demander le comptoir ${suffix}`, status: "active", verification_status: "approved", subscription_status: "active",
   }).select("id, public_name").single();
   if (error) throw error;
@@ -77,7 +117,7 @@ async function createCatalogAndZone(context: BrowserContext, merchantId: string,
 async function prepareOrder(client: BrowserContext, merchant: BrowserContext, merchantId: string, zoneId: string, variantId: string, label: string) {
   const batch = await responseData<{ orders: Array<{ id: string; publicCode: string; totalXof: number }> }>(await client.request.post("/api/orders/batch", {
     headers: { "idempotency-key": `courier-${runId}-${label}` },
-    data: { recipient: { name: `Client ${label}`, phone: "+221770002222", region: "Dakar", city: "Dakar", addressHint: `45 avenue Client ${label}` }, groups: [{ merchantId, deliveryZoneId: zoneId, methodKind: "merchant_delivery", paymentMethod: "wave_direct", items: [{ variantId, quantity: 2 }] }] },
+    data: { recipient: { name: `Client ${label}`, phone: "+221770002222", region: "Dakar", city: "Dakar", addressHint: `45 avenue Client ${label}`, latitude: 14.72, longitude: -17.45 }, groups: [{ merchantId, deliveryZoneId: zoneId, methodKind: "merchant_delivery", paymentMethod: "wave_direct", items: [{ variantId, quantity: 2 }] }] },
   }), 201);
   const order = batch.orders[0];
   const declaration = await responseData<{ id: string }>(await client.request.post(`/api/orders/${order.id}/payment-declarations`, { data: { channel: "wave", externalReference: `ORDER-${runId}-${label}`, amountXof: order.totalXof, declaredAt: new Date().toISOString() } }), 201);
@@ -192,17 +232,21 @@ test.describe.serial("flux livreur complet", () => {
     const emails = {
       merchantA: `courier-merchant-a-${runId}@example.test`, merchantB: `courier-merchant-b-${runId}@example.test`,
       client: `courier-client-${runId}@example.test`, courier: `courier-main-${runId}@example.test`, outsider: `courier-outsider-${runId}@example.test`,
+      support: `courier-support-${runId}@example.test`,
     };
-    const [merchantAUser, merchantBUser, clientUser, courierUser] = await Promise.all([
+    const [merchantAUser, merchantBUser, clientUser, courierUser, outsiderUser] = await Promise.all([
       createUser(emails.merchantA, "Marchand A"), createUser(emails.merchantB, "Marchand B"),
       createUser(emails.client, "Client livraison"), createUser(emails.courier, "Livreur principal"), createUser(emails.outsider, "Livreur extérieur"),
     ]);
-    expect(clientUser).toBeTruthy(); expect(courierUser).toBeTruthy();
+    const supportUser = await createUser(emails.support, "Support livraison");
+    expect(clientUser).toBeTruthy(); expect(courierUser).toBeTruthy(); expect(outsiderUser).toBeTruthy();
+    const { error: supportRoleError } = await admin.from("admin_roles").insert({ user_id: supportUser, role: "support" });
+    if (supportRoleError) throw supportRoleError;
 
     const merchantAContext = await browser.newContext(); const merchantBContext = await browser.newContext();
-    const clientContext = await browser.newContext(); const courierContext = await browser.newContext(); const outsiderContext = await browser.newContext();
-    await Promise.all([signIn(merchantAContext, emails.merchantA), signIn(merchantBContext, emails.merchantB), signIn(clientContext, emails.client), signIn(courierContext, emails.courier), signIn(outsiderContext, emails.outsider)]);
-    const merchantAPage = await merchantAContext.newPage(); const merchantBPage = await merchantBContext.newPage(); const courierPage = await courierContext.newPage();
+    const clientContext = await browser.newContext(); const courierContext = await browser.newContext(); const outsiderContext = await browser.newContext(); const supportContext = await browser.newContext();
+    await Promise.all([signIn(merchantAContext, emails.merchantA), signIn(merchantBContext, emails.merchantB), signIn(clientContext, emails.client), signIn(courierContext, emails.courier), signIn(outsiderContext, emails.outsider), signIn(supportContext, emails.support)]);
+    const merchantAPage = await merchantAContext.newPage(); const merchantBPage = await merchantBContext.newPage(); const courierPage = await courierContext.newPage(); const supportPage = await supportContext.newPage();
 
     try {
       const merchantA = await createMerchant(merchantAUser, emails.merchantA, "A");
@@ -263,7 +307,7 @@ test.describe.serial("flux livreur complet", () => {
 
       const invitationB = await inviteCourier(merchantBPage, merchantB.id, emails.courier, "B");
       await claimInvitation(courierContext, invitationB);
-      await responseData(await courierContext.request.patch("/api/courier/payment-profile", { data: { wavePaymentNumber: "+221770002223", orangeMoneyPaymentNumber: null, preferredPaymentChannel: "wave" } }));
+      await responseData(await courierContext.request.patch("/api/courier/payment-profile", { data: { wavePaymentNumber: "+221770002223", orangeMoneyPaymentNumber: "+221770002224", preferredPaymentChannel: "orange_money" } }));
       const { data: membershipB } = await admin.from("courier_memberships").select("id").eq("merchant_id", merchantB.id).eq("courier_user_id", courierUser).single();
       await assignViaUi(merchantBPage, orderB1.id, membershipB!.id);
       const { data: deliveryB1 } = await admin.from("deliveries").select("id").eq("order_id", orderB1.id).single();
@@ -274,6 +318,19 @@ test.describe.serial("flux livreur complet", () => {
         expect.objectContaining({ shopName: merchantA.public_name, delivered: 2, failed: 1, dueXof: 4900 }),
         expect.objectContaining({ shopName: merchantB.public_name, delivered: 1, dueXof: 900 }),
       ]));
+
+      await openCourierTab(merchantBPage);
+      const paymentsB = merchantBPage.locator("section.mvp-card").filter({ has: merchantBPage.getByRole("heading", { name: "Régler les livreurs" }) });
+      await selectCheckbox(paymentsB.getByText(orderB1.publicCode).locator("..").getByRole("checkbox"));
+      await paymentsB.getByLabel("Moyen").selectOption("orange_money");
+      await paymentsB.getByLabel("Référence du transfert").fill(`OM-COURIER-${runId}`);
+      await activateButton(paymentsB.getByRole("button", { name: /Déclarer le transfert \(1\)/ }));
+      await expect.poll(async () => (await admin.from("courier_payouts").select("status").eq("external_reference", `OM-COURIER-${runId}`).single()).data?.status).toBe("pending_confirmation");
+      expect((await admin.from("courier_payouts").select("payment_method, destination_number, amount_xof").eq("external_reference", `OM-COURIER-${runId}`).single()).data).toMatchObject({ payment_method: "orange_money", destination_number: "+221770002224", amount_xof: 900 });
+      await courierPage.goto("/marchand?mode=missions");
+      const orangePayout = courierPage.locator("article.courier-shop-profile").filter({ hasText: `OM-COURIER-${runId}` });
+      await activateButton(orangePayout.getByRole("button", { name: "Confirmer la réception" }));
+      await expect.poll(async () => (await admin.from("courier_payouts").select("status").eq("external_reference", `OM-COURIER-${runId}`).single()).data?.status).toBe("confirmed");
 
       await openCourierTab(merchantAPage);
       const payments = merchantAPage.locator("section.mvp-card").filter({ has: merchantAPage.getByRole("heading", { name: "Régler les livreurs" }) });
@@ -334,9 +391,14 @@ test.describe.serial("flux livreur complet", () => {
       await expect(disputedMission).toContainText("Litige actif");
       await expect(disputedMission).toContainText("+221770002222");
       const { data: dispute } = await admin.from("delivery_disputes").select("id").eq("delivery_id", deliveryA3!.id).eq("status", "open").single();
-      const resolvedAt = new Date().toISOString();
-      await admin.from("delivery_disputes").update({ status: "resolved", resolution: "Trajet vérifié et dossier clôturé.", resolved_at: resolvedAt, resolved_by: merchantAUser }).eq("id", dispute!.id);
-      await admin.from("delivery_dispute_events").insert({ dispute_id: dispute!.id, actor_id: merchantAUser, event_type: "resolved", message: "Trajet vérifié et dossier clôturé." });
+      await enableAdminMfa(supportPage);
+      await supportPage.goto("/admin");
+      await supportPage.locator("button").filter({ hasText: "Litiges" }).click({ force: true, timeout: 15_000 });
+      const supportDisputeRow = supportPage.locator(".admin-payment-row").filter({ hasText: orderA3.publicCode });
+      await expect(supportDisputeRow.getByRole("button", { name: "Enregistrer la décision" })).toBeEnabled({ timeout: 15_000 });
+      supportPage.once("dialog", (dialog) => dialog.accept("Trajet vérifié et dossier clôturé."));
+      await activateButton(supportDisputeRow.getByRole("button", { name: "Enregistrer la décision" }));
+      await expect.poll(async () => (await admin.from("delivery_disputes").select("status").eq("id", dispute!.id).single()).data?.status, { timeout: 15_000 }).toBe("resolved");
       await courierPage.reload();
       await activateButton(courierPage.getByRole("button", { name: "Livrée", exact: true }));
       disputedMission = courierPage.locator("article.courier-mission").filter({ hasText: orderA3.publicCode });
@@ -350,7 +412,7 @@ test.describe.serial("flux livreur complet", () => {
       expect((await outsiderContext.request.get(`/api/orders/${orderA1.id}`)).status()).not.toBe(200);
       await clientPage.close();
     } finally {
-      await Promise.all([merchantAContext.close(), merchantBContext.close(), clientContext.close(), courierContext.close(), outsiderContext.close()]);
+      await Promise.all([merchantAContext.close(), merchantBContext.close(), clientContext.close(), courierContext.close(), outsiderContext.close(), supportContext.close()]);
     }
   });
 });

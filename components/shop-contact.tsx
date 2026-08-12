@@ -14,7 +14,7 @@ function addressHref(addressLine: string, latitude?: number | null, longitude?: 
   if (latitude != null && longitude != null) {
     return `geo:${latitude},${longitude}?q=${encodeURIComponent(addressLine)}`;
   }
-  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(addressLine)}`;
+  return `https://www.openstreetmap.org/search?query=${encodeURIComponent(addressLine)}`;
 }
 
 export function ShopContact({ phone, email, addressLine, latitude, longitude }: ShopContactProps) {

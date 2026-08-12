@@ -4,6 +4,7 @@ import { MvpShell } from "@/components/mvp-shell";
 import { ShopContact } from "@/components/shop-contact";
 import { ShopFollowButton } from "@/components/shop-follow-button";
 import { StartConversationButton } from "@/components/start-conversation-button";
+import { LocationMap, NavigationLinks } from "@/components/location-map";
 import { getAdminSupabase } from "@/lib/infrastructure/supabase/server";
 import { SupabaseCatalogRepository } from "@/lib/infrastructure/supabase/repositories";
 import { formatPrice } from "@/lib/marketplace";
@@ -78,15 +79,17 @@ export default async function BoutiquePage({
               </div>
             )}
           </div>
-          {shop.pickup.enabled && (
-            <ShopContact
-              phone={shop.phone}
-              email={shop.email}
-              addressLine={shop.pickup.addressLine}
-              latitude={shop.pickup.latitude}
-              longitude={shop.pickup.longitude}
-            />
-          )}
+          <ShopContact
+            phone={shop.phone}
+            email={shop.email}
+            addressLine={shop.location.addressLine}
+            latitude={shop.location.latitude}
+            longitude={shop.location.longitude}
+          />
+          {shop.location.latitude != null && shop.location.longitude != null ? <>
+            <LocationMap point={{ latitude: shop.location.latitude, longitude: shop.location.longitude }} label={shop.location.addressLine ?? shop.name} />
+            <NavigationLinks destination={{ latitude: shop.location.latitude, longitude: shop.location.longitude }} label={shop.location.addressLine ?? shop.name} />
+          </> : <p className="mvp-alert mvp-alert--warning">La position précise de cette boutique sera bientôt disponible.</p>}
           <MarketplaceClient initialProducts={page.products} initialTotal={page.total} initialCategories={categories ?? []} merchantSlug={shop.slug} groupByCategory />
         </div>
       </main>

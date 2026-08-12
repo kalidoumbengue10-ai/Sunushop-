@@ -4,6 +4,8 @@ export type CheckoutRecipient = {
   region: string;
   city: string;
   addressHint: string;
+  latitude?: number;
+  longitude?: number;
 };
 
 export type CheckoutGroupDraft = {
@@ -19,7 +21,8 @@ export type CheckoutDraft = {
   groups: CheckoutGroupDraft[];
 };
 
-export const CHECKOUT_DRAFT_KEY = "sunushop-checkout-draft-v1";
+export const CHECKOUT_DRAFT_KEY = "sunushop-checkout-draft-v2";
+export const LEGACY_CHECKOUT_DRAFT_KEY = "sunushop-checkout-draft-v1";
 
 function isCheckoutRecipient(value: unknown): value is CheckoutRecipient {
   if (!value || typeof value !== "object") return false;
@@ -29,7 +32,10 @@ function isCheckoutRecipient(value: unknown): value is CheckoutRecipient {
     typeof recipient.phone === "string" &&
     typeof recipient.region === "string" &&
     typeof recipient.city === "string" &&
-    typeof recipient.addressHint === "string"
+    typeof recipient.addressHint === "string" &&
+    (recipient.latitude === undefined || typeof recipient.latitude === "number") &&
+    (recipient.longitude === undefined || typeof recipient.longitude === "number") &&
+    ((recipient.latitude === undefined) === (recipient.longitude === undefined))
   );
 }
 
@@ -63,16 +69,23 @@ export function saveCheckoutDraft(draft: CheckoutDraft) {
 
 export function readCheckoutDraft(): CheckoutDraft | null {
   try {
-    const saved = localStorage.getItem(CHECKOUT_DRAFT_KEY);
+    const saved = localStorage.getItem(CHECKOUT_DRAFT_KEY) ?? localStorage.getItem(LEGACY_CHECKOUT_DRAFT_KEY);
     if (!saved) return null;
     const parsed = JSON.parse(saved);
-    return isCheckoutDraft(parsed) ? parsed : null;
+    if (!isCheckoutDraft(parsed)) return null;
+    if (!localStorage.getItem(CHECKOUT_DRAFT_KEY)) {
+      localStorage.setItem(CHECKOUT_DRAFT_KEY, JSON.stringify(parsed));
+      localStorage.removeItem(LEGACY_CHECKOUT_DRAFT_KEY);
+    }
+    return parsed;
   } catch {
     localStorage.removeItem(CHECKOUT_DRAFT_KEY);
+    localStorage.removeItem(LEGACY_CHECKOUT_DRAFT_KEY);
     return null;
   }
 }
 
 export function clearCheckoutDraft() {
   localStorage.removeItem(CHECKOUT_DRAFT_KEY);
+  localStorage.removeItem(LEGACY_CHECKOUT_DRAFT_KEY);
 }

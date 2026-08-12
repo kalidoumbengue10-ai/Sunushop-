@@ -1,6 +1,7 @@
 import { requireAdminClient } from "@/lib/api/auth";
 import { apiFailure, apiSuccess } from "@/lib/api/response";
 import { SupabaseCatalogRepository } from "@/lib/infrastructure/supabase/repositories";
+import { isInSenegalBounds } from "@/lib/domain/geo";
 
 export async function GET(request: Request) {
   const requestId = crypto.randomUUID();
@@ -9,6 +10,9 @@ export async function GET(request: Request) {
     const url = new URL(request.url);
     const page = Math.max(1, Number.parseInt(url.searchParams.get("page") ?? "1", 10) || 1);
     const limit = Math.min(60, Math.max(1, Number.parseInt(url.searchParams.get("limit") ?? "24", 10) || 24));
+    const latitude = Number(url.searchParams.get("lat"));
+    const longitude = Number(url.searchParams.get("lng"));
+    const nearby = Number.isFinite(latitude) && Number.isFinite(longitude) && isInSenegalBounds({ latitude, longitude });
     const [catalogPage, categoryResult, mediaResult] = await Promise.all([
       new SupabaseCatalogRepository(admin).listPage({
         page,
@@ -18,6 +22,8 @@ export async function GET(request: Request) {
         merchantSlug: url.searchParams.get("merchant")?.trim() || undefined,
         region: url.searchParams.get("region")?.trim() || undefined,
         city: url.searchParams.get("city")?.trim() || undefined,
+        latitude: nearby ? latitude : undefined,
+        longitude: nearby ? longitude : undefined,
       }),
       admin.from("categories").select("id, slug, name, description").eq("active", true).order("position"),
       admin.from("merchant_media").select("merchant_id, kind, storage_bucket, storage_path"),
@@ -34,7 +40,7 @@ export async function GET(request: Request) {
       media.set(item.merchant_id, current);
     }
     const shops = new Map<string, {
-      id: string; name: string; slug: string; city: string | null;
+      id: string; name: string; slug: string; city: string | null; distanceKm?: number | null;
       logoUrl: string | null; coverUrl: string | null;
       categories: Map<string, { id: string; slug: string; name: string }>;
       productCount: number;
@@ -45,6 +51,7 @@ export async function GET(request: Request) {
         name: product.merchant.name,
         slug: product.merchant.slug,
         city: product.merchant.city,
+        distanceKm: product.merchant.distanceKm,
         ...(media.get(product.merchant.id) ?? { logoUrl: null, coverUrl: null }),
         categories: new Map(),
         productCount: 0,

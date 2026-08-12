@@ -7,8 +7,10 @@ import { getBrowserSupabase } from "@/lib/infrastructure/supabase/browser";
 import { SENEGAL_REGIONS } from "@/lib/domain/merchant-ui";
 import { AbandonedCarts } from "@/components/abandoned-carts";
 import { ClientLoyalty } from "@/components/client-loyalty";
+import { LocationPicker } from "@/components/location-map";
+import type { Coordinates } from "@/lib/domain/geo";
 
-type Address = { id: string; label: string; recipient_name: string; phone: string; region: string; city: string; address_hint: string; is_default: boolean };
+type Address = { id: string; label: string; recipient_name: string; phone: string; region: string; city: string; address_hint: string; latitude: number | null; longitude: number | null; is_default: boolean };
 type Order = { id: string; public_code: string; status: string; total_xof: number; created_at: string; merchant_accounts: { public_name: string } | Array<{ public_name: string }> };
 type ShopFollow = { merchant_id: string; created_at: string; merchant_accounts: { public_name: string; slug: string; city: string | null; region: string | null } | Array<{ public_name: string; slug: string; city: string | null; region: string | null }> };
 
@@ -31,6 +33,7 @@ export function ClientWorkspace() {
   const [activeTab, setActiveTab] = useState<OrderTab>("en_cours");
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  const [addressCoordinates, setAddressCoordinates] = useState<Coordinates | null>(null);
   const load = useCallback(async () => {
     const [addressResponse, orderResponse, shopFollowResponse] = await Promise.all([
       fetch("/api/client/addresses"),
@@ -70,11 +73,12 @@ export function ClientWorkspace() {
   }, [load]);
   const saveAddress = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault(); setError(""); setMessage(""); const form = new FormData(event.currentTarget);
+    if (!addressCoordinates) return setError("Placez cette adresse sur la carte.");
     const response = await fetch("/api/client/addresses", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({
-      label: form.get("label"), recipientName: form.get("recipientName"), phone: form.get("phone"), region: form.get("region"), city: form.get("city"), addressHint: form.get("addressHint"), isDefault: form.get("isDefault") === "on",
+      label: form.get("label"), recipientName: form.get("recipientName"), phone: form.get("phone"), region: form.get("region"), city: form.get("city"), addressHint: form.get("addressHint"), latitude: addressCoordinates.latitude, longitude: addressCoordinates.longitude, isDefault: form.get("isDefault") === "on",
     }) });
     const payload = await response.json(); if (!response.ok) return setError(payload.error?.message ?? "Adresse non enregistrée.");
-    setMessage("Adresse enregistrée."); event.currentTarget.reset(); await load();
+    setMessage("Adresse enregistrée."); event.currentTarget.reset(); setAddressCoordinates(null); await load();
   };
   const archive = async (id: string) => {
     const response = await fetch("/api/client/addresses", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ id, archive: true }) });
@@ -89,8 +93,8 @@ export function ClientWorkspace() {
     <section className="mvp-card mvp-card--full"><span className="mvp-eyebrow">Espace client</span><h1 className="mvp-title">Achats, adresses et suivi</h1><div className="mvp-actions"><Link className="mvp-button" href="/marche">Ouvrir mon panier</Link></div>{message && <p className="mvp-alert">{message}</p>}{error && <p className="mvp-alert mvp-alert--error">{error}</p>}</section>
     <AbandonedCarts />
     <ClientLoyalty />
-    <section className="mvp-card"><h2>Mes adresses</h2><div className="mvp-list">{addresses.map((address) => <div className="mvp-row" key={address.id}><div><strong>{address.label}{address.is_default ? " · par défaut" : ""}</strong><small>{address.recipient_name} · {address.phone}<br />{address.city}, {address.address_hint}</small></div><button className="mvp-button mvp-button--secondary" onClick={() => archive(address.id)}>Retirer</button></div>)}</div>
-      <form className="mvp-form" onSubmit={saveAddress}><h3>Ajouter une adresse</h3><div className="mvp-form__grid"><label className="mvp-field">Libellé<input name="label" placeholder="Maison" required /></label><label className="mvp-field">Destinataire<input name="recipientName" required /></label><label className="mvp-field">Téléphone<input name="phone" required /></label><label className="mvp-field">Région<select name="region" required defaultValue=""><option value="" disabled>Choisissez une région</option>{SENEGAL_REGIONS.map((value) => <option value={value} key={value}>{value}</option>)}</select></label><label className="mvp-field">Ville<input name="city" required /></label></div><label className="mvp-field">Adresse et repère<textarea name="addressHint" required /></label><label><input name="isDefault" type="checkbox" /> Adresse par défaut</label><button className="mvp-button">Enregistrer</button></form>
+    <section className="mvp-card"><h2>Mes adresses</h2><div className="mvp-list">{addresses.map((address) => <div className="mvp-row" key={address.id}><div><strong>{address.label}{address.is_default ? " · par défaut" : ""}</strong><small>{address.recipient_name} · {address.phone}<br />{address.city}, {address.address_hint}<br />{address.latitude == null ? "À localiser avant une livraison" : "Position enregistrée"}</small></div><button className="mvp-button mvp-button--secondary" onClick={() => archive(address.id)}>Retirer</button></div>)}</div>
+      <form className="mvp-form" onSubmit={saveAddress}><h3>Ajouter une adresse</h3><div className="mvp-form__grid"><label className="mvp-field">Libellé<input name="label" placeholder="Maison" required /></label><label className="mvp-field">Destinataire<input name="recipientName" required /></label><label className="mvp-field">Téléphone<input name="phone" required /></label><label className="mvp-field">Région<select name="region" required defaultValue=""><option value="" disabled>Choisissez une région</option>{SENEGAL_REGIONS.map((value) => <option value={value} key={value}>{value}</option>)}</select></label><label className="mvp-field">Ville<input name="city" required /></label></div><label className="mvp-field">Adresse et repère<textarea name="addressHint" required /></label><LocationPicker value={addressCoordinates} onChange={setAddressCoordinates} label="Position de livraison" required /><label><input name="isDefault" type="checkbox" /> Adresse par défaut</label><button className="mvp-button">Enregistrer</button></form>
     </section>
     <section className="mvp-card"><h2>Mes commandes</h2><Link className="mvp-link" href="/client/commandes">Voir toutes mes commandes en détail →</Link>
       <div className="mvp-tabs" role="tablist" aria-label="Filtrer mes commandes">

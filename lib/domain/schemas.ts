@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { isInSenegalBounds } from "@/lib/domain/geo";
 
 const uuid = z.uuid();
 const e164Phone = z
@@ -162,6 +163,16 @@ const quoteItemSchema = z.object({
   quantity: z.int().min(1).max(99),
 });
 
+const deliveryCoordinatesSchema = z.object({
+  latitude: z.number(),
+  longitude: z.number(),
+}).refine(isInSenegalBounds, "Choisissez un point situé au Sénégal.");
+
+const quoteDestinationSchema = deliveryCoordinatesSchema.extend({
+  region: z.string().trim().min(2).max(120),
+  city: z.string().trim().min(2).max(120),
+});
+
 export const quoteGroupSchema = z
   .object({
     merchantId: uuid,
@@ -193,6 +204,7 @@ export const quoteGroupSchema = z
 
 export const cartQuoteSchema = z.object({
   groups: z.array(quoteGroupSchema).min(1).max(10),
+  destination: quoteDestinationSchema.optional(),
 }).superRefine((value, context) => {
   const merchants = new Set<string>();
   value.groups.forEach((group, index) => {
@@ -205,6 +217,9 @@ export const cartQuoteSchema = z.object({
     }
     merchants.add(group.merchantId);
   });
+  if (value.groups.some((group) => group.methodKind === "merchant_delivery") && !value.destination) {
+    context.addIssue({ code: "custom", path: ["destination"], message: "La destination GPS est requise pour la livraison." });
+  }
 });
 
 export const orderBatchSchema = z
@@ -215,6 +230,8 @@ export const orderBatchSchema = z
       region: z.string().trim().min(2).max(120),
       city: z.string().trim().min(2).max(120),
       addressHint: z.string().trim().min(2).max(300),
+      latitude: z.number().optional(),
+      longitude: z.number().optional(),
     }),
     groups: z
       .array(
@@ -248,6 +265,16 @@ export const orderBatchSchema = z
       }
       merchants.add(group.merchantId);
     });
+    const hasDelivery = value.groups.some((group) => group.methodKind === "merchant_delivery");
+    const hasLatitude = value.recipient.latitude !== undefined;
+    const hasLongitude = value.recipient.longitude !== undefined;
+    if (hasLatitude !== hasLongitude) {
+      context.addIssue({ code: "custom", path: ["recipient", "latitude"], message: "Latitude et longitude doivent être renseignées ensemble." });
+    } else if (hasDelivery && (!hasLatitude || !hasLongitude)) {
+      context.addIssue({ code: "custom", path: ["recipient", "latitude"], message: "La destination GPS est requise pour la livraison." });
+    } else if (hasLatitude && hasLongitude && !isInSenegalBounds({ latitude: value.recipient.latitude!, longitude: value.recipient.longitude! })) {
+      context.addIssue({ code: "custom", path: ["recipient", "latitude"], message: "Choisissez un point situé au Sénégal." });
+    }
   });
 
 export const directPaymentDeclarationSchema = z.object({
@@ -543,6 +570,8 @@ export const addressInputSchema = z.object({
       path: ["latitude"],
       message: "Latitude et longitude doivent être renseignées ensemble.",
     });
+  } else if (value.latitude != null && value.longitude != null && !isInSenegalBounds({ latitude: value.latitude, longitude: value.longitude })) {
+    context.addIssue({ code: "custom", path: ["latitude"], message: "L’adresse doit être située au Sénégal." });
   }
 });
 
@@ -693,11 +722,11 @@ export const merchantPickupSettingsSchema = z.object({
   pickupHours: z.string().trim().max(200).nullable().optional(),
   pickupInstructions: z.string().trim().max(500).nullable().optional(),
 }).superRefine((value, context) => {
-  if (value.pickupEnabled && !value.pickupAddressLine) {
+  if (!value.pickupAddressLine) {
     context.addIssue({
       code: "custom",
       path: ["pickupAddressLine"],
-      message: "L’adresse de la boutique est requise pour activer le retrait.",
+      message: "L’adresse publique de la boutique est requise.",
     });
   }
   if ((value.pickupLatitude == null) !== (value.pickupLongitude == null)) {
@@ -706,6 +735,10 @@ export const merchantPickupSettingsSchema = z.object({
       path: ["pickupLatitude"],
       message: "Latitude et longitude doivent être renseignées ensemble.",
     });
+  } else if (value.pickupLatitude == null || value.pickupLongitude == null) {
+    context.addIssue({ code: "custom", path: ["pickupLatitude"], message: "Placez la boutique sur la carte." });
+  } else if (!isInSenegalBounds({ latitude: value.pickupLatitude, longitude: value.pickupLongitude })) {
+    context.addIssue({ code: "custom", path: ["pickupLatitude"], message: "La boutique doit être située au Sénégal." });
   }
 });
 

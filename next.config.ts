@@ -17,7 +17,8 @@ const nextConfig: NextConfig = {
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: blob: https:",
       "font-src 'self' data:",
-      "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://challenges.cloudflare.com",
+      "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://challenges.cloudflare.com https://tiles.openfreemap.org",
+      "worker-src 'self' blob:",
       "frame-src https://challenges.cloudflare.com",
       ...(isDevelopment ? [] : ["upgrade-insecure-requests"]),
     ].join("; ");
@@ -44,7 +45,7 @@ const nextConfig: NextConfig = {
           },
           {
             key: "Permissions-Policy",
-            value: "camera=(), microphone=(), geolocation=()",
+            value: "camera=(), microphone=(), geolocation=(self)",
           },
           ...(isDevelopment
             ? []

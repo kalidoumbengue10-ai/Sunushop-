@@ -4,6 +4,8 @@ import Image from "next/image";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { getBrowserSupabase } from "@/lib/infrastructure/supabase/browser";
 import { formatPrice } from "@/lib/marketplace";
+import { LocationMap, NavigationLinks } from "@/components/location-map";
+import type { Coordinates } from "@/lib/domain/geo";
 
 type OrderItem = { product_snapshot: { title?: string }; sku_snapshot: string; quantity: number; unit_price_xof: number; line_total_xof: number };
 type Delivery = {
@@ -24,6 +26,7 @@ type Membership = {
 type ShopStat = { membershipId: string; shopName: string; active: number; delivered: number; failed: number; dueXof: number; paidXof: number };
 type CourierStats = { upcoming: number; active: number; deliveredThisMonth: number; deliveredTotal: number; failedTotal: number; dueXof: number; paidThisMonthXof: number };
 type CourierPayout = { id: string; amount_xof: number; payment_method: string; destination_number: string; external_reference: string | null; paid_at: string; status: string; reviewed_at: string | null; contest_reason: string | null; voided_at: string | null; courier_payout_deliveries: Array<{ delivery_id: string }> };
+type DeliveryRoute = { geometry: { type: "LineString"; coordinates: number[][] }; distanceMeters: number; durationSeconds: number };
 
 const terminalStatuses = new Set(["delivered", "failed", "cancelled"]);
 const statusLabels: Record<string, string> = { assigned: "À accepter", accepted: "Acceptée", at_pickup: "Au commerce", picked_up: "Colis récupéré", in_transit: "En route", delivered: "Livrée", failed: "Échec", cancelled: "Annulée" };
@@ -39,6 +42,7 @@ export function CourierWorkspace() {
   const [filter, setFilter] = useState<"upcoming" | "active" | "delivered" | "failed" | "cancelled">("upcoming");
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  const [routes, setRoutes] = useState<Record<string, DeliveryRoute | null>>({});
 
   const load = useCallback(async () => {
     const response = await fetch("/api/deliveries/mine", { cache: "no-store" });
@@ -104,12 +108,39 @@ export function CourierWorkspace() {
     setMessage(decision === "confirmed" ? "Réception du règlement confirmée." : "Règlement contesté : les missions redeviennent dues."); await load();
   };
 
+  const showRoute = async (deliveryId: string) => {
+    setError("");
+    const response = await fetch(`/api/deliveries/${deliveryId}/route`);
+    const payload = await response.json();
+    if (!response.ok) {
+      setRoutes((current) => ({ ...current, [deliveryId]: null }));
+      return setError(`${payload.error?.message ?? "Itinéraire indisponible."} Les boutons GPS restent utilisables.`);
+    }
+    setRoutes((current) => ({ ...current, [deliveryId]: payload.data as DeliveryRoute }));
+  };
+
   const deliveryCard = (delivery: Delivery) => {
     const hasRecipientDetails = Boolean(delivery.recipient?.name || delivery.recipient?.phone || delivery.recipient?.addressHint);
+    const pickup = { latitude: Number(delivery.pickup_snapshot?.latitude), longitude: Number(delivery.pickup_snapshot?.longitude) };
+    const destination = { latitude: Number(delivery.recipient?.latitude), longitude: Number(delivery.recipient?.longitude) };
+    const hasRouteCoordinates = Number.isFinite(pickup.latitude) && Number.isFinite(pickup.longitude) && Number.isFinite(destination.latitude) && Number.isFinite(destination.longitude);
+    const route = routes[delivery.id];
+    const navigationDestination: Coordinates | null = ["assigned", "accepted", "at_pickup"].includes(delivery.status)
+      ? (Number.isFinite(pickup.latitude) && Number.isFinite(pickup.longitude) ? pickup : null)
+      : (Number.isFinite(destination.latitude) && Number.isFinite(destination.longitude) ? destination : null);
     return <article className="courier-mission" key={delivery.id}>
       <header><div><small>Commande SunuShop</small><h3>{delivery.publicCode}</h3><small>N° interne boutique {delivery.merchantSequence}</small></div><span className="mvp-status" data-status={delivery.status}>{statusLabels[delivery.status] ?? delivery.status}</span></header>
       <p><strong>{delivery.shop?.name ?? "Boutique"}</strong> · commandée le {formatDate(delivery.orderCreatedAt)}</p>
       <div className="courier-route"><p><span>Retrait</span><strong>{String(delivery.pickup_snapshot?.name ?? delivery.shop?.name ?? "Boutique")}</strong><small>{String(delivery.pickup_snapshot?.phone ?? "")}<br />{String(delivery.pickup_snapshot?.addressHint ?? delivery.pickup_snapshot?.city ?? "")}{delivery.pickup_snapshot?.instructions ? <><br />Instructions : {String(delivery.pickup_snapshot.instructions)}</> : null}</small></p><i>→</i><p><span>Destination</span>{hasRecipientDetails ? <><strong>{String(delivery.recipient?.name ?? "Client")}</strong><small>{String(delivery.recipient?.phone ?? "")}<br />{String(delivery.recipient?.region ?? "")} {String(delivery.recipient?.city ?? "")}<br />{String(delivery.recipient?.addressHint ?? "")}</small></> : <><strong>Mission terminée</strong><small>Coordonnées personnelles masquées</small></>}</p></div>
+      {!terminalStatuses.has(delivery.status) && navigationDestination && <NavigationLinks destination={navigationDestination} label={["assigned", "accepted", "at_pickup"].includes(delivery.status) ? String(delivery.pickup_snapshot?.addressHint ?? "Boutique") : String(delivery.recipient?.addressHint ?? "Client")} />}
+      {!terminalStatuses.has(delivery.status) && hasRouteCoordinates && <div className="courier-route-map">
+        {route === undefined && <button type="button" className="mvp-button mvp-button--secondary" onClick={() => void showRoute(delivery.id)}>Afficher l’itinéraire boutique → client</button>}
+        {route !== undefined && <>
+          <LocationMap point={pickup} destination={destination} route={route?.geometry ?? null} label={String(delivery.shop?.name ?? "Boutique")} />
+          {route && <p><strong>{(route.distanceMeters / 1000).toFixed(1)} km</strong> · environ {Math.max(1, Math.round(route.durationSeconds / 60))} min</p>}
+          {!route && <p className="mvp-alert mvp-alert--warning">Trajet routier indisponible : la ligne affichée relie directement les deux points.</p>}
+        </>}
+      </div>}
       <div className="mvp-list">{delivery.orderItems.map((item, index) => <div className="mvp-row" key={`${delivery.id}-${index}`}><span>{item.product_snapshot?.title ?? item.sku_snapshot}</span><strong>× {item.quantity}</strong></div>)}</div>
       <div className="courier-mission__timeline"><small>Affectation : {formatDate(delivery.assigned_at)}</small><small>Retrait : {formatDate(delivery.pickup_verified_at)}</small><small>Livraison : {formatDate(delivery.delivered_at)}</small></div>
       <p className="mvp-alert"><strong>Rémunération : {formatPrice(delivery.courier_payable_xof || delivery.courier_fee_xof || 0)}</strong><br />{paymentStatusLabels[delivery.courier_payment_status] ?? delivery.courier_payment_status}</p>

@@ -12,6 +12,7 @@ export type ShopCardData = {
   coverUrl: string | null;
   logoUrl: string | null;
   pickupEnabled?: boolean;
+  distanceKm?: number | null;
 };
 
 export function ShopCard({ shop }: { shop: ShopCardData }) {
@@ -30,6 +31,7 @@ export function ShopCard({ shop }: { shop: ShopCardData }) {
         <span className="shop-category-line">{shop.categories.join(" · ") || "Boutique SunuShop"}</span>
         <h3>{shop.name}</h3>
         <p>{shop.city || "Sénégal"}</p>
+        {shop.distanceKm != null && <small>À environ {shop.distanceKm < 10 ? shop.distanceKm.toFixed(1) : Math.round(shop.distanceKm)} km</small>}
         {shop.pickupEnabled && <span className="shop-directory-pickup-badge">Retrait en boutique possible</span>}
         <Link className="shop-directory-card__link" href={`/boutiques/${shop.slug}`}>
           <span className="sr-only">Entrer dans la boutique {shop.name}</span>

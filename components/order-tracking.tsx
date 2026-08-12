@@ -275,6 +275,11 @@ export function OrderTracking({ orderId }: { orderId: string }) {
             <div className="mvp-divider" />
             <h2>Paiement direct au vendeur</h2>
             <p className="mvp-status" data-status={payload.order.payment_status}>Statut : {paymentStatusLabels[payload.order.payment_status] ?? payload.order.payment_status}</p>
+            {["paid", "refund_pending", "refunded"].includes(payload.order.payment_status) && (
+              <a className="mvp-button mvp-button--secondary" href={`/api/orders/${orderId}/receipt`} target="_blank" rel="noopener noreferrer">
+                Télécharger le reçu
+              </a>
+            )}
             <p>
               Envoyez {formatPrice(payload.order.total_xof)} par{" "}
               {payload.order.payment_method === "wave_direct"

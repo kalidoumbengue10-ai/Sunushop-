@@ -7,6 +7,7 @@ import type {
   CatalogItem,
   CatalogRepository,
   PublicShop,
+  QuoteDestination,
   QuoteGroup,
   QuoteRequestGroup,
 } from "@/lib/domain/repositories";
@@ -22,6 +23,8 @@ type RawProduct = {
     public_name: string;
     slug: string;
     city: string | null;
+    pickup_latitude: number | null;
+    pickup_longitude: number | null;
   };
   categories: { id: string; name: string; slug: string };
   product_variants: Array<{
@@ -45,7 +48,7 @@ const productSelection = `
   slug,
   description,
   option_names,
-  merchant_accounts!inner(id, public_name, slug, city),
+  merchant_accounts!inner(id, public_name, slug, city, pickup_latitude, pickup_longitude),
   categories!inner(id, name, slug),
   product_variants!inner(
     id,
@@ -69,6 +72,7 @@ function firstInventory(
 function mapProduct(
   client: SupabaseClient,
   product: RawProduct,
+  distance?: number | null,
 ): CatalogItem | null {
   const variants = product.product_variants
     .filter((variant) => variant.active)
@@ -110,6 +114,9 @@ function mapProduct(
       name: product.merchant_accounts.public_name,
       slug: product.merchant_accounts.slug,
       city: product.merchant_accounts.city,
+      latitude: product.merchant_accounts.pickup_latitude,
+      longitude: product.merchant_accounts.pickup_longitude,
+      ...(distance === undefined ? {} : { distanceKm: distance }),
     },
     variant: {
       id: variant.id,
@@ -147,12 +154,40 @@ export class SupabaseCatalogRepository implements CatalogRepository {
     merchantSlug?: string;
     region?: string;
     city?: string;
+    latitude?: number;
+    longitude?: number;
     page: number;
     limit: number;
   }) {
     const page = Math.max(1, input.page);
     const limit = Math.min(60, Math.max(1, input.limit));
     const from = (page - 1) * limit;
+    if (input.latitude !== undefined && input.longitude !== undefined && !input.merchantSlug) {
+      const { data: nearbyRows, error: nearbyError } = await this.client.rpc("nearby_storefront_product_ids", {
+        p_latitude: input.latitude,
+        p_longitude: input.longitude,
+        p_query: input.query ?? null,
+        p_category_slug: input.category ?? null,
+        p_limit: limit,
+        p_offset: from,
+      });
+      if (nearbyError) throw nearbyError;
+      const rows = (nearbyRows ?? []) as Array<{ product_id: string; distance_km: number | null; total_count: number }>;
+      if (!rows.length) return { products: [], total: 0, page, limit };
+      const ids = rows.map((row) => row.product_id);
+      const distanceById = new Map(rows.map((row) => [row.product_id, row.distance_km]));
+      const orderById = new Map(ids.map((id, index) => [id, index]));
+      const { data, error } = await this.client
+        .from("products")
+        .select(productSelection)
+        .in("id", ids);
+      if (error) throw error;
+      const products = ((data ?? []) as unknown as RawProduct[])
+        .map((product) => mapProduct(this.client, product, distanceById.get(product.id)))
+        .filter((product): product is CatalogItem => product !== null && product.imageUrl !== null && product.variant.availableQuantity > 0)
+        .sort((left, right) => (orderById.get(left.id) ?? 0) - (orderById.get(right.id) ?? 0));
+      return { products, total: Number(rows[0]?.total_count ?? products.length), page, limit };
+    }
     // NOTE (chantier 6.2) : la RLS et le prédicat canonique de vente sont
     // status='active' AND subscription_status IN ('active','grace') — le
     // KYC (verification_status) a été délibérément découplé du droit de
@@ -321,11 +356,13 @@ export class SupabaseCatalogRepository implements CatalogRepository {
       })),
       pickup: {
         enabled: merchant.pickup_enabled,
+        hours: merchant.pickup_hours,
+        instructions: merchant.pickup_instructions,
+      },
+      location: {
         addressLine: merchant.pickup_address_line,
         latitude: merchant.pickup_latitude,
         longitude: merchant.pickup_longitude,
-        hours: merchant.pickup_hours,
-        instructions: merchant.pickup_instructions,
       },
       products: ((products ?? []) as unknown as RawProduct[])
         .map((product) => mapProduct(this.client, product))
@@ -338,7 +375,7 @@ export class SupabaseCatalogRepository implements CatalogRepository {
     };
   }
 
-  async quote(groups: QuoteRequestGroup[]): Promise<QuoteGroup[]> {
+  async quote(groups: QuoteRequestGroup[], destination?: QuoteDestination): Promise<QuoteGroup[]> {
     const result: QuoteGroup[] = [];
 
     for (const group of groups) {
@@ -351,7 +388,7 @@ export class SupabaseCatalogRepository implements CatalogRepository {
       ] = await Promise.all([
         this.client
           .from("merchant_accounts")
-          .select("id, public_name, pickup_enabled")
+          .select("id, public_name, pickup_enabled, pickup_latitude, pickup_longitude")
           .eq("id", group.merchantId)
           .eq("status", "active")
           .in("subscription_status", ["active", "grace"])
@@ -361,7 +398,7 @@ export class SupabaseCatalogRepository implements CatalogRepository {
           : this.client
               .from("delivery_zones")
               .select(
-                "id, merchant_id, label, fee_xof, min_delay_minutes, max_delay_minutes, delivery_category_rates(category_id, fee_xof)",
+                "id, merchant_id, label, region, city, fee_xof, min_delay_minutes, max_delay_minutes, delivery_category_rates(category_id, fee_xof)",
               )
               .eq("id", group.deliveryZoneId ?? "")
               .eq("merchant_id", group.merchantId)
@@ -410,6 +447,19 @@ export class SupabaseCatalogRepository implements CatalogRepository {
           "DELIVERY_ZONE_UNAVAILABLE",
           "Cette zone de livraison n’est plus disponible.",
         );
+      } else {
+        if (merchant.pickup_latitude == null || merchant.pickup_longitude == null) {
+          throw new ApiError(422, "SHOP_LOCATION_REQUIRED", "Cette boutique doit enregistrer sa position avant de proposer la livraison.");
+        }
+        if (!destination) {
+          throw new ApiError(422, "DELIVERY_DESTINATION_REQUIRED", "La destination GPS est requise.");
+        }
+        if (zone.region.trim().toLocaleLowerCase("fr") !== destination.region.trim().toLocaleLowerCase("fr")) {
+          throw new ApiError(422, "DELIVERY_REGION_MISMATCH", "La zone choisie ne correspond pas à la région de livraison.");
+        }
+        if (zone.city && zone.city.trim().toLocaleLowerCase("fr") !== destination.city.trim().toLocaleLowerCase("fr")) {
+          throw new ApiError(422, "DELIVERY_REGION_MISMATCH", "La zone choisie ne correspond pas à la ville de livraison.");
+        }
       }
 
       const rawVariants = (variants ?? []) as unknown as Array<{

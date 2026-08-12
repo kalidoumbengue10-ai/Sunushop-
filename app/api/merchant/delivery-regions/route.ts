@@ -14,6 +14,15 @@ export async function PUT(request: Request) {
     }
     const { supabase } = await requireActiveMerchantAccess(input.merchantId, ["owner", "manager", "fulfillment"]);
     const admin = requireAdminClient();
+    const { data: merchant, error: merchantError } = await admin
+      .from("merchant_accounts")
+      .select("pickup_latitude, pickup_longitude")
+      .eq("id", input.merchantId)
+      .maybeSingle();
+    if (merchantError) throw merchantError;
+    if (!merchant || merchant.pickup_latitude == null || merchant.pickup_longitude == null) {
+      throw new ApiError(422, "SHOP_LOCATION_REQUIRED", "Placez d’abord votre boutique sur la carte.");
+    }
     let existingQuery = admin
       .from("delivery_zones")
       .select("id")

@@ -189,6 +189,14 @@ describe("paiements directs et abonnements", () => {
     expect(orderBatchSchema.safeParse({ recipient, groups: [{ ...group, methodKind: "pickup" }] }).success).toBe(true);
   });
 
+  it("exige un point GPS au Sénégal uniquement pour une livraison", () => {
+    const group = { merchantId: merchantA, paymentMethod: "wave_direct" as const, items: [{ variantId: variantA, quantity: 1 }] };
+    expect(orderBatchSchema.safeParse({ recipient, groups: [{ ...group, methodKind: "merchant_delivery", deliveryZoneId: zoneA }] }).success).toBe(false);
+    expect(orderBatchSchema.safeParse({ recipient: { ...recipient, latitude: 14.72, longitude: -17.45 }, groups: [{ ...group, methodKind: "merchant_delivery", deliveryZoneId: zoneA }] }).success).toBe(true);
+    expect(orderBatchSchema.safeParse({ recipient: { ...recipient, latitude: 48.85, longitude: 2.35 }, groups: [{ ...group, methodKind: "merchant_delivery", deliveryZoneId: zoneA }] }).success).toBe(false);
+    expect(orderBatchSchema.safeParse({ recipient, groups: [{ ...group, methodKind: "pickup" }] }).success).toBe(true);
+  });
+
   it("accepte les trois cycles sans montant fourni par le marchand", () => {
     for (const billingCycle of ["monthly", "quarterly", "annual"] as const) {
       expect(subscriptionPaymentSchema.safeParse({ merchantId: merchantA, planId: "pro", billingCycle, channel: "wave", externalReference: `REF-${billingCycle}`, paidAt: "2026-08-11T12:00:00.000Z" }).success).toBe(true);

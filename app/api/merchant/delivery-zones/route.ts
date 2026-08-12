@@ -1,12 +1,18 @@
 import { requireActiveMerchantAccess } from "@/lib/api/merchant-access";
 import { apiFailure, apiSuccess } from "@/lib/api/response";
 import { deliveryZoneInputSchema } from "@/lib/domain/schemas";
+import { ApiError } from "@/lib/api/errors";
 
 export async function POST(request: Request) {
   const requestId = crypto.randomUUID();
   try {
     const input = deliveryZoneInputSchema.parse(await request.json());
     const { supabase, admin } = await requireActiveMerchantAccess(input.merchantId, ["owner", "manager", "fulfillment"]);
+    const { data: merchant, error: merchantError } = await admin.from("merchant_accounts").select("pickup_latitude, pickup_longitude").eq("id", input.merchantId).maybeSingle();
+    if (merchantError) throw merchantError;
+    if (!merchant || merchant.pickup_latitude == null || merchant.pickup_longitude == null) {
+      throw new ApiError(422, "SHOP_LOCATION_REQUIRED", "Placez d’abord votre boutique sur la carte.");
+    }
     const { data, error } = await supabase.rpc("create_delivery_zone", {
       p_merchant_id: input.merchantId,
       p_method_kind: input.methodKind,

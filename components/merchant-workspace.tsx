@@ -25,6 +25,8 @@ import { MerchantLoyalty } from "@/components/merchant-loyalty";
 import { ConversationList } from "@/components/conversation-list";
 import { MerchantProductWizard, type MerchantProductEditor } from "@/components/merchant-product-wizard";
 import { MerchantDeliverySettings, type MerchantDeliveryZone } from "@/components/merchant-delivery-settings";
+import { LocationPicker } from "@/components/location-map";
+import type { Coordinates, GeoPlace } from "@/lib/domain/geo";
 import { IntentLetterForm } from "@/components/intent-letter-form";
 import { DirectDocumentUploader, documentLabels, type VerificationDocumentRow } from "@/components/direct-document-uploader";
 import { formatMerchantOrderNumber, merchantStatusLabel } from "@/lib/domain/merchant-ui";
@@ -243,6 +245,12 @@ export function MerchantWorkspace(props: MerchantWorkspaceProps) {
   const [showIntentLetterForm, setShowIntentLetterForm] = useState(false);
   const [subscriptionPlanId, setSubscriptionPlanId] = useState(props.plans[0]?.id ?? "");
   const [subscriptionCycle, setSubscriptionCycle] = useState<"monthly" | "quarterly" | "annual">("monthly");
+  const [shopCoordinates, setShopCoordinates] = useState<Coordinates | null>(
+    props.merchant?.pickup_latitude != null && props.merchant?.pickup_longitude != null
+      ? { latitude: props.merchant.pickup_latitude, longitude: props.merchant.pickup_longitude }
+      : null,
+  );
+  const [shopAddress, setShopAddress] = useState(props.merchant?.pickup_address_line ?? "");
 
   const submitJson = async (
     url: string,
@@ -412,17 +420,15 @@ export function MerchantWorkspace(props: MerchantWorkspaceProps) {
     setBusy(true);
     setError("");
     const form = new FormData(event.currentTarget);
-    const latitude = form.get("pickupLatitude");
-    const longitude = form.get("pickupLongitude");
     const response = await fetch("/api/merchant/settings", {
       method: "PUT",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         merchantId: props.merchant.id,
         pickupEnabled: form.get("pickupEnabled") === "on",
-        pickupAddressLine: form.get("pickupAddressLine") || null,
-        pickupLatitude: latitude ? Number(latitude) : null,
-        pickupLongitude: longitude ? Number(longitude) : null,
+        pickupAddressLine: shopAddress || null,
+        pickupLatitude: shopCoordinates?.latitude ?? null,
+        pickupLongitude: shopCoordinates?.longitude ?? null,
         pickupHours: form.get("pickupHours") || null,
         pickupInstructions: form.get("pickupInstructions") || null,
       }),
@@ -433,11 +439,12 @@ export function MerchantWorkspace(props: MerchantWorkspaceProps) {
       setError(payload.error?.message ?? "Paramètres non enregistrés.");
       return;
     }
-    setMessage("Retrait en boutique mis à jour.");
+    setMessage("Localisation publique et retrait mis à jour.");
     router.refresh();
   };
 
   if (!props.merchant) return null;
+  const merchantId = props.merchant.id;
 
   const latestDocuments = new Map<VerificationDocumentType, DocumentRow>();
   props.documents.forEach((document) => {
@@ -704,6 +711,20 @@ export function MerchantWorkspace(props: MerchantWorkspaceProps) {
             </form>
             <div className="mvp-divider" />
             <form className="mvp-form" onSubmit={savePickupSettings}>
+              <h3>Adresse et localisation publique</h3>
+              <p>Cette adresse et ce point seront visibles par tous les visiteurs et serviront de départ aux livraisons.</p>
+              <label className="mvp-field">
+                Adresse complète
+                <input value={shopAddress} onChange={(event) => setShopAddress(event.target.value)} placeholder="Ex. Marché Sandaga, Avenue Blaise Diagne, Dakar" required />
+              </label>
+              <LocationPicker
+                value={shopCoordinates}
+                onChange={setShopCoordinates}
+                onPlace={(place: GeoPlace) => setShopAddress(place.label)}
+                label="Position publique de la boutique"
+                required
+              />
+              <div className="mvp-divider" />
               <h3>Retrait en boutique</h3>
               <p>
                 Le client peut venir chercher sa commande directement à votre
@@ -718,36 +739,6 @@ export function MerchantWorkspace(props: MerchantWorkspaceProps) {
                 Activer le retrait en boutique (0 F)
               </label>
               <div className="mvp-form__grid">
-                <label className="mvp-field mvp-field--wide">
-                  Adresse complète
-                  <input
-                    name="pickupAddressLine"
-                    defaultValue={props.merchant.pickup_address_line ?? ""}
-                    placeholder="Ex. Marché Sandaga, Avenue Blaise Diagne, Dakar"
-                  />
-                </label>
-                <label className="mvp-field">
-                  Latitude (optionnel)
-                  <input
-                    name="pickupLatitude"
-                    type="number"
-                    step="0.000001"
-                    min={-90}
-                    max={90}
-                    defaultValue={props.merchant.pickup_latitude ?? ""}
-                  />
-                </label>
-                <label className="mvp-field">
-                  Longitude (optionnel)
-                  <input
-                    name="pickupLongitude"
-                    type="number"
-                    step="0.000001"
-                    min={-180}
-                    max={180}
-                    defaultValue={props.merchant.pickup_longitude ?? ""}
-                  />
-                </label>
                 <label className="mvp-field">
                   Horaires
                   <input
@@ -767,7 +758,7 @@ export function MerchantWorkspace(props: MerchantWorkspaceProps) {
                 </label>
               </div>
               <button className="mvp-button mvp-button--secondary" disabled={busy}>
-                Enregistrer le retrait en boutique
+                Enregistrer la localisation
               </button>
             </form>
             <div className="mvp-divider" />
@@ -881,12 +872,24 @@ export function MerchantWorkspace(props: MerchantWorkspaceProps) {
                       {payment.channel} vers {payment.destination_number ?? "numéro historique"} · {payment.billing_cycle} · {formatPrice(payment.amount_xof)}
                     </small>
                   </div>
-                  <span
-                    className="mvp-status"
-                    data-status={payment.status}
-                  >
-                    {payment.status}
-                  </span>
+                  <div className="mvp-actions">
+                    <span
+                      className="mvp-status"
+                      data-status={payment.status}
+                    >
+                      {payment.status}
+                    </span>
+                    {payment.status === "approved" && (
+                      <a
+                        className="mvp-button mvp-button--secondary"
+                        href={`/api/merchant/subscriptions/payments/${payment.id}/receipt?merchantId=${merchantId}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        Reçu
+                      </a>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
@@ -935,6 +938,11 @@ export function MerchantWorkspace(props: MerchantWorkspaceProps) {
                       {merchantStatusLabel(order.status)}
                     </span>
                     <span className="mvp-status" data-status={order.payment_status}>{orderPaymentStatusLabels[order.payment_status] ?? order.payment_status}</span>
+                    {["paid", "refund_pending", "refunded"].includes(order.payment_status) && (
+                      <a className="mvp-button mvp-button--secondary" href={`/api/orders/${order.id}/receipt`} target="_blank" rel="noopener noreferrer">
+                        Reçu
+                      </a>
+                    )}
                     {order.direct_payment_declarations
                       .filter((declaration) => declaration.status === "pending")
                       .map((declaration) => (

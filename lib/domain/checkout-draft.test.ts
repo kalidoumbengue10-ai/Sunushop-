@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { CHECKOUT_DRAFT_KEY, clearCheckoutDraft, readCheckoutDraft, saveCheckoutDraft } from "./checkout-draft";
+import { CHECKOUT_DRAFT_KEY, LEGACY_CHECKOUT_DRAFT_KEY, clearCheckoutDraft, readCheckoutDraft, saveCheckoutDraft } from "./checkout-draft";
 
 function createMemoryStorage(): Storage {
   const store = new Map<string, string>();
@@ -44,5 +44,12 @@ describe("checkout draft persistence", () => {
     saveCheckoutDraft(draft);
     clearCheckoutDraft();
     expect(readCheckoutDraft()).toBeNull();
+  });
+
+  it("migre un ancien brouillon sans coordonnées sans perdre le panier", () => {
+    localStorage.setItem(LEGACY_CHECKOUT_DRAFT_KEY, JSON.stringify(draft));
+    expect(readCheckoutDraft()).toEqual(draft);
+    expect(localStorage.getItem(CHECKOUT_DRAFT_KEY)).not.toBeNull();
+    expect(localStorage.getItem(LEGACY_CHECKOUT_DRAFT_KEY)).toBeNull();
   });
 });

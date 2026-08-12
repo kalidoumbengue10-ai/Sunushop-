@@ -115,6 +115,7 @@ function ProductDetailModal({ product, onClose }: { product: CatalogItem; onClos
           <small className="product-category">{product.category.name}</small>
           <h2 id="product-modal-title">{product.title}</h2>
           <Link className="product-shop-link" href={`/boutiques/${product.merchant.slug}`}>Vendu par {product.merchant.name}</Link>
+          {product.merchant.distanceKm != null && <small>À environ {product.merchant.distanceKm < 10 ? product.merchant.distanceKm.toFixed(1) : Math.round(product.merchant.distanceKm)} km</small>}
           <p className="product-modal__description">{product.description}</p>
 
           <VariantOptions product={product} selected={selected} selectOption={selectOption} />
@@ -161,6 +162,7 @@ export function ProductCard({ product }: { product: CatalogItem }) {
         <button type="button" className="mvp-product__title-trigger" onClick={() => setDetailOpen(true)}><h3>{product.title}</h3></button>
         <p className="mvp-product__description-preview">{product.description}</p>
         <Link className="product-shop-link" href={`/boutiques/${product.merchant.slug}`}>Vendu par {product.merchant.name}</Link>
+        {product.merchant.distanceKm != null && <small>À environ {product.merchant.distanceKm < 10 ? product.merchant.distanceKm.toFixed(1) : Math.round(product.merchant.distanceKm)} km</small>}
 
         <VariantOptions product={product} selected={selected} selectOption={selectOption} />
 
@@ -222,7 +224,7 @@ export function MarketplaceClient({
 
   // Le filtre de localisation ne s'applique qu'au marché global : à l'intérieur
   // d'une boutique précise, filtrer par région n'aurait pas de sens.
-  const { region, city } = useLocationFilter();
+  const { region, city, latitude, longitude } = useLocationFilter();
 
   const fetchPage = useCallback(async (options: { page: number; categorySlug: string | null; query: string }) => {
     const params = new URLSearchParams({ page: String(options.page), limit: "24" });
@@ -231,10 +233,14 @@ export function MarketplaceClient({
     if (options.query.trim()) params.set("query", options.query.trim());
     if (!merchantSlug && region) params.set("region", region);
     if (!merchantSlug && city) params.set("city", city);
+    if (!merchantSlug && latitude != null && longitude != null) {
+      params.set("lat", String(latitude));
+      params.set("lng", String(longitude));
+    }
     const response = await fetch(`/api/storefront?${params}`);
     if (!response.ok) return null;
     return (await response.json()) as { data: { products: CatalogItem[]; pagination: { total: number }; categories: CatalogCategory[] } };
-  }, [merchantSlug, region, city]);
+  }, [merchantSlug, region, city, latitude, longitude]);
 
   // Filtre instantané sur la fenêtre déjà chargée, pendant que la recherche
   // serveur (ci-dessous, débouncée) rapatrie les résultats sur tout le catalogue.

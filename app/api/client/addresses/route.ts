@@ -26,6 +26,9 @@ export async function POST(request: Request) {
   const requestId = crypto.randomUUID();
   try {
     const input = addressInputSchema.parse(await request.json());
+    if (input.latitude == null || input.longitude == null) {
+      throw new ApiError(422, "DELIVERY_DESTINATION_REQUIRED", "Placez cette adresse sur la carte.");
+    }
     const { user } = await requireUser();
     const admin = requireAdminClient();
     if (input.isDefault) {
@@ -45,7 +48,7 @@ export async function POST(request: Request) {
         longitude: input.longitude ?? null,
         is_default: input.isDefault,
       })
-      .select("id, label, recipient_name, phone, region, city, address_hint, is_default")
+      .select("id, label, recipient_name, phone, region, city, address_hint, latitude, longitude, is_default")
       .single();
     if (error) throw error;
     return apiSuccess(data, { status: 201, requestId });
@@ -72,6 +75,9 @@ export async function PATCH(request: Request) {
       return apiSuccess({ archived: true }, { requestId });
     }
     const input = addressInputSchema.parse(body);
+    if (input.latitude == null || input.longitude == null) {
+      throw new ApiError(422, "DELIVERY_DESTINATION_REQUIRED", "Placez cette adresse sur la carte.");
+    }
     if (input.isDefault) {
       await admin.from("addresses").update({ is_default: false }).eq("owner_user_id", user.id);
     }

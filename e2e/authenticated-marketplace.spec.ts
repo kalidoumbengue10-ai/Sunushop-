@@ -134,6 +134,9 @@ test.describe.serial("flux authentifiés marketplace", () => {
         region: "Dakar",
         city: "Dakar",
         address_hint: "Point de retrait E2E",
+        pickup_address_line: "Point de retrait E2E, Dakar",
+        pickup_latitude: 14.7167,
+        pickup_longitude: -17.4677,
         wave_payment_number: "+221770000001",
         status: "active",
         verification_status: "approved",
@@ -336,6 +339,8 @@ test.describe.serial("flux authentifiés marketplace", () => {
                 region: "Dakar",
                 city: "Dakar",
                 addressHint: "Adresse fictive Playwright",
+                latitude: 14.72,
+                longitude: -17.45,
                 isDefault: true,
               },
             }),
@@ -368,6 +373,8 @@ test.describe.serial("flux authentifiés marketplace", () => {
               region: "Dakar",
               city: "Dakar",
               addressHint: "Adresse fictive Playwright",
+              latitude: 14.72,
+              longitude: -17.45,
             },
             groups: [{
               merchantId: merchant.id,
@@ -566,7 +573,7 @@ test.describe.serial("flux authentifiés marketplace", () => {
           const delivered = history.items.find((item) => item.id === assigned.id);
           expect(delivered).toMatchObject({
             status: "delivered",
-            recipient: { name: null, phone: null, addressHint: null, city: "Dakar", region: "Dakar" },
+            recipient: { name: null, phone: null, addressHint: null, latitude: null, longitude: null, city: "Dakar", region: "Dakar" },
           });
           expect(history.stats.deliveredThisMonth).toBeGreaterThanOrEqual(1);
 
@@ -589,7 +596,10 @@ test.describe.serial("flux authentifiés marketplace", () => {
           expect(loyaltyAccount?.availablePoints ?? 0).toBe(0);
           const loyaltyQuote = await responseData<{
             groups: Array<{ merchantId: string; pointsApplied: number; loyaltyDiscountXof: number; totalXof: number }>;
-          }>(await clientContext.request.post("/api/cart/quote", { data: { groups: [{ merchantId: merchant.id, deliveryZoneId: zone.zoneId, applyLoyalty: true, items: [{ variantId: product.variantId, quantity: 1 }] }] } }), 200);
+          }>(await clientContext.request.post("/api/cart/quote", { data: {
+            destination: { region: "Dakar", city: "Dakar", latitude: 14.72, longitude: -17.45 },
+            groups: [{ merchantId: merchant.id, deliveryZoneId: zone.zoneId, applyLoyalty: true, items: [{ variantId: product.variantId, quantity: 1 }] }],
+          } }), 200);
           expect(loyaltyQuote.groups[0]).toMatchObject({ pointsApplied: 0, loyaltyDiscountXof: 0 });
           await responseData(await merchantContext.request.patch("/api/merchant/couriers", { data: { merchantId: merchant.id, membershipId: courierMembership.id, displayName: "Livreur E2E", phone: "+221770000003", vehicleType: "motorbike", vehicleRegistration: `DK-${runId.slice(-6)}`, status: "inactive" } }), 200);
           const inactiveProfile = await responseData<{ items: Array<{ id: string; status: string; stats: { deliveredTotal: number } }> }>(await merchantContext.request.get(`/api/merchant/couriers?merchantId=${merchant.id}`), 200);

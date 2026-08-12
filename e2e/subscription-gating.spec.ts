@@ -115,6 +115,9 @@ test.describe.serial("blocage des vendeurs non abonnés", () => {
         region: "Dakar",
         city: "Dakar",
         address_hint: "Point de retrait E2E",
+        pickup_address_line: "Point de retrait E2E, Dakar",
+        pickup_latitude: 14.7167,
+        pickup_longitude: -17.4677,
         status: "active",
         verification_status: "approved",
         subscription_status: "active",
@@ -287,6 +290,8 @@ test.describe.serial("blocage des vendeurs non abonnés", () => {
               region: "Dakar",
               city: "Dakar",
               addressHint: "Adresse fictive Playwright",
+              latitude: 14.72,
+              longitude: -17.45,
             },
             groups: [
               {

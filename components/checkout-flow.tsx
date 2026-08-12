@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useCart } from "@/components/cart-provider";
 import { OrderBatchConfirmation, type ConfirmedOrder } from "@/components/order-batch-confirmation";
 import { ShopContact } from "@/components/shop-contact";
+import { LocationPicker } from "@/components/location-map";
 import {
   clearCheckoutDraft,
   readCheckoutDraft,
@@ -15,6 +16,7 @@ import {
 import { formatPrice } from "@/lib/marketplace";
 import type { CartLine } from "@/lib/domain/cart";
 import { SENEGAL_REGIONS } from "@/lib/domain/merchant-ui";
+import type { Coordinates, GeoPlace } from "@/lib/domain/geo";
 
 type Step = "panier" | "livraison" | "compte" | "confirmation";
 
@@ -28,18 +30,23 @@ type ShopInfo = {
   deliveryZones: Array<{
     id: string;
     label: string;
+    region: string;
+    city: string | null;
     feeXof: number;
     minDelayMinutes: number;
     maxDelayMinutes: number;
   }>;
   pickup?: {
     enabled: boolean;
-    addressLine: string | null;
-    latitude: number | null;
-    longitude: number | null;
     hours: string | null;
     instructions: string | null;
   };
+  location: { addressLine: string | null; latitude: number | null; longitude: number | null };
+};
+
+type SavedAddress = {
+  id: string; label: string; recipient_name: string; phone: string; region: string; city: string;
+  address_hint: string; latitude: number | null; longitude: number | null; is_default: boolean;
 };
 
 type QuoteGroupResult = {
@@ -89,6 +96,7 @@ export function CheckoutFlow() {
   const [recipient, setRecipient] = useState<CheckoutRecipient>(emptyRecipient);
   const [quote, setQuote] = useState<{ groups: QuoteGroupResult[]; totalXof: number } | null>(null);
   const [authenticated, setAuthenticated] = useState<boolean | null>(null);
+  const [savedAddresses, setSavedAddresses] = useState<SavedAddress[]>([]);
   const [confirmedOrders, setConfirmedOrders] = useState<ConfirmedOrder[] | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -144,7 +152,9 @@ export function CheckoutFlow() {
         return response.ok ? response.json() : null;
       })
       .then((payload) => {
-        const defaultAddress = payload?.data?.items?.find((item: { is_default: boolean }) => item.is_default) ?? payload?.data?.items?.[0];
+        const addresses = (payload?.data?.items ?? []) as SavedAddress[];
+        setSavedAddresses(addresses);
+        const defaultAddress = addresses.find((item) => item.is_default) ?? addresses[0];
         if (defaultAddress) {
           setRecipient({
             name: defaultAddress.recipient_name,
@@ -152,6 +162,7 @@ export function CheckoutFlow() {
             region: defaultAddress.region,
             city: defaultAddress.city,
             addressHint: defaultAddress.address_hint,
+            ...(defaultAddress.latitude != null && defaultAddress.longitude != null ? { latitude: defaultAddress.latitude, longitude: defaultAddress.longitude } : {}),
           });
         }
       })
@@ -193,7 +204,12 @@ export function CheckoutFlow() {
       const response = await fetch("/api/cart/quote", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ groups: buildQuoteGroups(methodKindsOverride, selectedZonesOverride, loyaltyOverride) }),
+        body: JSON.stringify({
+          groups: buildQuoteGroups(methodKindsOverride, selectedZonesOverride, loyaltyOverride),
+          ...(recipient.latitude !== undefined && recipient.longitude !== undefined
+            ? { destination: { region: recipient.region, city: recipient.city, latitude: recipient.latitude, longitude: recipient.longitude } }
+            : {}),
+        }),
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload?.error?.message ?? "Le devis n’a pas pu être calculé.");
@@ -234,9 +250,7 @@ export function CheckoutFlow() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authenticated, cart.ready]);
 
-  const goToLivraison = async () => {
-    if (await requestQuote()) setStep("livraison");
-  };
+  const goToLivraison = async () => setStep("livraison");
 
   const changeMethodKind = (merchantId: string, kind: "pickup" | "merchant_delivery") => {
     setMethodKinds((current) => ({ ...current, [merchantId]: kind }));
@@ -244,6 +258,69 @@ export function CheckoutFlow() {
       const shop = shops[merchantId];
       setPaymentMethods((current) => ({ ...current, [merchantId]: shop?.paymentMethods.wave ? "wave_direct" : "orange_money_direct" }));
     }
+  };
+
+  const chooseRegion = (region: string) => {
+    setRecipient((current) => ({ ...current, region }));
+    setSelectedZones((current) => {
+      const next = { ...current };
+      for (const group of groups) {
+        const matching = shops[group.merchantId]?.deliveryZones.find((zone) => zone.region === region);
+        if (matching) next[group.merchantId] = matching.id;
+      }
+      return next;
+    });
+  };
+
+  useEffect(() => {
+    if (!recipient.region) return;
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (cancelled) return;
+      setSelectedZones((current) => {
+        let changed = false;
+        const next = { ...current };
+        for (const group of groups) {
+          const zones = shops[group.merchantId]?.deliveryZones ?? [];
+          const selected = zones.find((zone) => zone.id === current[group.merchantId]);
+          if (selected?.region === recipient.region) continue;
+          const matching = zones.find((zone) => zone.region === recipient.region);
+          if (matching) { next[group.merchantId] = matching.id; changed = true; }
+        }
+        return changed ? next : current;
+      });
+    });
+    return () => { cancelled = true; };
+  }, [groups, recipient.region, shops]);
+
+  const chooseSavedAddress = (address: SavedAddress) => {
+    setRecipient({
+      name: address.recipient_name,
+      phone: address.phone,
+      region: address.region,
+      city: address.city,
+      addressHint: address.address_hint,
+      ...(address.latitude != null && address.longitude != null ? { latitude: address.latitude, longitude: address.longitude } : {}),
+    });
+    chooseRegion(address.region);
+  };
+
+  const setRecipientCoordinates = (coordinates: Coordinates | null) => {
+    setRecipient((current) => {
+      const { latitude: _latitude, longitude: _longitude, ...withoutCoordinates } = current;
+      return coordinates ? { ...withoutCoordinates, ...coordinates } : withoutCoordinates;
+    });
+  };
+
+  const applyResolvedPlace = (place: GeoPlace) => {
+    const canonicalRegion = SENEGAL_REGIONS.find((region) => region.toLocaleLowerCase("fr") === place.region?.toLocaleLowerCase("fr"));
+    setRecipient((current) => ({
+      ...current,
+      addressHint: place.label,
+      city: place.city ?? current.city,
+      region: canonicalRegion ?? current.region,
+    }));
+    if (canonicalRegion) chooseRegion(canonicalRegion);
   };
 
   const confirmLivraison = async () => {
@@ -258,6 +335,11 @@ export function CheckoutFlow() {
     });
     if (invalidPayment) {
       setError("La livraison doit être payée directement par Wave ou Orange Money.");
+      return;
+    }
+    const hasDelivery = groups.some((group) => (methodKinds[group.merchantId] ?? "merchant_delivery") === "merchant_delivery");
+    if (hasDelivery && (recipient.latitude === undefined || recipient.longitude === undefined)) {
+      setError("Placez la destination sur la carte avant de continuer.");
       return;
     }
     if (!(await requestQuote())) return;
@@ -394,7 +476,7 @@ export function CheckoutFlow() {
                       value={selectedZones[group.merchantId] ?? ""}
                       onChange={(event) => setSelectedZones((current) => ({ ...current, [group.merchantId]: event.target.value }))}
                     >
-                      {shop.deliveryZones.map((zone) => (
+                      {shop.deliveryZones.filter((zone) => !recipient.region || zone.region === recipient.region).map((zone) => (
                         <option key={zone.id} value={zone.id}>
                           {zone.label} — {formatPrice(zone.feeXof)}
                         </option>
@@ -406,9 +488,9 @@ export function CheckoutFlow() {
                   <ShopContact
                     phone={shop.phone}
                     email={shop.email}
-                    addressLine={shop.pickup?.addressLine}
-                    latitude={shop.pickup?.latitude}
-                    longitude={shop.pickup?.longitude}
+                    addressLine={shop.location.addressLine}
+                    latitude={shop.location.latitude}
+                    longitude={shop.location.longitude}
                   />
                 )}
               </div>
@@ -425,6 +507,14 @@ export function CheckoutFlow() {
       {step === "livraison" && (
         <section className="checkout-step">
           <h2>Livraison</h2>
+          {savedAddresses.length > 0 && <div className="mvp-card">
+            <h3>Mes adresses enregistrées</h3>
+            <div className="mvp-actions">{savedAddresses.map((address) => (
+              <button type="button" className="mvp-button mvp-button--secondary" key={address.id} onClick={() => chooseSavedAddress(address)}>
+                {address.label}{address.latitude == null ? " · à localiser" : ""}
+              </button>
+            ))}</div>
+          </div>}
           <div className="mvp-form">
             <div className="mvp-form__grid">
               <label className="mvp-field">
@@ -437,7 +527,7 @@ export function CheckoutFlow() {
               </label>
               <label className="mvp-field">
                 Région
-                <select value={recipient.region} onChange={(event) => setRecipient({ ...recipient, region: event.target.value })} required>
+                <select value={recipient.region} onChange={(event) => chooseRegion(event.target.value)} required>
                   <option value="" disabled>Choisissez une région</option>
                   {SENEGAL_REGIONS.map((value) => <option value={value} key={value}>{value}</option>)}
                 </select>
@@ -451,6 +541,15 @@ export function CheckoutFlow() {
               Précisions d’adresse
               <textarea value={recipient.addressHint} onChange={(event) => setRecipient({ ...recipient, addressHint: event.target.value })} required />
             </label>
+            {groups.some((group) => (methodKinds[group.merchantId] ?? "merchant_delivery") === "merchant_delivery") && (
+              <LocationPicker
+                value={recipient.latitude !== undefined && recipient.longitude !== undefined ? { latitude: recipient.latitude, longitude: recipient.longitude } : null}
+                onChange={setRecipientCoordinates}
+                onPlace={applyResolvedPlace}
+                label="Destination exacte de la livraison"
+                required
+              />
+            )}
           </div>
 
           <div className="mvp-card"><h3>Paiement direct par boutique</h3><p>Chaque transfert est envoyé directement au marchand concerné. Après la commande, vous recevrez son numéro et devrez transmettre la référence du paiement.</p></div>

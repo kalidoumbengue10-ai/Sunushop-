@@ -29,6 +29,8 @@ export function anonymizeCompletedDelivery<T extends {
       addressHint: null,
       name: null,
       phone: null,
+      latitude: null,
+      longitude: null,
     },
   };
 }

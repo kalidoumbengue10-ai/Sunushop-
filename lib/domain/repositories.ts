@@ -10,6 +10,9 @@ export type CatalogItem = {
     name: string;
     slug: string;
     city: string | null;
+    latitude?: number | null;
+    longitude?: number | null;
+    distanceKm?: number | null;
   };
   variant: {
     id: string;
@@ -58,11 +61,13 @@ export type PublicShop = {
   }>;
   pickup: {
     enabled: boolean;
+    hours: string | null;
+    instructions: string | null;
+  };
+  location: {
     addressLine: string | null;
     latitude: number | null;
     longitude: number | null;
-    hours: string | null;
-    instructions: string | null;
   };
   products: CatalogItem[];
 };
@@ -73,6 +78,13 @@ export type QuoteRequestGroup = {
   methodKind?: "pickup" | "merchant_delivery";
   applyLoyalty?: boolean;
   items: Array<{ variantId: string; quantity: number }>;
+};
+
+export type QuoteDestination = {
+  region: string;
+  city: string;
+  latitude: number;
+  longitude: number;
 };
 
 export type QuoteGroup = {
@@ -108,10 +120,12 @@ export interface CatalogRepository {
     merchantSlug?: string;
     region?: string;
     city?: string;
+    latitude?: number;
+    longitude?: number;
     page: number;
     limit: number;
   }): Promise<{ products: CatalogItem[]; total: number; page: number; limit: number }>;
   findByVariantIds(variantIds: string[]): Promise<CatalogItem[]>;
   findShopBySlug(slug: string): Promise<PublicShop | null>;
-  quote(groups: QuoteRequestGroup[]): Promise<QuoteGroup[]>;
+  quote(groups: QuoteRequestGroup[], destination?: QuoteDestination): Promise<QuoteGroup[]>;
 }

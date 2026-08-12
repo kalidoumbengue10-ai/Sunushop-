@@ -29,7 +29,7 @@ describe("livraison marchande", () => {
       status: "delivered" as const,
       recipient: { name: "Client", phone: "+221770000000", addressHint: "Rue 1", region: "Dakar", city: "Dakar" },
     });
-    expect(result.recipient).toEqual({ name: null, phone: null, addressHint: null, region: "Dakar", city: "Dakar" });
+    expect(result.recipient).toEqual({ name: null, phone: null, addressHint: null, latitude: null, longitude: null, region: "Dakar", city: "Dakar" });
   });
 
   it("ne rend les coordonnées terminales que pendant un litige actif", () => {

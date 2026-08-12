@@ -11,7 +11,7 @@ export async function POST(request: Request) {
     const input = cartQuoteSchema.parse(await request.json());
     const admin = requireAdminClient();
     const repository = new SupabaseCatalogRepository(admin);
-    const groups = await repository.quote(input.groups);
+    const groups = await repository.quote(input.groups, input.destination);
     const supabase = await getServerSupabase();
     const { data: { user } } = supabase ? await supabase.auth.getUser() : { data: { user: null } };
     const merchantIds = input.groups.map((group) => group.merchantId);

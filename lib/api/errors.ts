@@ -229,6 +229,22 @@ const databaseErrorMap: Record<string, { status: number; message: string }> = {
     status: 409,
     message: "Le retrait en boutique n’est pas disponible pour cette boutique.",
   },
+  SHOP_LOCATION_REQUIRED: {
+    status: 422,
+    message: "Cette boutique doit enregistrer sa position avant de proposer la livraison.",
+  },
+  DELIVERY_DESTINATION_REQUIRED: {
+    status: 422,
+    message: "Placez la destination sur la carte avant de confirmer la livraison.",
+  },
+  DELIVERY_DESTINATION_INVALID: {
+    status: 422,
+    message: "La destination doit être située au Sénégal.",
+  },
+  DELIVERY_REGION_MISMATCH: {
+    status: 422,
+    message: "La zone choisie ne correspond pas à la région de livraison.",
+  },
   SHOP_ADDRESS_REQUIRED: {
     status: 422,
     message: "L’adresse de la boutique est requise pour activer le retrait.",

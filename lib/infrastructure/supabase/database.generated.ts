@@ -830,6 +830,7 @@ export type Database = {
           platform_commission_xof: number
           recipient_code_attempts: number
           recipient_code_hash: string
+          route_snapshot: Json | null
           status: Database["public"]["Enums"]["delivery_status"]
           terminal_at: string | null
           updated_at: string
@@ -859,6 +860,7 @@ export type Database = {
           platform_commission_xof?: number
           recipient_code_attempts?: number
           recipient_code_hash: string
+          route_snapshot?: Json | null
           status?: Database["public"]["Enums"]["delivery_status"]
           terminal_at?: string | null
           updated_at?: string
@@ -888,6 +890,7 @@ export type Database = {
           platform_commission_xof?: number
           recipient_code_attempts?: number
           recipient_code_hash?: string
+          route_snapshot?: Json | null
           status?: Database["public"]["Enums"]["delivery_status"]
           terminal_at?: string | null
           updated_at?: string
@@ -4081,6 +4084,21 @@ export type Database = {
       create_order_batch_without_loyalty: {
         Args: { p_groups: Json; p_idempotency_key: string; p_recipient: Json }
         Returns: Json
+      }
+      nearby_storefront_product_ids: {
+        Args: {
+          p_category_slug?: string | null
+          p_latitude: number
+          p_limit?: number
+          p_longitude: number
+          p_offset?: number
+          p_query?: string | null
+        }
+        Returns: {
+          distance_km: number | null
+          product_id: string
+          total_count: number
+        }[]
       }
       create_order_payment_intent: {
         Args: {
