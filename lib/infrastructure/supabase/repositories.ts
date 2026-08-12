@@ -177,7 +177,12 @@ export class SupabaseCatalogRepository implements CatalogRepository {
       request = request.eq("categories.slug", input.category);
     }
     if (input.merchantSlug) request = request.eq("merchant_accounts.slug", input.merchantSlug);
-    if (input.region) request = request.eq("merchant_accounts.region", input.region);
+    // Une boutique sans région renseignée doit rester visible plutôt que
+    // d'être silencieusement exclue par le filtre régional du client.
+    if (input.region) {
+      const escapedRegion = input.region.replaceAll(",", "\\,");
+      request = request.or(`region.eq.${escapedRegion},region.is.null`, { referencedTable: "merchant_accounts" });
+    }
     if (input.city) request = request.ilike("merchant_accounts.city", input.city);
 
     const { data, error, count } = await request;
