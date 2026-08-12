@@ -6,7 +6,7 @@ import { ShopCard } from "@/components/shop-card";
 import { getAdminSupabase } from "@/lib/infrastructure/supabase/server";
 import { SupabaseCatalogRepository } from "@/lib/infrastructure/supabase/repositories";
 
-export const revalidate = 60;
+export const dynamic = "force-dynamic";
 
 export default async function Home() {
   const admin = getAdminSupabase();
