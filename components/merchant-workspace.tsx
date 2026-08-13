@@ -557,6 +557,10 @@ export function MerchantWorkspace(props: MerchantWorkspaceProps) {
         {missingRequired.length > 0 && props.merchant.status !== "suspended" && (
           <div className="merchant-context-note"><PackageSearch /><p>Votre dossier documentaire est incomplet. Vous pouvez continuer à préparer votre boutique en attendant : <button type="button" className="merchant-context-note__link" onClick={() => setTab("dossier")}>terminez-le ici</button>.</p></div>
         )}
+
+        {(props.merchant.pickup_latitude == null || props.merchant.pickup_longitude == null) && props.merchant.status !== "suspended" && (
+          <div className="merchant-context-note"><PackageSearch /><p>Votre boutique n’a pas encore de position enregistrée. Tant qu’elle est absente, vos clients ne peuvent plus passer de commande en livraison : <button type="button" className="merchant-context-note__link" onClick={() => setTab("boutique")}>placez-la sur la carte</button>.</p></div>
+        )}
         {message && <p className="mvp-alert merchant-global-feedback">{message}</p>}
         {error && <p className="mvp-alert mvp-alert--error merchant-global-feedback">{error}</p>}
 
