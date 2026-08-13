@@ -8,7 +8,14 @@ type PeriodAnalytics = {
   approved_payments_count: number;
   delivered_units: number;
   product_revenue_xof: number;
+  paid_orders_count: number;
+  paid_units: number;
+  order_volume_xof: number;
+  refunds_xof: number;
+  subscription_breakdown: Record<string, number>;
   top_sellers: Array<{ merchantId: string; merchantName: string; units: number; revenueXof: number }>;
+  top_products: Array<{ productId: string; productName: string; merchantName: string; units: number; revenueXof: number }>;
+  top_categories: Array<{ categoryId: string; categoryName: string; units: number; revenueXof: number }>;
 };
 
 export async function GET(request: Request) {
@@ -39,16 +46,23 @@ export async function GET(request: Request) {
         approvedPaymentsCount: current.approved_payments_count,
         deliveredUnits: current.delivered_units,
         productRevenueXof: current.product_revenue_xof,
+        paidOrdersCount: current.paid_orders_count,
+        paidUnits: current.paid_units,
+        orderVolumeXof: current.order_volume_xof,
+        refundsXof: current.refunds_xof,
+        subscriptionBreakdown: current.subscription_breakdown ?? {},
         previousSubscriptionRevenueXof: previous.subscription_revenue_xof,
         subscriptionRevenueChangePercent: previous.subscription_revenue_xof
           ? Math.round(((current.subscription_revenue_xof - previous.subscription_revenue_xof) / previous.subscription_revenue_xof) * 1000) / 10
           : null,
         previousProductRevenueXof: previous.product_revenue_xof,
-        productRevenueChangePercent: previous.product_revenue_xof
-          ? Math.round(((current.product_revenue_xof - previous.product_revenue_xof) / previous.product_revenue_xof) * 1000) / 10
+        productRevenueChangePercent: previous.order_volume_xof
+          ? Math.round(((current.order_volume_xof - previous.order_volume_xof) / previous.order_volume_xof) * 1000) / 10
           : null,
       },
       topSellers: current.top_sellers ?? [],
+      topProducts: current.top_products ?? [],
+      topCategories: current.top_categories ?? [],
     }, { requestId });
   } catch (error) {
     return apiFailure(error, requestId);

@@ -3,7 +3,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { getBrowserSupabase } from "@/lib/infrastructure/supabase/browser";
 
-export function AdminMfa() {
+export function AdminMfa({ next = "/admin/crm" }: { next?: string }) {
   const [factorId, setFactorId] = useState("");
   const [qrCode, setQrCode] = useState("");
   const [code, setCode] = useState("");
@@ -82,10 +82,15 @@ export function AdminMfa() {
       setError(verifyError.message);
       return;
     }
+    const { data: assurance } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+    if (assurance.currentLevel !== "aal2") {
+      setError("La session renforcée n’a pas pu être confirmée. Réessayez.");
+      return;
+    }
     setStatus("Accès sécurisé. Ouverture de votre espace de pilotage…");
     setQrCode("");
     setCode("");
-    window.location.assign("/admin/crm");
+    window.location.replace(next.startsWith("/admin") ? next : "/admin/crm");
   };
 
   return (

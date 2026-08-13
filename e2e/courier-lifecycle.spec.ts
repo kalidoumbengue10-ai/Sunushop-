@@ -96,6 +96,16 @@ async function createMerchant(ownerUserId: string, ownerEmail: string, suffix: s
   created.merchantIds.push(data.id);
   const { error: memberError } = await admin.from("merchant_members").insert({ merchant_id: data.id, user_id: ownerUserId, role: "owner" });
   if (memberError) throw memberError;
+  const periodEnd = new Date(Date.now() + 30 * 86_400_000);
+  const { error: subscriptionError } = await admin.from("merchant_subscriptions").insert({
+    merchant_id: data.id,
+    plan_id: "essential",
+    status: "active",
+    starts_at: new Date().toISOString(),
+    current_period_ends_at: periodEnd.toISOString(),
+    grace_ends_at: new Date(periodEnd.getTime() + 3 * 86_400_000).toISOString(),
+  });
+  if (subscriptionError) throw subscriptionError;
   return data;
 }
 
@@ -392,6 +402,31 @@ test.describe.serial("flux livreur complet", () => {
       await expect(disputedMission).toContainText("+221770002222");
       const { data: dispute } = await admin.from("delivery_disputes").select("id").eq("delivery_id", deliveryA3!.id).eq("status", "open").single();
       await enableAdminMfa(supportPage);
+      await test.step("le CRM sépare les clients, expose les contacts et reste responsive sans redemander la MFA", async () => {
+        await supportPage.goto("/admin/crm");
+        await activateButton(supportPage.getByRole("button", { name: /Clients commerçants/ }));
+        await expect(supportPage.getByText(merchantA.public_name, { exact: true })).toBeVisible({ timeout: 15_000 });
+        const firstClient = supportPage.locator(".crm-contact-row").filter({ hasText: merchantA.public_name });
+        await expect(firstClient.getByRole("link", { name: "Appeler" })).toHaveAttribute("href", "tel:+221770001111");
+        await expect(firstClient.getByRole("link", { name: "Envoyer un e-mail" })).toHaveAttribute("href", /^mailto:/);
+        await activateButton(firstClient.getByRole("button", { name: /Ouvrir le dossier/ }));
+        await expect(supportPage.getByRole("heading", { name: merchantA.public_name })).toBeVisible();
+        await activateButton(supportPage.getByRole("button", { name: "Fermer" }));
+        await expect(supportPage).toHaveURL(/\/admin\/crm$/);
+
+        for (const viewport of [{ width: 320, height: 720 }, { width: 768, height: 1024 }, { width: 1440, height: 900 }]) {
+          await supportPage.setViewportSize(viewport);
+          const overflow = await supportPage.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+          expect(overflow, `CRM admin déborde à ${viewport.width}px`).toBeLessThanOrEqual(1);
+        }
+
+        await supportPage.setViewportSize({ width: 1440, height: 900 });
+        await activateButton(supportPage.getByRole("button", { name: /Abonnements/ }));
+        const channelCards = supportPage.locator(".admin-subscription-channel");
+        await expect(channelCards).toHaveCount(2);
+        const boxes = await channelCards.evaluateAll((elements) => elements.map((element) => element.getBoundingClientRect().width));
+        expect(boxes.every((width) => width > 300)).toBe(true);
+      });
       await supportPage.goto("/admin");
       await supportPage.locator("button").filter({ hasText: "Litiges" }).click({ force: true, timeout: 15_000 });
       const supportDisputeRow = supportPage.locator(".admin-payment-row").filter({ hasText: orderA3.publicCode });

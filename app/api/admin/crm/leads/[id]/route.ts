@@ -17,7 +17,7 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
     if (!data) throw new ApiError(404, "CRM_LEAD_NOT_FOUND", "Prospect introuvable.");
 
     let merchant: { status: string; verification_status: string; subscription_status: string } | null = null;
-    let documents: Array<{ document_type: string; status: string; version: number }> = [];
+    let documents: Array<{ id: string; case_id: string; document_type: string; status: string; version: number; mime_type: string; uploaded_at: string }> = [];
     let caseId: string | null = null;
     if (data.merchant_id) {
       const [{ data: merchantRow }, { data: documentRows }, { data: caseRow }] = await Promise.all([
@@ -28,7 +28,7 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
           .maybeSingle(),
         supabase
           .from("verification_documents")
-          .select("document_type, status, version")
+          .select("id, case_id, document_type, status, version, mime_type, uploaded_at")
           .eq("merchant_id", data.merchant_id)
           .order("version", { ascending: false }),
         supabase
@@ -55,6 +55,9 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
   try {
     const { id } = await context.params;
     const input = crmLeadUpdateSchema.parse(await request.json());
+    if (input.status === "converted") {
+      throw new ApiError(409, "CRM_SUBSCRIPTION_REQUIRED", "Le passage en client est automatique après activation de l’abonnement.");
+    }
     const { user, supabase } = await requireAdminRole(["support", "admin"]);
     const { data: current, error: currentError } = await supabase
       .from("crm_leads")
@@ -63,13 +66,14 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
       .maybeSingle();
     if (currentError) throw currentError;
     if (!current) throw new ApiError(404, "CRM_LEAD_NOT_FOUND", "Prospect introuvable.");
+    if (current.status === "converted") {
+      throw new ApiError(409, "CRM_CLIENT_IMMUTABLE", "Ce contact est désormais géré depuis les clients commerçants.");
+    }
 
     const values: Record<string, unknown> = {};
     if (input.status) {
       values.status = input.status;
       if (input.status === "contacted") values.last_contacted_at = new Date().toISOString();
-      if (input.status === "converted") values.converted_at = new Date().toISOString();
-      if (current.status === "converted" && input.status !== "converted") values.converted_at = null;
     }
     if (input.priority) values.priority = input.priority;
 

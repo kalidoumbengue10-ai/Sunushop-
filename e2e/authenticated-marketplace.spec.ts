@@ -779,6 +779,8 @@ test.describe.serial("flux authentifiés marketplace", () => {
       "/api/admin/analytics?from=2026-01-01T00:00:00.000Z&to=2026-02-01T00:00:00.000Z",
     );
     expect(anonymous.status()).toBe(401);
+    const anonymousCrm = await anonymousContext.request.get("/api/admin/crm/contacts?segment=clients");
+    expect(anonymousCrm.status()).toBe(401);
     await anonymousContext.close();
 
     const clientEmail = `e2e-analytics-client-${runId}@example.test`;
@@ -789,6 +791,8 @@ test.describe.serial("flux authentifiés marketplace", () => {
       "/api/admin/analytics?from=2026-01-01T00:00:00.000Z&to=2026-02-01T00:00:00.000Z",
     );
     expect(forbidden.status()).toBe(403);
+    const forbiddenCrm = await clientContext.request.get("/api/admin/crm/contacts?segment=clients");
+    expect(forbiddenCrm.status()).toBe(403);
     await clientContext.close();
   });
 });

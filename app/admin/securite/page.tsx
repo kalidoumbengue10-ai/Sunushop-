@@ -5,7 +5,13 @@ import { SetupRequired } from "@/components/setup-required";
 import { isSupabaseConfigured } from "@/lib/config/env";
 import { getServerSupabase } from "@/lib/infrastructure/supabase/server";
 
-export default async function AdminSecurityPage() {
+export default async function AdminSecurityPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ next?: string }>;
+}) {
+  const requestedNext = (await searchParams).next;
+  const next = requestedNext?.startsWith("/admin") ? requestedNext : "/admin/crm";
   const configured = isSupabaseConfigured();
   if (configured) {
     const supabase = await getServerSupabase();
@@ -21,7 +27,7 @@ export default async function AdminSecurityPage() {
     const { data: assurance } =
       await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
     if (assurance?.currentLevel === "aal2") {
-      redirect("/admin/crm");
+      redirect(next);
     }
   }
 
@@ -29,7 +35,7 @@ export default async function AdminSecurityPage() {
     <MvpShell>
       <main className="mvp-main">
         <div className="mvp-shell">
-          {configured ? <AdminMfa /> : <SetupRequired />}
+          {configured ? <AdminMfa next={next} /> : <SetupRequired />}
         </div>
       </main>
     </MvpShell>

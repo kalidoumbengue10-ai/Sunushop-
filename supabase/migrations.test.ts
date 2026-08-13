@@ -58,6 +58,7 @@ describe("contrat statique des migrations", () => {
       "order_disputes",
       "platform_payment_settings",
       "subscription_billing_periods",
+      "subscription_value_ledger",
     ].forEach((table) => {
       expect(sql).toContain(
         `alter table public.${table} enable row level security;`,
@@ -109,5 +110,19 @@ describe("contrat statique des migrations", () => {
     expect(sql).toContain("subscription.test_activate");
     expect(sql).toContain("Les seeds locaux ne sont pas exécutés automatiquement");
     expect(sql).toContain("('essential', 'Essentiel', 4900");
+  });
+
+  it("sépare durablement prospects, clients et valeurs d’abonnement", () => {
+    expect(sql).toContain("add column if not exists customer_since timestamptz");
+    expect(sql).toContain("create type public.subscription_value_origin");
+    expect(sql).toContain("create table public.subscription_value_ledger");
+    expect(sql).toContain("create trigger merchant_subscription_marks_customer");
+    expect(sql).toContain("create trigger subscription_payment_records_value");
+    expect(sql).toContain("create trigger subscription_grant_records_value");
+    expect(sql).toContain("create trigger test_subscription_records_value");
+    expect(sql).toContain("ma.customer_since is null");
+    expect(sql).toContain("orders.payment_status in ('paid', 'refund_pending', 'refunded')");
+    expect(sql).toContain("top_products jsonb");
+    expect(sql).toContain("top_categories jsonb");
   });
 });

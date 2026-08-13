@@ -6,6 +6,8 @@ import {
   ChevronRight,
   Copy,
   Download,
+  Eye,
+  FileText,
   Mail,
   MessageCircle,
   Phone,
@@ -13,11 +15,14 @@ import {
   Send,
   ShieldAlert,
   Sparkles,
+  Store,
   Trash2,
   UserRoundCheck,
   X,
 } from "lucide-react";
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { adminFetch } from "@/lib/admin/fetch";
+import { formatPrice } from "@/lib/marketplace";
 
 export type CrmLead = {
   id: string;
@@ -69,16 +74,59 @@ type CrmLeadDetail = CrmLead & {
     verification_status: string;
     subscription_status: string;
   } | null;
-  documents: Array<{ document_type: string; status: string; version: number }>;
+  documents: Array<{ id: string; case_id: string; document_type: string; status: string; version: number; mime_type: string; uploaded_at: string }>;
   caseId: string | null;
 };
 
-// Pipeline minimal : deux étapes visibles, adapté à un marché où il faut
-// être direct. "rejected"/"archived" restent accessibles via le filtre mais
-// n'apparaissent pas dans le pipeline visuel.
-const pipelineGroups: Array<{ id: "a_traiter" | "boutique_ouverte"; label: string; statuses: LeadStatus[] }> = [
-  { id: "a_traiter", label: "À traiter", statuses: ["new", "contacted", "qualified", "onboarding"] },
-  { id: "boutique_ouverte", label: "Boutique ouverte", statuses: ["converted"] },
+type ClientSummary = {
+  kind: "client";
+  id: string;
+  publicName: string;
+  legalName: string | null;
+  contactName: string;
+  email: string | null;
+  phone: string;
+  city: string | null;
+  region: string | null;
+  activity: string | null;
+  status: string;
+  verificationStatus: string;
+  subscriptionStatus: string;
+  customerSince: string;
+  planId: string | null;
+  planName: string | null;
+  billingCycle: string | null;
+  periodEndsAt: string | null;
+};
+
+type ClientDossier = {
+  merchant: {
+    id: string; public_name: string; legal_name: string | null; kind: string; description: string | null;
+    email: string | null; phone: string; region: string | null; city: string | null; address_hint: string | null;
+    ninea: string | null; rccm: string | null; status: string; verification_status: string;
+    subscription_status: string; customer_since: string;
+  };
+  contact: null | (CrmLead & {
+    crm_lead_notes: Array<{ id: string; body: string; author_id: string; created_at: string }>;
+    crm_lead_events: Array<{ id: string; event_type: string; summary: string | null; created_at: string }>;
+  });
+  subscriptions: Array<{ id: string; plan_id: string; status: string; starts_at: string | null; current_period_ends_at: string | null; billing_cycle: string; subscription_plans: { name: string; monthly_price_xof: number } | Array<{ name: string; monthly_price_xof: number }> }>;
+  subscriptionValues: Array<{ id: string; plan_id: string; origin: string; amount_xof: number; recognized_at: string }>;
+  documents: Record<string, Array<{ id: string; case_id: string; document_type: string; version: number; status: string; mime_type: string; size_bytes: number; uploaded_at: string }>>;
+  metrics: { paidOrdersCount: number; paidUnits: number; grossOrderVolumeXof: number; refundsXof: number; netOrderVolumeXof: number };
+  topProducts: Array<{ productId: string; productName: string; units: number; revenueXof: number }>;
+  topCategories: Array<{ categoryId: string; categoryName: string; units: number; revenueXof: number }>;
+  recentOrders: Array<{ id: string; public_code: string; status: string; payment_status: string; total_xof: number; created_at: string }>;
+  canViewDocuments: boolean;
+};
+
+// Les clients convertis ont désormais leur propre portefeuille ; le pipeline
+// reste consacré aux étapes commerciales encore actionnables.
+const pipelineGroups: Array<{ id: string; label: string; statuses: LeadStatus[] }> = [
+  { id: "new", label: "Nouveaux", statuses: ["new"] },
+  { id: "contacted", label: "Contactés", statuses: ["contacted"] },
+  { id: "qualified", label: "Qualifiés", statuses: ["qualified"] },
+  { id: "onboarding", label: "Accompagnement", statuses: ["onboarding"] },
 ];
 
 const statusOptions: Array<{ value: LeadStatus; label: string }> = [
@@ -86,7 +134,6 @@ const statusOptions: Array<{ value: LeadStatus; label: string }> = [
   { value: "contacted", label: "Contacté" },
   { value: "qualified", label: "Qualifié" },
   { value: "onboarding", label: "Accompagnement" },
-  { value: "converted", label: "Commerçant actif" },
   { value: "rejected", label: "Non retenu" },
   { value: "archived", label: "Archivé" },
 ];
@@ -121,6 +168,10 @@ function formatDate(value: string | null, includeTime = false) {
   }).format(new Date(value));
 }
 
+function relationOne<T>(value: T | T[] | null | undefined) {
+  return Array.isArray(value) ? value[0] : value ?? null;
+}
+
 function csvCell(value: unknown) {
   return `"${String(value ?? "").replaceAll('"', '""')}"`;
 }
@@ -132,17 +183,111 @@ export function AdminCrm({
   leads: CrmLead[];
   reload: () => Promise<void>;
 }) {
+  const [segment, setSegment] = useState<"prospects" | "clients">("prospects");
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<LeadStatus | "all">("all");
+  const [clientStatus, setClientStatus] = useState("");
+  const [clientPlan, setClientPlan] = useState("");
+  const [clientCity, setClientCity] = useState("");
+  const [clientActivity, setClientActivity] = useState("");
+  const [clientPeriod, setClientPeriod] = useState<"month" | "30days" | "year">("month");
+  const [clientPage, setClientPage] = useState(1);
+  const [clientPageSize, setClientPageSize] = useState(25);
+  const [clients, setClients] = useState<ClientSummary[]>([]);
+  const [clientTotal, setClientTotal] = useState(0);
+  const [clientsLoading, setClientsLoading] = useState(false);
+  const [selectedClient, setSelectedClient] = useState<ClientDossier | null>(null);
   const [selected, setSelected] = useState<CrmLeadDetail | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [actionMessage, setActionMessage] = useState("");
   const [invitationLink, setInvitationLink] = useState("");
 
+  const loadClients = useCallback(async () => {
+    setClientsLoading(true);
+    setError("");
+    try {
+      const params = new URLSearchParams({ segment: "clients" });
+      params.set("page", String(clientPage));
+      if (query.trim()) params.set("q", query.trim());
+      if (clientStatus) params.set("status", clientStatus);
+      if (clientPlan) params.set("plan", clientPlan);
+      if (clientCity.trim()) params.set("city", clientCity.trim());
+      if (clientActivity.trim()) params.set("activity", clientActivity.trim());
+      const payload = await adminFetch<{ items: ClientSummary[]; total: number; pageSize: number }>(`/api/admin/crm/contacts?${params}`);
+      setClients(payload.items);
+      setClientTotal(payload.total);
+      setClientPageSize(payload.pageSize);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Clients indisponibles.");
+    } finally {
+      setClientsLoading(false);
+    }
+  }, [clientActivity, clientCity, clientPage, clientPlan, clientStatus, query]);
+
+  useEffect(() => {
+    if (segment !== "clients") return;
+    const timer = window.setTimeout(() => { void loadClients(); }, 180);
+    return () => window.clearTimeout(timer);
+  }, [segment, loadClients]);
+
+  useEffect(() => {
+    void adminFetch<{ total: number }>("/api/admin/crm/contacts?segment=clients")
+      .then((payload) => setClientTotal(payload.total))
+      .catch(() => undefined);
+  }, []);
+
+  const openClient = async (merchantId: string, period = clientPeriod) => {
+    setBusy(true);
+    setError("");
+    try {
+      const now = new Date();
+      const from = period === "year"
+        ? new Date(Date.UTC(now.getUTCFullYear(), 0, 1)).toISOString()
+        : period === "30days"
+          ? new Date(now.getTime() - 29 * 86_400_000).toISOString()
+          : new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString();
+      const to = new Date(now.getTime() + 86_400_000).toISOString();
+      setSelectedClient(await adminFetch<ClientDossier>(`/api/admin/crm/clients/${merchantId}?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`));
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Dossier client indisponible.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const copyValue = async (value: string, label: string) => {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(value);
+    } else {
+      const field = document.createElement("textarea");
+      field.value = value;
+      field.style.position = "fixed";
+      field.style.opacity = "0";
+      document.body.append(field);
+      field.select();
+      document.execCommand("copy");
+      field.remove();
+    }
+    setActionMessage(`${label} copié.`);
+  };
+
+  const openClientDocument = async (caseId: string, documentId: string) => {
+    setBusy(true);
+    try {
+      const payload = await adminFetch<{ url: string }>(`/api/admin/verifications/${caseId}/documents/${documentId}`);
+      window.open(payload.url, "_blank", "noopener,noreferrer");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Document inaccessible.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
     return leads.filter((lead) => {
+      if (lead.status === "converted") return false;
       if (status !== "all" && lead.status !== status) return false;
       if (!needle) return true;
       return [lead.full_name, lead.business_name, lead.email, lead.phone, lead.city, lead.business_type]
@@ -165,10 +310,7 @@ export function AdminCrm({
     setInvitationLink("");
     setActionMessage("");
     try {
-      const response = await fetch(`/api/admin/crm/leads/${id}`);
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error?.message ?? "Prospect inaccessible.");
-      setSelected(payload.data as CrmLeadDetail);
+      setSelected(await adminFetch<CrmLeadDetail>(`/api/admin/crm/leads/${id}`));
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Une erreur est survenue.");
     } finally {
@@ -188,7 +330,7 @@ export function AdminCrm({
     setBusy(true);
     setError("");
     try {
-      const response = await fetch(`/api/admin/crm/leads/${selected.id}`, {
+      await adminFetch(`/api/admin/crm/leads/${selected.id}`, {
         method: "PATCH",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
@@ -196,8 +338,6 @@ export function AdminCrm({
           priority: form.get("priority"),
         }),
       });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error?.message ?? "Mise à jour impossible.");
       await refreshSelected();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Une erreur est survenue.");
@@ -213,13 +353,11 @@ export function AdminCrm({
     const body = String(new FormData(form).get("body") || "");
     setBusy(true);
     try {
-      const response = await fetch(`/api/admin/crm/leads/${selected.id}/notes`, {
+      await adminFetch(`/api/admin/crm/leads/${selected.id}/notes`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ body }),
       });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error?.message ?? "Note non enregistrée.");
       form.reset();
       await refreshSelected();
     } catch (caught) {
@@ -239,7 +377,7 @@ export function AdminCrm({
     const phone = digits.length === 9 ? `+221${digits}` : `+${digits}`;
     setBusy(true); setError(""); setActionMessage(""); setInvitationLink("");
     try {
-      const response = await fetch("/api/admin/merchant-invitations", {
+      const payload = await adminFetch<{ invitationUrl?: string; emailSent?: boolean }>("/api/admin/merchant-invitations", {
         method: "POST", headers: { "content-type": "application/json" },
         body: JSON.stringify({
           leadId: selected.id,
@@ -252,10 +390,8 @@ export function AdminCrm({
           representativeIsLegalOwner: true,
         }),
       });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error?.message ?? "Invitation impossible.");
-      setInvitationLink(String(payload.data.invitationUrl ?? ""));
-      setActionMessage(payload.data.emailSent ? "L’e-mail a été accepté par le serveur de messagerie. Le lien sécurisé est aussi disponible ci-dessous." : "L’accès est créé. L’e-mail sera retenté automatiquement ; utilisez le lien ci-dessous sans attendre.");
+      setInvitationLink(String(payload.invitationUrl ?? ""));
+      setActionMessage(payload.emailSent ? "L’e-mail a été accepté par le serveur de messagerie. Le lien sécurisé est aussi disponible ci-dessous." : "L’accès est créé. L’e-mail sera retenté automatiquement ; utilisez le lien ci-dessous sans attendre.");
       await refreshSelected();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Invitation impossible.");
@@ -270,13 +406,11 @@ export function AdminCrm({
     if (!confirmed) return;
     setBusy(true); setError(""); setActionMessage("");
     try {
-      const response = await fetch("/api/admin/subscriptions/test-activation", {
+      await adminFetch("/api/admin/subscriptions/test-activation", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ merchantId: selected.merchant_id, days: 30 }),
       });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error?.message ?? "Activation impossible.");
       setActionMessage("Abonnement de test actif pendant 30 jours. Le commerçant peut maintenant publier ses produits.");
       await refreshSelected();
     } catch (caught) {
@@ -292,13 +426,11 @@ export function AdminCrm({
     if (!confirmed) return;
     setBusy(true); setError(""); setActionMessage("");
     try {
-      const response = await fetch(`/api/admin/verifications/${selected.caseId}/decision`, {
+      await adminFetch(`/api/admin/verifications/${selected.caseId}/decision`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ outcome: "suspended", reasonCode: "crm_manual_suspend" }),
       });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error?.message ?? "Suspension impossible.");
       setActionMessage("La boutique est suspendue. Elle n’est plus visible sur le marché.");
       await refreshSelected();
     } catch (caught) {
@@ -311,13 +443,14 @@ export function AdminCrm({
   const deleteMerchant = async () => {
     if (!selected?.merchant_id) return;
     const merchantId = selected.merchant_id;
-    const previewResponse = await fetch(`/api/admin/merchants/${merchantId}`);
-    const previewPayload = await previewResponse.json();
-    if (!previewResponse.ok) {
-      setError(previewPayload.error?.message ?? "Impossible de préparer la suppression.");
+    let previewPayload: { productCount: number; orderCount: number };
+    try {
+      previewPayload = await adminFetch<{ productCount: number; orderCount: number }>(`/api/admin/merchants/${merchantId}`);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Impossible de préparer la suppression.");
       return;
     }
-    const { productCount, orderCount } = previewPayload.data as { productCount: number; orderCount: number };
+    const { productCount, orderCount } = previewPayload;
     const confirmed = window.confirm(
       `Supprimer définitivement la boutique « ${selected.business_name} » ?\n\n` +
         `${productCount} produit(s) et ${orderCount} commande(s) seront supprimés avec elle. Cette action est IRRÉVERSIBLE.`,
@@ -331,9 +464,7 @@ export function AdminCrm({
     }
     setBusy(true); setError(""); setActionMessage("");
     try {
-      const response = await fetch(`/api/admin/merchants/${merchantId}`, { method: "DELETE" });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error?.message ?? "Suppression impossible.");
+      await adminFetch(`/api/admin/merchants/${merchantId}`, { method: "DELETE" });
       setActionMessage("La boutique et toutes ses données ont été supprimées.");
       setSelected(null);
       await reload();
@@ -351,9 +482,7 @@ export function AdminCrm({
     setBusy(true);
     setError("");
     try {
-      const response = await fetch(`/api/admin/crm/leads/${selected.id}`, { method: "DELETE" });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error?.message ?? "Suppression impossible.");
+      await adminFetch(`/api/admin/crm/leads/${selected.id}`, { method: "DELETE" });
       setSelected(null);
       await reload();
     } catch (caught) {
@@ -389,6 +518,16 @@ export function AdminCrm({
 
   return (
     <div className="crm-workspace">
+      <section className="crm-segment-tabs" aria-label="Type de relation commerciale">
+        <button type="button" className={segment === "prospects" ? "is-active" : ""} onClick={() => { setSegment("prospects"); setQuery(""); }}>
+          Prospects <strong>{leads.filter((lead) => lead.status !== "converted").length}</strong>
+        </button>
+        <button type="button" className={segment === "clients" ? "is-active" : ""} onClick={() => { setSegment("clients"); setQuery(""); }}>
+          Clients commerçants <strong>{clientTotal}</strong>
+        </button>
+      </section>
+      {actionMessage && <p className="admin-feedback crm-global-feedback">{actionMessage}</p>}
+      {segment === "prospects" && <>
       <section className="crm-pipeline" aria-label="Étapes du suivi commercial">
         {pipelineGroups.map((group) => (
           <button
@@ -433,19 +572,66 @@ export function AdminCrm({
             <span>Commerce</span><span>Contact</span><span>Étape</span><span>Reçu le</span><span />
           </div>
           {filtered.map((lead) => (
-            <button key={lead.id} type="button" className="crm-table__row" onClick={() => openLead(lead.id)} disabled={busy} role="row">
+            <article key={lead.id} className="crm-table__row crm-contact-row crm-prospect-row" role="row">
+              <button type="button" className="crm-contact-row__open" onClick={() => openLead(lead.id)} disabled={busy} aria-label={`Ouvrir la fiche de ${lead.business_name}`}><ChevronRight /></button>
               <span data-label="Commerce"><b>{lead.business_name}</b><small>{lead.business_type || "Activité à préciser"} · {lead.city || "Ville à préciser"}</small></span>
-              <span data-label="Contact"><b>{lead.full_name}</b><small>{lead.email}</small></span>
+              <span data-label="Contact" className="crm-contact-cell"><b>{lead.full_name}</b><small>{lead.email}{lead.phone ? ` · ${lead.phone}` : ""}</small></span>
               <span data-label="Étape"><i className="crm-status" data-status={lead.status}>{statusLabel(lead.status)}</i><small>{priorityLabels[lead.priority]}</small></span>
               <span data-label="Reçu le"><b>{formatDate(lead.created_at)}</b><small>Mis à jour {formatDate(lead.updated_at)}</small></span>
-              <ChevronRight />
-            </button>
+              <div className="crm-row-actions" aria-label={`Contacter ${lead.business_name}`}>
+                <button type="button" onClick={() => void copyValue(lead.email, "E-mail")} aria-label="Copier l’e-mail"><Copy /></button>
+                <a href={`mailto:${lead.email}`} aria-label="Envoyer un e-mail"><Mail /></a>
+                {lead.phone && <><button type="button" onClick={() => void copyValue(lead.phone!, "Téléphone")} aria-label="Copier le téléphone"><Copy /></button><a href={`tel:${lead.phone}`} aria-label="Appeler"><Phone /></a><a href={`https://wa.me/${lead.phone.replace(/\D/g, "")}`} target="_blank" rel="noreferrer" aria-label="Contacter sur WhatsApp"><MessageCircle /></a></>}
+              </div>
+            </article>
           ))}
           {!filtered.length && (
             <div className="crm-empty"><Sparkles /><h3>Aucun prospect dans cette vue</h3><p>Les nouvelles candidatures du site apparaîtront automatiquement ici.</p></div>
           )}
         </div>
       </section>
+      </>}
+
+      {segment === "clients" && (
+        <section className="admin-panel crm-list-panel">
+          <div className="admin-panel__heading">
+            <div><span className="admin-kicker">Portefeuille commerçants</span><h2>Clients commerçants</h2><p>Un client reste dans ce portefeuille après sa première activation.</p></div>
+            <span className="admin-count">{clientTotal} client{clientTotal > 1 ? "s" : ""}</span>
+          </div>
+          <div className="crm-toolbar crm-toolbar--clients">
+            <label><Search /><span className="sr-only">Rechercher un client</span><input value={query} onChange={(event) => { setQuery(event.target.value); setClientPage(1); }} placeholder="Boutique, contact, e-mail, téléphone…" /></label>
+            <select value={clientStatus} onChange={(event) => { setClientStatus(event.target.value); setClientPage(1); }} aria-label="Statut d’abonnement">
+              <option value="">Tous les statuts</option><option value="active">Actif</option><option value="grace">Grâce</option><option value="expired">Expiré</option><option value="cancelled">Annulé</option>
+            </select>
+            <select value={clientPlan} onChange={(event) => { setClientPlan(event.target.value); setClientPage(1); }} aria-label="Plan d’abonnement">
+              <option value="">Tous les plans</option><option value="essential">Essentiel</option><option value="pro">Pro</option><option value="network">Réseau</option>
+            </select>
+            <input value={clientCity} onChange={(event) => { setClientCity(event.target.value); setClientPage(1); }} placeholder="Ville" aria-label="Filtrer par ville" />
+            <input value={clientActivity} onChange={(event) => { setClientActivity(event.target.value); setClientPage(1); }} placeholder="Activité" aria-label="Filtrer par activité" />
+          </div>
+          {error && <p className="admin-feedback admin-feedback--error">{error}</p>}
+          <div className="crm-table crm-client-table" role="table" aria-label="Liste des clients commerçants" aria-busy={clientsLoading}>
+            <div className="crm-table__head" role="row"><span>Commerce</span><span>Coordonnées</span><span>Abonnement</span><span>Activité</span><span>Actions</span></div>
+            {clients.map((client) => (
+              <article className="crm-table__row crm-contact-row" key={client.id} role="row">
+                <button type="button" className="crm-contact-row__open" onClick={() => void openClient(client.id)} disabled={busy} aria-label={`Ouvrir le dossier de ${client.publicName}`}><Eye /></button>
+                <span data-label="Commerce"><b>{client.publicName}</b><small>{client.contactName} · {client.city || "Ville à préciser"}</small></span>
+                <span data-label="Coordonnées" className="crm-contact-cell"><b>{client.email || "E-mail non renseigné"}</b><small>{client.phone}</small></span>
+                <span data-label="Abonnement"><i className="crm-status" data-status={client.subscriptionStatus}>{client.planName || "Sans plan"} · {client.subscriptionStatus}</i><small>{client.periodEndsAt ? `Jusqu’au ${formatDate(client.periodEndsAt)}` : "Période non renseignée"}</small></span>
+                <span data-label="Activité"><b>{client.activity || "À préciser"}</b><small>Client depuis {formatDate(client.customerSince)}</small></span>
+                <div className="crm-row-actions" aria-label={`Contacter ${client.publicName}`}>
+                  {client.email && <><button type="button" onClick={() => void copyValue(client.email!, "E-mail")} aria-label="Copier l’e-mail"><Copy /></button><a href={`mailto:${client.email}`} aria-label="Envoyer un e-mail"><Mail /></a></>}
+                  <button type="button" onClick={() => void copyValue(client.phone, "Téléphone")} aria-label="Copier le téléphone"><Copy /></button>
+                  <a href={`tel:${client.phone}`} aria-label="Appeler"><Phone /></a>
+                  <a href={`https://wa.me/${client.phone.replace(/\D/g, "")}`} target="_blank" rel="noreferrer" aria-label="Contacter sur WhatsApp"><MessageCircle /></a>
+                </div>
+              </article>
+            ))}
+            {!clients.length && !clientsLoading && <div className="crm-empty"><UserRoundCheck /><h3>Aucun client dans cette vue</h3><p>Les commerçants apparaissent ici dès leur première activation d’abonnement.</p></div>}
+          </div>
+          {clientTotal > clientPageSize && <nav className="crm-pagination" aria-label="Pagination des clients"><button type="button" disabled={clientPage === 1 || clientsLoading} onClick={() => setClientPage((page) => Math.max(1, page - 1))}>Précédent</button><span>Page {clientPage} sur {Math.ceil(clientTotal / clientPageSize)}</span><button type="button" disabled={clientPage * clientPageSize >= clientTotal || clientsLoading} onClick={() => setClientPage((page) => page + 1)}>Suivant</button></nav>}
+        </section>
+      )}
 
       {selected && (
         <div className="crm-drawer-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setSelected(null); }}>
@@ -457,7 +643,9 @@ export function AdminCrm({
 
             <div className="crm-contact-actions">
               <a href={`mailto:${selected.email}`}><Mail /> Écrire</a>
+              <button type="button" onClick={() => void copyValue(selected.email, "E-mail")}><Copy /> Copier l’e-mail</button>
               {selected.phone && <a href={`tel:${selected.phone}`}><Phone /> Appeler</a>}
+              {selected.phone && <button type="button" onClick={() => void copyValue(selected.phone!, "Téléphone")}><Copy /> Copier le numéro</button>}
               {selected.phone && <a href={`https://wa.me/${selected.phone.replace(/\D/g, "")}`} target="_blank" rel="noreferrer"><MessageCircle /> WhatsApp</a>}
             </div>
 
@@ -476,8 +664,9 @@ export function AdminCrm({
                     <ul className="crm-document-list">
                       {selected.documents.map((doc) => (
                         <li key={`${doc.document_type}-${doc.version}`}>
-                          <span>{documentTypeLabels[doc.document_type] ?? doc.document_type}</span>
+                          <span>{documentTypeLabels[doc.document_type] ?? doc.document_type}<small>Version {doc.version} · {formatDate(doc.uploaded_at)}</small></span>
                           <i className="crm-status" data-status={doc.status}>{doc.status}</i>
+                          <button type="button" className="admin-text-button" onClick={() => void openClientDocument(doc.case_id, doc.id)} disabled={busy || doc.status === "purged"}><Eye /> Consulter</button>
                         </li>
                       ))}
                     </ul>
@@ -549,6 +738,88 @@ export function AdminCrm({
                   <Trash2 /> Supprimer ce prospect
                 </button>
               </section>
+            </div>
+          </aside>
+        </div>
+      )}
+
+      {selectedClient && (
+        <div className="crm-drawer-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setSelectedClient(null); }}>
+          <aside className="crm-drawer crm-client-drawer" role="dialog" aria-modal="true" aria-labelledby="crm-client-title">
+            <header className="crm-drawer__header">
+              <div><span className="admin-kicker">Dossier client commerçant</span><h2 id="crm-client-title">{selectedClient.merchant.public_name}</h2><p>{selectedClient.contact?.full_name || selectedClient.merchant.legal_name || "Contact principal"} · {selectedClient.merchant.city || "Ville à préciser"}</p></div>
+              <button type="button" onClick={() => setSelectedClient(null)} aria-label="Fermer"><X /></button>
+            </header>
+
+            <div className="crm-contact-actions crm-contact-actions--sticky">
+              {selectedClient.merchant.email && <a href={`mailto:${selectedClient.merchant.email}`}><Mail /> Écrire</a>}
+              <a href={`tel:${selectedClient.merchant.phone}`}><Phone /> Appeler</a>
+              <a href={`https://wa.me/${selectedClient.merchant.phone.replace(/\D/g, "")}`} target="_blank" rel="noreferrer"><MessageCircle /> WhatsApp</a>
+              {selectedClient.merchant.email && <button type="button" onClick={() => void copyValue(selectedClient.merchant.email!, "E-mail")}><Copy /> Copier l’e-mail</button>}
+              <button type="button" onClick={() => void copyValue(selectedClient.merchant.phone, "Téléphone")}><Copy /> Copier le numéro</button>
+            </div>
+
+            <div className="crm-drawer__body">
+              <div className="crm-client-period" aria-label="Période d’activité">
+                {([['month', 'Ce mois'], ['30days', '30 jours'], ['year', 'Cette année']] as const).map(([value, label]) => <button type="button" key={value} className={clientPeriod === value ? "is-active" : ""} onClick={() => { setClientPeriod(value); void openClient(selectedClient.merchant.id, value); }}>{label}</button>)}
+              </div>
+              <section className="crm-client-kpis">
+                <article><small>Volume net payé</small><strong>{formatPrice(selectedClient.metrics.netOrderVolumeXof)}</strong></article>
+                <article><small>Commandes payées</small><strong>{selectedClient.metrics.paidOrdersCount}</strong></article>
+                <article><small>Unités vendues</small><strong>{selectedClient.metrics.paidUnits}</strong></article>
+                <article><small>Remboursements</small><strong>{formatPrice(selectedClient.metrics.refundsXof)}</strong></article>
+              </section>
+
+              <section className="crm-detail-card">
+                <div className="crm-detail-card__heading"><h3>Identité et activité</h3><Store /></div>
+                <dl>
+                  <div><dt>Contact</dt><dd>{selectedClient.contact?.full_name || "Non renseigné"}</dd></div>
+                  <div><dt>Activité</dt><dd>{selectedClient.contact?.business_type || selectedClient.merchant.description || "À préciser"}</dd></div>
+                  <div><dt>Adresse</dt><dd>{[selectedClient.merchant.address_hint, selectedClient.merchant.city, selectedClient.merchant.region].filter(Boolean).join(" · ") || "À préciser"}</dd></div>
+                  <div><dt>Client depuis</dt><dd>{formatDate(selectedClient.merchant.customer_since)}</dd></div>
+                  <div><dt>NINEA</dt><dd>{selectedClient.merchant.ninea || "Non renseigné"}</dd></div>
+                  <div><dt>RCCM</dt><dd>{selectedClient.merchant.rccm || "Non renseigné"}</dd></div>
+                </dl>
+              </section>
+
+              <section className="crm-detail-card">
+                <div className="crm-detail-card__heading"><h3>Abonnements</h3><BadgeCheck /></div>
+                <div className="crm-subscription-history">
+                  {selectedClient.subscriptions.map((subscription) => {
+                    const plan = relationOne(subscription.subscription_plans);
+                    return <article key={subscription.id}><div><b>{plan?.name ?? subscription.plan_id}</b><small>{subscription.billing_cycle} · début {formatDate(subscription.starts_at)}</small></div><i className="crm-status" data-status={subscription.status}>{subscription.status}</i><small>{subscription.current_period_ends_at ? `Fin de période ${formatDate(subscription.current_period_ends_at)}` : "Période non renseignée"}</small></article>;
+                  })}
+                </div>
+                <div className="crm-value-history">
+                  {selectedClient.subscriptionValues.map((value) => <span key={value.id}><b>{formatPrice(value.amount_xof)}</b> · {value.origin.replaceAll("_", " ")} · {formatDate(value.recognized_at)}</span>)}
+                </div>
+              </section>
+
+              <section className="crm-detail-card">
+                <div className="crm-detail-card__heading"><h3>Documents commerçant</h3><FileText /></div>
+                <p className="crm-muted">Toutes les versions restent rattachées à ce dossier tant que le compte client existe.</p>
+                <div className="crm-client-documents">
+                  {Object.entries(selectedClient.documents).map(([type, documents]) => (
+                    <section key={type}><h4>{documentTypeLabels[type] ?? type}</h4>{documents.map((document) => (
+                      <article key={document.id}><div><b>Version {document.version}</b><small>{formatDate(document.uploaded_at, true)} · {document.mime_type}</small></div><i className="crm-status" data-status={document.status}>{document.status}</i><button type="button" onClick={() => void openClientDocument(document.case_id, document.id)} disabled={busy || document.status === "purged" || !selectedClient.canViewDocuments}><Eye /> {selectedClient.canViewDocuments ? "Consulter" : "Accès restreint"}</button></article>
+                    ))}</section>
+                  ))}
+                  {!Object.keys(selectedClient.documents).length && <p className="crm-muted">Aucun document déposé.</p>}
+                </div>
+              </section>
+
+              <div className="crm-client-rankings">
+                <section className="crm-detail-card"><h3>Produits les plus vendus</h3>{selectedClient.topProducts.map((product) => <article key={product.productId}><span><b>{product.productName}</b><small>{product.units} unités</small></span><strong>{formatPrice(product.revenueXof)}</strong></article>)}{!selectedClient.topProducts.length && <p className="crm-muted">Aucune vente payée sur la période.</p>}</section>
+                <section className="crm-detail-card"><h3>Catégories dominantes</h3>{selectedClient.topCategories.map((category) => <article key={category.categoryId}><span><b>{category.categoryName}</b><small>{category.units} unités</small></span><strong>{formatPrice(category.revenueXof)}</strong></article>)}{!selectedClient.topCategories.length && <p className="crm-muted">Aucune catégorie vendue sur la période.</p>}</section>
+              </div>
+
+              <section className="crm-detail-card">
+                <h3>Commandes récentes</h3>
+                <div className="crm-client-orders">{selectedClient.recentOrders.map((order) => <article key={order.id}><span><b>{order.public_code}</b><small>{formatDate(order.created_at, true)} · {order.status.replaceAll("_", " ")}</small></span><strong>{formatPrice(order.total_xof)}</strong><i className="crm-status" data-status={order.payment_status}>{order.payment_status.replaceAll("_", " ")}</i></article>)}</div>
+                {!selectedClient.recentOrders.length && <p className="crm-muted">Aucune commande sur cette période.</p>}
+              </section>
+
+              {selectedClient.contact && <section className="crm-detail-card"><div className="crm-detail-card__heading"><h3>Notes de suivi</h3><UserRoundCheck /></div><div className="crm-note-list">{[...(selectedClient.contact.crm_lead_notes ?? [])].sort((a, b) => b.created_at.localeCompare(a.created_at)).map((note) => <article key={note.id}><p>{note.body}</p><small>{formatDate(note.created_at, true)}</small></article>)}{!selectedClient.contact.crm_lead_notes?.length && <p className="crm-muted">Aucune note enregistrée.</p>}</div></section>}
             </div>
           </aside>
         </div>

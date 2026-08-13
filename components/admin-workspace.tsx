@@ -8,13 +8,15 @@ import {
   LayoutDashboard,
   MessageSquare,
   ReceiptText,
+  RefreshCw,
   ShieldCheck,
   Store,
   TrendingUp,
   UsersRound,
 } from "lucide-react";
 import Link from "next/link";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { adminFetch } from "@/lib/admin/fetch";
 import { AdminCrm, type CrmLead } from "@/components/admin-crm";
 import { AdminCrmMetrics } from "@/components/admin-crm-metrics";
 import { CategoryAdmin } from "@/components/category-admin";
@@ -158,12 +160,13 @@ export function AdminWorkspace({ initialTab = "overview" }: { initialTab?: Admin
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null);
+  const [analyticsRefreshKey, setAnalyticsRefreshKey] = useState(0);
+  const markSynced = useCallback((date = new Date()) => setLastSyncedAt(date), []);
 
   const loadQueue = async () => {
-    const response = await fetch("/api/admin/verifications");
-    const payload = await response.json();
-    if (!response.ok) throw new Error(payload.error?.message ?? "Dossiers indisponibles.");
-    setQueue(payload.data.items as VerificationQueueItem[]);
+    const payload = await adminFetch<{ items: VerificationQueueItem[] }>("/api/admin/verifications");
+    setQueue(payload.items);
   };
   const loadPayments = async () => {
     const params = new URLSearchParams({ month: billingMonth });
@@ -171,42 +174,30 @@ export function AdminWorkspace({ initialTab = "overview" }: { initialTab?: Admin
     if (billingPlan) params.set("plan", billingPlan);
     if (billingCycle) params.set("cycle", billingCycle);
     if (billingMerchant) params.set("merchant", billingMerchant);
-    const response = await fetch(`/api/admin/subscription-payments?${params}`);
-    const payload = await response.json();
-    if (!response.ok) throw new Error(payload.error?.message ?? "Abonnements indisponibles.");
-    setPayments(payload.data.items as PaymentItem[]);
-    setBillingItems(payload.data.billingItems as BillingItem[]);
+    const payload = await adminFetch<{ items: PaymentItem[]; billingItems: BillingItem[] }>(`/api/admin/subscription-payments?${params}`);
+    setPayments(payload.items);
+    setBillingItems(payload.billingItems);
   };
   const loadPlatformSettings = async () => {
-    const response = await fetch("/api/admin/payment-settings");
-    const payload = await response.json();
-    if (!response.ok) throw new Error(payload.error?.message ?? "Numéros SunuShop indisponibles.");
-    setPlatformSettings(payload.data.items as PlatformPaymentSetting[]);
+    const payload = await adminFetch<{ items: PlatformPaymentSetting[] }>("/api/admin/payment-settings");
+    setPlatformSettings(payload.items);
   };
   const loadLeads = async () => {
-    const response = await fetch("/api/admin/crm/leads");
-    const payload = await response.json();
-    if (!response.ok) throw new Error(payload.error?.message ?? "Prospects indisponibles.");
-    setLeads(payload.data.items as CrmLead[]);
+    const payload = await adminFetch<{ items: CrmLead[] }>("/api/admin/crm/leads");
+    setLeads(payload.items);
   };
   const loadDisputes = async () => {
-    const response = await fetch("/api/admin/disputes");
-    const payload = await response.json();
-    if (!response.ok) throw new Error(payload.error?.message ?? "Litiges indisponibles.");
-    setDisputes(payload.data.items as DisputeItem[]);
+    const payload = await adminFetch<{ items: DisputeItem[] }>("/api/admin/disputes");
+    setDisputes(payload.items);
   };
   const loadGrants = async () => {
-    const response = await fetch("/api/admin/subscriptions/grants");
-    const payload = await response.json();
-    if (!response.ok) throw new Error(payload.error?.message ?? "Historique indisponible.");
-    setGrants(payload.data.items as SubscriptionGrantItem[]);
+    const payload = await adminFetch<{ items: SubscriptionGrantItem[] }>("/api/admin/subscriptions/grants");
+    setGrants(payload.items);
   };
 
   const loadDeliveryDisputes = async () => {
-    const response = await fetch("/api/admin/delivery-disputes");
-    const payload = await response.json();
-    if (!response.ok) throw new Error(payload.error?.message ?? "Litiges de livraison indisponibles.");
-    setDeliveryDisputes(payload.data.items as DeliveryDisputeItem[]);
+    const payload = await adminFetch<{ items: DeliveryDisputeItem[] }>("/api/admin/delivery-disputes");
+    setDeliveryDisputes(payload.items);
   };
 
   useEffect(() => {
@@ -216,10 +207,23 @@ export function AdminWorkspace({ initialTab = "overview" }: { initialTab?: Admin
       const failures = results.filter((result) => result.status === "rejected");
       if (failures.length === results.length) {
         setError("Votre espace ne peut pas être chargé pour le moment.");
+      } else {
+        setLastSyncedAt(new Date());
       }
     });
     // Le chargement initial conserve les filtres par défaut ; les changements
     // sont appliqués explicitement par le bouton du CRM financier.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    const refreshOnFocus = () => {
+      setAnalyticsRefreshKey((value) => value + 1);
+      void Promise.allSettled([loadQueue(), loadPayments(), loadLeads()]).then(() => setLastSyncedAt(new Date()));
+    };
+    window.addEventListener("focus", refreshOnFocus);
+    return () => window.removeEventListener("focus", refreshOnFocus);
+    // Les fonctions lisent les filtres courants au retour sur la fenêtre.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -229,10 +233,7 @@ export function AdminWorkspace({ initialTab = "overview" }: { initialTab?: Admin
     setBusy(true);
     setError("");
     try {
-      const response = await fetch(`/api/merchant/verifications/${id}`);
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error?.message ?? "Dossier inaccessible.");
-      setSelected(payload.data as VerificationDetail);
+      setSelected(await adminFetch<VerificationDetail>(`/api/merchant/verifications/${id}`));
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Dossier inaccessible.");
     } finally {
@@ -243,10 +244,8 @@ export function AdminWorkspace({ initialTab = "overview" }: { initialTab?: Admin
   const openDocument = async (caseId: string, documentId: string) => {
     setBusy(true);
     try {
-      const response = await fetch(`/api/admin/verifications/${caseId}/documents/${documentId}`);
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error?.message ?? "Document inaccessible.");
-      window.open(payload.data.url, "_blank", "noopener,noreferrer");
+      const payload = await adminFetch<{ url: string }>(`/api/admin/verifications/${caseId}/documents/${documentId}`);
+      window.open(payload.url, "_blank", "noopener,noreferrer");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Document inaccessible.");
     } finally {
@@ -261,7 +260,7 @@ export function AdminWorkspace({ initialTab = "overview" }: { initialTab?: Admin
     setError("");
     const form = new FormData(event.currentTarget);
     try {
-      const response = await fetch(`/api/admin/verifications/${selected.case.id}/decision`, {
+      await adminFetch(`/api/admin/verifications/${selected.case.id}/decision`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
@@ -271,8 +270,6 @@ export function AdminWorkspace({ initialTab = "overview" }: { initialTab?: Admin
           internalNote: form.get("internalNote") || undefined,
         }),
       });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error?.message ?? "Décision impossible.");
       setMessage("La décision a été enregistrée. Le commerçant peut poursuivre son parcours.");
       setSelected(undefined);
       await loadQueue();
@@ -289,13 +286,11 @@ export function AdminWorkspace({ initialTab = "overview" }: { initialTab?: Admin
     setBusy(true);
     setError("");
     try {
-      const response = await fetch(`/api/admin/subscription-payments/${id}/decision`, {
+      await adminFetch(`/api/admin/subscription-payments/${id}/decision`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ approved, rejectionReason }),
       });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error?.message ?? "Décision impossible.");
       setMessage(approved ? "Le paiement est validé et la période facturée est couverte." : "Le paiement n’a pas été validé.");
       await loadPayments();
     } catch (caught) {
@@ -311,13 +306,11 @@ export function AdminWorkspace({ initialTab = "overview" }: { initialTab?: Admin
     setBusy(true);
     setError("");
     try {
-      const response = await fetch(`/api/admin/disputes/${disputeId}/resolve`, {
+      await adminFetch(`/api/admin/disputes/${disputeId}/resolve`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ resolution, note }),
       });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error?.message ?? "Résolution impossible.");
       setMessage(resolution === "refund_required" ? "Le remboursement direct a été demandé au marchand." : "Le litige est clos sans remboursement.");
       await loadDisputes();
     } catch (caught) {
@@ -332,13 +325,11 @@ export function AdminWorkspace({ initialTab = "overview" }: { initialTab?: Admin
     if (!resolution || resolution.trim().length < 4) return;
     setBusy(true); setError("");
     try {
-      const response = await fetch(`/api/admin/delivery-disputes/${id}/resolve`, {
+      await adminFetch(`/api/admin/delivery-disputes/${id}/resolve`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ outcome, resolution }),
       });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error?.message ?? "Résolution impossible.");
       setMessage("Le litige de livraison est clos et les coordonnées client sont de nouveau masquées au livreur.");
       await loadDeliveryDisputes();
     } catch (caught) {
@@ -350,9 +341,7 @@ export function AdminWorkspace({ initialTab = "overview" }: { initialTab?: Admin
     event.preventDefault(); setBusy(true); setError("");
     const form = new FormData(event.currentTarget);
     try {
-      const response = await fetch("/api/admin/payment-settings", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ channel, paymentNumber: form.get("paymentNumber"), accountHolder: form.get("accountHolder") || null, active: form.get("active") === "on", paymentLink: form.get("paymentLink") || null }) });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error?.message ?? "Numéro impossible à enregistrer.");
+      await adminFetch("/api/admin/payment-settings", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ channel, paymentNumber: form.get("paymentNumber"), accountHolder: form.get("accountHolder") || null, active: form.get("active") === "on", paymentLink: form.get("paymentLink") || null }) });
       setMessage(`Numéro ${channel === "wave" ? "Wave" : "Orange Money"} SunuShop enregistré.`);
       await loadPlatformSettings();
     } catch (caught) { setError(caught instanceof Error ? caught.message : "Numéro impossible à enregistrer."); }
@@ -370,10 +359,8 @@ export function AdminWorkspace({ initialTab = "overview" }: { initialTab?: Admin
     setBusy(true);
     setError("");
     try {
-      const response = await fetch(`/api/admin/merchants/search?q=${encodeURIComponent(merchantQuery)}`);
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error?.message ?? "Recherche impossible.");
-      setMerchantResults(payload.data.items as MerchantSearchResult[]);
+      const payload = await adminFetch<{ items: MerchantSearchResult[] }>(`/api/admin/merchants/search?q=${encodeURIComponent(merchantQuery)}`);
+      setMerchantResults(payload.items);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Recherche impossible.");
     } finally {
@@ -389,7 +376,7 @@ export function AdminWorkspace({ initialTab = "overview" }: { initialTab?: Admin
     setMessage("");
     const form = new FormData(event.currentTarget);
     try {
-      const response = await fetch("/api/admin/subscriptions/grant", {
+      await adminFetch("/api/admin/subscriptions/grant", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
@@ -399,8 +386,6 @@ export function AdminWorkspace({ initialTab = "overview" }: { initialTab?: Admin
           reason: form.get("reason"),
         }),
       });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error?.message ?? "Octroi impossible.");
       setMessage(`Abonnement activé pour ${grantMerchant.public_name}.`);
       event.currentTarget.reset();
       setGrantMerchant(undefined);
@@ -416,7 +401,7 @@ export function AdminWorkspace({ initialTab = "overview" }: { initialTab?: Admin
 
   const navItems = [
     { id: "overview" as const, label: "Vue d’ensemble", icon: LayoutDashboard },
-    { id: "crm" as const, label: "Prospects", icon: UsersRound, badge: leads.filter((lead) => lead.status === "new").length },
+    { id: "crm" as const, label: "CRM commerçants", icon: UsersRound, badge: leads.filter((lead) => lead.status === "new").length },
     { id: "verifications" as const, label: "Dossiers commerçants", icon: FileCheck2, badge: queue.length },
     { id: "subscriptions" as const, label: "Abonnements", icon: ReceiptText, badge: payments.length },
     { id: "litiges" as const, label: "Litiges", icon: AlertTriangle, badge: disputes.length + deliveryDisputes.filter((item) => item.status === "open").length },
@@ -426,7 +411,7 @@ export function AdminWorkspace({ initialTab = "overview" }: { initialTab?: Admin
 
   const title = {
     overview: ["Vue d’ensemble", "Les priorités du jour, au même endroit."],
-    crm: ["Prospects", "Transformez chaque demande en prochaine étape claire."],
+    crm: ["Prospects & clients", "Contactez les commerçants et suivez leur activité au même endroit."],
     verifications: ["Dossiers commerçants", "Validez les informations avec un parcours lisible et traçable."],
     subscriptions: ["Abonnements", "Activez les accès après confirmation des paiements."],
     litiges: ["Litiges", "Arbitrez les commandes signalées et suivez les remboursements directs."],
@@ -454,7 +439,7 @@ export function AdminWorkspace({ initialTab = "overview" }: { initialTab?: Admin
       <main className="admin-main">
         <header className="admin-topbar">
           <div><span className="admin-kicker">Espace administrateur</span><h1>{title[0]}</h1><p>{title[1]}</p></div>
-          <div className="admin-topbar__status"><span /><div><b>Services opérationnels</b><small>Dernière synchronisation à l’instant</small></div></div>
+          <div className="admin-topbar__status"><span /><div><b>Données du CRM</b><small>{lastSyncedAt ? `Actualisées à ${lastSyncedAt.toLocaleTimeString("fr-SN", { hour: "2-digit", minute: "2-digit" })}` : "Synchronisation en cours"}</small></div><button type="button" onClick={() => { setAnalyticsRefreshKey((value) => value + 1); void Promise.allSettled([loadQueue(), loadPayments(), loadPlatformSettings(), loadLeads(), loadDisputes(), loadDeliveryDisputes(), loadGrants()]).then(() => markSynced()); }} disabled={busy} aria-label="Actualiser toutes les données"><RefreshCw /></button></div>
         </header>
 
         {message && <p className="admin-feedback"><CheckCircle2 /> {message}</p>}
@@ -466,7 +451,7 @@ export function AdminWorkspace({ initialTab = "overview" }: { initialTab?: Admin
               <div><span>À traiter aujourd’hui</span><h2>Faites avancer les bons dossiers.</h2><p>Les nouvelles demandes, les relances et les validations prioritaires sont regroupées pour vous aider à décider rapidement.</p><button type="button" onClick={() => setTab("crm")}>Voir les prospects <ArrowRight /></button></div>
               <div className="admin-hero-card__score"><small>Opportunités en cours</small><strong>{qualified}</strong><span><TrendingUp /> prospects qualifiés</span></div>
             </section>
-            <AdminCrmMetrics />
+            <AdminCrmMetrics refreshKey={analyticsRefreshKey} onLoaded={markSynced} />
             <section className="admin-stat-grid">
               <article><span className="admin-stat-icon admin-stat-icon--orange"><UsersRound /></span><div><small>NOUVEAUX PROSPECTS</small><strong>{leads.filter((lead) => lead.status === "new").length}</strong><button onClick={() => setTab("crm")}>Ouvrir le suivi</button></div></article>
               <article><span className="admin-stat-icon admin-stat-icon--green"><FileCheck2 /></span><div><small>DOSSIERS À ÉTUDIER</small><strong>{queue.length}</strong><button onClick={() => setTab("verifications")}>Étudier les dossiers</button></div></article>
@@ -475,7 +460,7 @@ export function AdminWorkspace({ initialTab = "overview" }: { initialTab?: Admin
             <section className="admin-overview-grid">
               <article className="admin-panel">
                 <div className="admin-panel__heading"><div><span className="admin-kicker">Dernières demandes</span><h2>Prospects récents</h2></div><button className="admin-text-button" onClick={() => setTab("crm")}>Tout voir <ArrowRight /></button></div>
-                <div className="admin-compact-list">{leads.slice(0, 5).map((lead) => <button key={lead.id} onClick={() => setTab("crm")}><span className="admin-avatar">{lead.business_name.slice(0, 2).toUpperCase()}</span><span><b>{lead.business_name}</b><small>{lead.full_name} · {lead.city || "Ville à préciser"}</small></span><i className="crm-status" data-status={lead.status}>{lead.status === "new" ? "Nouveau" : lead.status === "qualified" ? "Qualifié" : "En suivi"}</i></button>)}{!leads.length && <div className="admin-empty"><UsersRound /><p>Les candidatures reçues depuis le site apparaîtront ici.</p></div>}</div>
+                <div className="admin-compact-list">{leads.filter((lead) => lead.status !== "converted").slice(0, 5).map((lead) => <button key={lead.id} onClick={() => setTab("crm")}><span className="admin-avatar">{lead.business_name.slice(0, 2).toUpperCase()}</span><span><b>{lead.business_name}</b><small>{lead.full_name} · {lead.city || "Ville à préciser"}</small></span><i className="crm-status" data-status={lead.status}>{lead.status === "new" ? "Nouveau" : lead.status === "qualified" ? "Qualifié" : "En suivi"}</i></button>)}{!leads.some((lead) => lead.status !== "converted") && <div className="admin-empty"><UsersRound /><p>Les candidatures reçues depuis le site apparaîtront ici.</p></div>}</div>
               </article>
               <article className="admin-panel admin-next-actions">
                 <div className="admin-panel__heading"><div><span className="admin-kicker">Parcours commerçant</span><h2>Étapes clés</h2></div></div>
@@ -505,7 +490,7 @@ export function AdminWorkspace({ initialTab = "overview" }: { initialTab?: Admin
         {tab === "subscriptions" && (
           <section className="admin-panel admin-operation-panel">
             <div className="admin-panel__heading"><div><span className="admin-kicker">Coordonnées bénéficiaire</span><h2>Numéros SunuShop</h2><p>Les abonnements restent indisponibles tant qu’aucun numéro actif n’est configuré.</p></div></div>
-            <div className="mvp-grid">{(["wave", "orange_money"] as const).map((channel) => { const setting = platformSettings.find((item) => item.channel === channel); return <form className="mvp-form" key={`${channel}-${setting?.updated_at ?? "new"}`} onSubmit={(event) => void savePlatformSetting(event, channel)}><h3>{channel === "wave" ? "Wave" : "Orange Money"}</h3><label className="mvp-field">Numéro bénéficiaire<input name="paymentNumber" inputMode="tel" defaultValue={setting?.payment_number ?? ""} required /></label><label className="mvp-field">Titulaire<input name="accountHolder" defaultValue={setting?.account_holder ?? ""} /></label>{channel === "wave" && <label className="mvp-field">Lien de paiement Wave (facultatif)<input name="paymentLink" placeholder="https://pay.wave.com/m/M_sn_.../c/sn/" defaultValue={setting?.payment_link ?? ""} /></label>}<label><input name="active" type="checkbox" defaultChecked={setting?.active ?? false} /> Actif</label><button className="admin-primary-button" disabled={busy}>Enregistrer</button></form>; })}</div>
+            <div className="admin-subscription-channels">{(["wave", "orange_money"] as const).map((channel) => { const setting = platformSettings.find((item) => item.channel === channel); return <form className="mvp-form admin-subscription-channel" key={`${channel}-${setting?.updated_at ?? "new"}`} onSubmit={(event) => void savePlatformSetting(event, channel)}><h3>{channel === "wave" ? "Wave" : "Orange Money"}</h3><label className="mvp-field">Numéro bénéficiaire<input name="paymentNumber" inputMode="tel" defaultValue={setting?.payment_number ?? ""} required /></label><label className="mvp-field">Titulaire<input name="accountHolder" defaultValue={setting?.account_holder ?? ""} /></label>{channel === "wave" && <label className="mvp-field">Lien de paiement Wave (facultatif)<input name="paymentLink" placeholder="https://pay.wave.com/m/M_sn_.../c/sn/" defaultValue={setting?.payment_link ?? ""} /></label>}<label className="admin-checkbox"><input name="active" type="checkbox" defaultChecked={setting?.active ?? false} /> Actif</label><button className="admin-primary-button" disabled={busy}>Enregistrer</button></form>; })}</div>
 
             <div className="admin-panel__heading"><div><span className="admin-kicker">Accès commerçants</span><h2>Paiements à confirmer</h2><p>Validez le règlement avant d’activer les services du commerce.</p></div><span className="admin-count">{payments.length} en attente</span></div>
             <div className="admin-record-list">{payments.map((payment) => { const merchant = relationOne(payment.merchant_accounts); return <div className="admin-payment-row" key={payment.id}><span className="admin-avatar"><ReceiptText /></span><span><b>{merchant?.public_name}</b><small>{payment.plan_id} · {payment.billing_cycle === "monthly" ? "mensuel" : payment.billing_cycle === "quarterly" ? "trimestriel" : "annuel"} · {payment.channel === "wave" ? "Wave" : "Orange Money"} vers {payment.destination_number ?? "numéro historique"} · réf. {payment.external_reference}</small></span><strong>{formatPrice(payment.amount_xof)}</strong><div><button className="admin-primary-button" onClick={() => decidePayment(payment.id, true)} disabled={busy}>Confirmer</button><button className="admin-danger-button" onClick={() => decidePayment(payment.id, false)} disabled={busy}>Refuser</button></div></div>; })}{!payments.length && <div className="admin-empty"><CheckCircle2 /><h3>Aucun paiement en attente</h3><p>Les prochaines demandes apparaîtront ici.</p></div>}</div>
