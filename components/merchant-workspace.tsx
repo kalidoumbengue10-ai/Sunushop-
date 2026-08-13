@@ -31,6 +31,12 @@ import { IntentLetterForm } from "@/components/intent-letter-form";
 import { DirectDocumentUploader, documentLabels, type VerificationDocumentRow } from "@/components/direct-document-uploader";
 import { formatMerchantOrderNumber, merchantStatusLabel } from "@/lib/domain/merchant-ui";
 import {
+  billingCycleMonths,
+  isBillingCycle,
+  subscriptionAmountXof as calculateSubscriptionAmountXof,
+  type BillingCycle,
+} from "@/lib/domain/subscription";
+import {
   requiredVerificationDocuments,
   type MerchantKind,
   type VerificationDocumentType,
@@ -243,8 +249,14 @@ export function MerchantWorkspace(props: MerchantWorkspaceProps) {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [showIntentLetterForm, setShowIntentLetterForm] = useState(false);
-  const [subscriptionPlanId, setSubscriptionPlanId] = useState(props.plans[0]?.id ?? "");
-  const [subscriptionCycle, setSubscriptionCycle] = useState<"monthly" | "quarterly" | "annual">("monthly");
+  const [subscriptionPlanId, setSubscriptionPlanId] = useState(
+    props.subscription?.plan_id ?? props.plans[0]?.id ?? "",
+  );
+  const [subscriptionCycle, setSubscriptionCycle] = useState<BillingCycle>(
+    props.subscription && isBillingCycle(props.subscription.billing_cycle)
+      ? props.subscription.billing_cycle
+      : "monthly",
+  );
   const [shopCoordinates, setShopCoordinates] = useState<Coordinates | null>(
     props.merchant?.pickup_latitude != null && props.merchant?.pickup_longitude != null
       ? { latitude: props.merchant.pickup_latitude, longitude: props.merchant.pickup_longitude }
@@ -473,8 +485,11 @@ export function MerchantWorkspace(props: MerchantWorkspaceProps) {
       props.subscriptionPaymentNumbers.orangeMoney,
   );
   const selectedSubscriptionPlan = props.plans.find((plan) => plan.id === subscriptionPlanId) ?? props.plans[0];
-  const subscriptionMonths = subscriptionCycle === "monthly" ? 1 : subscriptionCycle === "quarterly" ? 3 : 12;
-  const subscriptionAmountXof = (selectedSubscriptionPlan?.monthly_price_xof ?? 0) * subscriptionMonths;
+  const subscriptionMonths = billingCycleMonths(subscriptionCycle);
+  const subscriptionAmountXof = calculateSubscriptionAmountXof(
+    selectedSubscriptionPlan?.monthly_price_xof ?? 0,
+    subscriptionCycle,
+  );
   const waveCheckoutUrl = props.subscriptionPaymentNumbers.waveLink && subscriptionAmountXof > 0
     ? `${props.subscriptionPaymentNumbers.waveLink}?amount=${subscriptionAmountXof}`
     : null;
@@ -829,10 +844,10 @@ export function MerchantWorkspace(props: MerchantWorkspaceProps) {
                 </label>
                 <label className="mvp-field">
                   Fréquence
-                  <select name="billingCycle" value={subscriptionCycle} onChange={(event) => setSubscriptionCycle(event.target.value as "monthly" | "quarterly" | "annual")}>
-                    <option value="monthly">Mensuelle · 1 mois</option>
-                    <option value="quarterly">Trimestrielle · 3 mois</option>
-                    <option value="annual">Annuelle · 12 mois</option>
+                  <select name="billingCycle" value={subscriptionCycle} onChange={(event) => setSubscriptionCycle(event.target.value as BillingCycle)}>
+                    <option value="monthly">Mensuelle · 1 mois · {formatPrice(calculateSubscriptionAmountXof(selectedSubscriptionPlan?.monthly_price_xof ?? 0, "monthly"))}</option>
+                    <option value="quarterly">Trimestrielle · 3 mois · {formatPrice(calculateSubscriptionAmountXof(selectedSubscriptionPlan?.monthly_price_xof ?? 0, "quarterly"))}</option>
+                    <option value="annual">Annuelle · 12 mois · {formatPrice(calculateSubscriptionAmountXof(selectedSubscriptionPlan?.monthly_price_xof ?? 0, "annual"))}</option>
                   </select>
                 </label>
                 <label className="mvp-field">

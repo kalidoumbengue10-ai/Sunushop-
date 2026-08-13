@@ -2,6 +2,7 @@ import { requireAdminClient } from "@/lib/api/auth";
 import { requireActiveMerchantAccess } from "@/lib/api/merchant-access";
 import { apiFailure, apiSuccess } from "@/lib/api/response";
 import { subscriptionPaymentSchema } from "@/lib/domain/schemas";
+import { billingCycleMonths, subscriptionAmountXof } from "@/lib/domain/subscription";
 import { enqueueEmail } from "@/lib/notifications/outbox";
 
 export async function POST(request: Request) {
@@ -16,8 +17,8 @@ export async function POST(request: Request) {
       .eq("active", true)
       .single();
     if (planError) throw planError;
-    const periodMonths = input.billingCycle === "monthly" ? 1 : input.billingCycle === "quarterly" ? 3 : 12;
-    const amountXof = plan.monthly_price_xof * periodMonths;
+    const periodMonths = billingCycleMonths(input.billingCycle);
+    const amountXof = subscriptionAmountXof(plan.monthly_price_xof, input.billingCycle);
     const { data, error } = await supabase.rpc(
       "submit_subscription_payment",
       {
