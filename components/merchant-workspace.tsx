@@ -31,11 +31,17 @@ import { IntentLetterForm } from "@/components/intent-letter-form";
 import { DirectDocumentUploader, documentLabels, type VerificationDocumentRow } from "@/components/direct-document-uploader";
 import { formatMerchantOrderNumber, merchantStatusLabel } from "@/lib/domain/merchant-ui";
 import {
+  BILLING_CYCLES,
   billingCycleMonths,
   isBillingCycle,
   subscriptionAmountXof as calculateSubscriptionAmountXof,
   type BillingCycle,
 } from "@/lib/domain/subscription";
+
+const billingCycleOptions = (Object.keys(BILLING_CYCLES) as BillingCycle[]).map((cycle) => ({
+  cycle,
+  ...BILLING_CYCLES[cycle],
+}));
 import {
   requiredVerificationDocuments,
   type MerchantKind,
@@ -835,25 +841,38 @@ export function MerchantWorkspace(props: MerchantWorkspaceProps) {
               </p>
             )}
             <form className="mvp-form" onSubmit={submitPayment}>
+              <label className="mvp-field">
+                Plan
+                <select name="planId" value={subscriptionPlanId} onChange={(event) => setSubscriptionPlanId(event.target.value)}>
+                  {props.plans.map((plan) => (
+                    <option value={plan.id} key={plan.id}>
+                      {plan.name} · {formatPrice(plan.monthly_price_xof)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <div className="mvp-field">
+                Durée et montant
+                <input type="hidden" name="billingCycle" value={subscriptionCycle} />
+                <div className="mvp-cycle-picker">
+                  {billingCycleOptions.map((option) => (
+                    <button
+                      type="button"
+                      key={option.cycle}
+                      className={`mvp-cycle-card${subscriptionCycle === option.cycle ? " is-active" : ""}`}
+                      onClick={() => setSubscriptionCycle(option.cycle)}
+                      aria-pressed={subscriptionCycle === option.cycle}
+                    >
+                      <strong>{option.label}</strong>
+                      <span>{option.months} mois</span>
+                      <span className="mvp-cycle-card__price">
+                        {formatPrice(calculateSubscriptionAmountXof(selectedSubscriptionPlan?.monthly_price_xof ?? 0, option.cycle))}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
               <div className="mvp-form__grid">
-                <label className="mvp-field">
-                  Plan
-                  <select name="planId" value={subscriptionPlanId} onChange={(event) => setSubscriptionPlanId(event.target.value)}>
-                    {props.plans.map((plan) => (
-                      <option value={plan.id} key={plan.id}>
-                        {plan.name} · {formatPrice(plan.monthly_price_xof)}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="mvp-field">
-                  Fréquence
-                  <select name="billingCycle" value={subscriptionCycle} onChange={(event) => setSubscriptionCycle(event.target.value as BillingCycle)}>
-                    <option value="monthly">Mensuelle · 1 mois · {formatPrice(calculateSubscriptionAmountXof(selectedSubscriptionPlan?.monthly_price_xof ?? 0, "monthly"))}</option>
-                    <option value="quarterly">Trimestrielle · 3 mois · {formatPrice(calculateSubscriptionAmountXof(selectedSubscriptionPlan?.monthly_price_xof ?? 0, "quarterly"))}</option>
-                    <option value="annual">Annuelle · 12 mois · {formatPrice(calculateSubscriptionAmountXof(selectedSubscriptionPlan?.monthly_price_xof ?? 0, "annual"))}</option>
-                  </select>
-                </label>
                 <label className="mvp-field">
                   Canal
                   <select name="channel" disabled={!hasSubscriptionPaymentChannel}>

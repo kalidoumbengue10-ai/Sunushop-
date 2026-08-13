@@ -301,3 +301,23 @@
   .location-picker__heading { align-items: stretch; flex-direction: column; }
   .location-map { height: 310px; }
 }
+
+.mvp-cycle-picker { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.mvp-cycle-card {
+  display: grid;
+  gap: 4px;
+  padding: 14px;
+  border: 1px solid rgba(23, 39, 31, .18);
+  border-radius: 14px;
+  background: white;
+  color: #17271f;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+.mvp-cycle-card span { color: #65756d; font-size: 12px; font-weight: 500; }
+.mvp-cycle-card__price { color: #173f2e !important; font-size: 15px !important; font-weight: 900 !important; }
+.mvp-cycle-card.is-active { border-color: #173f2e; background: #edf5ef; box-shadow: 0 0 0 2px #173f2e; }
+@media (max-width: 640px) {
+  .mvp-cycle-picker { grid-template-columns: 1fr; }
+}
