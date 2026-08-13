@@ -269,6 +269,9 @@ export function MerchantWorkspace(props: MerchantWorkspaceProps) {
       : null,
   );
   const [shopAddress, setShopAddress] = useState(props.merchant?.pickup_address_line ?? "");
+  const [pickupEnabled, setPickupEnabled] = useState(props.merchant?.pickup_enabled ?? false);
+  const [pickupHours, setPickupHours] = useState(props.merchant?.pickup_hours ?? "");
+  const [pickupInstructions, setPickupInstructions] = useState(props.merchant?.pickup_instructions ?? "");
 
   const submitJson = async (
     url: string,
@@ -432,23 +435,21 @@ export function MerchantWorkspace(props: MerchantWorkspaceProps) {
     router.refresh();
   };
 
-  const savePickupSettings = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
+  const savePickupSettings = async (successMessage: string) => {
     if (!props.merchant) return;
     setBusy(true);
     setError("");
-    const form = new FormData(event.currentTarget);
     const response = await fetch("/api/merchant/settings", {
       method: "PUT",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         merchantId: props.merchant.id,
-        pickupEnabled: form.get("pickupEnabled") === "on",
+        pickupEnabled,
         pickupAddressLine: shopAddress || null,
         pickupLatitude: shopCoordinates?.latitude ?? null,
         pickupLongitude: shopCoordinates?.longitude ?? null,
-        pickupHours: form.get("pickupHours") || null,
-        pickupInstructions: form.get("pickupInstructions") || null,
+        pickupHours: pickupHours || null,
+        pickupInstructions: pickupInstructions || null,
       }),
     });
     const payload = await response.json();
@@ -457,8 +458,18 @@ export function MerchantWorkspace(props: MerchantWorkspaceProps) {
       setError(payload.error?.message ?? "Paramètres non enregistrés.");
       return;
     }
-    setMessage("Localisation publique et retrait mis à jour.");
+    setMessage(successMessage);
     router.refresh();
+  };
+
+  const saveLocation = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    await savePickupSettings("Localisation publique mise à jour.");
+  };
+
+  const savePickup = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    await savePickupSettings("Retrait en boutique mis à jour.");
   };
 
   if (!props.merchant) return null;
@@ -565,7 +576,7 @@ export function MerchantWorkspace(props: MerchantWorkspaceProps) {
         )}
 
         {(props.merchant.pickup_latitude == null || props.merchant.pickup_longitude == null) && props.merchant.status !== "suspended" && (
-          <div className="merchant-context-note"><PackageSearch /><p>Votre boutique n’a pas encore de position enregistrée. Tant qu’elle est absente, vos clients ne peuvent plus passer de commande en livraison : <button type="button" className="merchant-context-note__link" onClick={() => setTab("boutique")}>placez-la sur la carte</button>.</p></div>
+          <div className="merchant-context-note"><PackageSearch /><p>Votre boutique n’a pas encore de position enregistrée. Tant qu’elle est absente, vos clients ne peuvent plus passer de commande en livraison : <button type="button" className="merchant-context-note__link" onClick={() => setTab("livraison")}>placez-la sur la carte</button>.</p></div>
         )}
         {message && <p className="mvp-alert merchant-global-feedback">{message}</p>}
         {error && <p className="mvp-alert mvp-alert--error merchant-global-feedback">{error}</p>}
@@ -735,7 +746,7 @@ export function MerchantWorkspace(props: MerchantWorkspaceProps) {
               </button>
             </form>
             <div className="mvp-divider" />
-            <form className="mvp-form" onSubmit={savePickupSettings}>
+            <form className="mvp-form" onSubmit={saveLocation}>
               <h3>Adresse et localisation publique</h3>
               <p>Cette adresse et ce point seront visibles par tous les visiteurs et serviront de départ aux livraisons.</p>
               <label className="mvp-field">
@@ -749,7 +760,12 @@ export function MerchantWorkspace(props: MerchantWorkspaceProps) {
                 label="Position publique de la boutique"
                 required
               />
-              <div className="mvp-divider" />
+              <button className="mvp-button mvp-button--secondary" disabled={busy}>
+                Enregistrer la localisation
+              </button>
+            </form>
+            <div className="mvp-divider" />
+            <form className="mvp-form" onSubmit={savePickup}>
               <h3>Retrait en boutique</h3>
               <p>
                 Le client peut venir chercher sa commande directement à votre
@@ -758,8 +774,8 @@ export function MerchantWorkspace(props: MerchantWorkspaceProps) {
               <label className="mvp-field mvp-field--checkbox">
                 <input
                   type="checkbox"
-                  name="pickupEnabled"
-                  defaultChecked={props.merchant.pickup_enabled ?? false}
+                  checked={pickupEnabled}
+                  onChange={(event) => setPickupEnabled(event.target.checked)}
                 />
                 Activer le retrait en boutique (0 F)
               </label>
@@ -767,23 +783,23 @@ export function MerchantWorkspace(props: MerchantWorkspaceProps) {
                 <label className="mvp-field">
                   Horaires
                   <input
-                    name="pickupHours"
-                    defaultValue={props.merchant.pickup_hours ?? ""}
+                    value={pickupHours}
+                    onChange={(event) => setPickupHours(event.target.value)}
                     placeholder="Lun–Sam, 9h–19h"
                   />
                 </label>
                 <label className="mvp-field mvp-field--wide">
                   Consignes pour le client
                   <textarea
-                    name="pickupInstructions"
                     rows={2}
-                    defaultValue={props.merchant.pickup_instructions ?? ""}
+                    value={pickupInstructions}
+                    onChange={(event) => setPickupInstructions(event.target.value)}
                     placeholder="Ex. Demander la boutique SunuShop au 2e étage."
                   />
                 </label>
               </div>
               <button className="mvp-button mvp-button--secondary" disabled={busy}>
-                Enregistrer la localisation
+                Enregistrer le retrait en boutique
               </button>
             </form>
             <div className="mvp-divider" />

@@ -37,12 +37,15 @@ async function orsFetch(path: string, init: RequestInit = {}) {
 }
 
 export async function searchPlaces(query: string, focus?: Coordinates) {
-  const params = new URLSearchParams({ text: query, size: "5", "boundary.country": "SN" });
+  const params = new URLSearchParams({ text: query, size: "8", "boundary.country": "SN" });
   if (focus) {
     params.set("focus.point.lat", String(focus.latitude));
     params.set("focus.point.lon", String(focus.longitude));
   }
-  const response = await orsFetch(`/geocode/autocomplete?${params}`);
+  // /geocode/search (au lieu de /geocode/autocomplete) applique un scoring
+  // textuel flou plus tolérant : nécessaire pour retrouver les rues et lieux
+  // du Sénégal partiellement ou irrégulièrement indexés dans OpenStreetMap.
+  const response = await orsFetch(`/geocode/search?${params}`);
   const payload = await response.json() as PeliasResponse;
   return (payload.features ?? []).map(normalizePeliasFeature).filter((place): place is GeoPlace => place !== null);
 }

@@ -60,6 +60,14 @@ export function LocationPicker({ value, onChange, onPlace, label = "Position exa
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
     let disposed = false;
+    // Le style vectoriel ou l'une de ses sources peut échouer sans toujours
+    // déclencher l'event "error" de MapLibre (échec partiel silencieux) :
+    // ce filet de sécurité affiche le message de repli si le style ne se
+    // résout jamais. Délai généreux car le rendu WebGL initial peut être
+    // lent sur du matériel sans accélération graphique dédiée.
+    const loadTimeout = window.setTimeout(() => {
+      if (!disposed) setMapUnavailable(true);
+    }, 15_000);
     void import("maplibre-gl").then(({ Map, Marker, NavigationControl }) => {
       if (disposed || !containerRef.current) return;
       const map = new Map({
@@ -72,6 +80,12 @@ export function LocationPicker({ value, onChange, onPlace, label = "Position exa
       map.addControl(new NavigationControl({ showCompass: false }), "top-right");
       map.on("click", (event) => selectCoordinates({ latitude: event.lngLat.lat, longitude: event.lngLat.lng }));
       map.on("error", () => setMapUnavailable(true));
+      // "styledata" confirme que le style JSON et ses sources sont résolus,
+      // sans attendre le rendu complet de toutes les tuiles du viewport.
+      map.once("styledata", () => {
+        window.clearTimeout(loadTimeout);
+        setMapUnavailable(false);
+      });
       mapRef.current = map;
       if (value) {
         const marker = new Marker({ draggable: true }).setLngLat(toLngLat(value)).addTo(map);
@@ -84,6 +98,7 @@ export function LocationPicker({ value, onChange, onPlace, label = "Position exa
     }).catch(() => setMapUnavailable(true));
     return () => {
       disposed = true;
+      window.clearTimeout(loadTimeout);
       mapRef.current?.remove();
       mapRef.current = null;
       markerRef.current = null;
