@@ -45,12 +45,12 @@ async function signIn(context: BrowserContext, email: string) {
   await responseData(lastResponse!);
 }
 
-async function createMerchant(ownerId: string, email: string) {
+async function createMerchant(ownerId: string, email: string, suffix = "") {
   const { data, error } = await admin.from("merchant_accounts").insert({
     owner_user_id: ownerId,
     kind: "informal",
-    public_name: `Boutique localisation ${runId}`,
-    slug: `boutique-localisation-${runId}`,
+    public_name: `Boutique localisation ${runId}${suffix}`,
+    slug: `boutique-localisation-${runId}${suffix}`,
     description: "Boutique ephemere du test de localisation.",
     phone: "+221770005551",
     email,
@@ -59,7 +59,7 @@ async function createMerchant(ownerId: string, email: string) {
     status: "active",
     verification_status: "approved",
     subscription_status: "active",
-  }).select("id, public_name").single();
+  }).select("id, public_name, slug").single();
   if (error) throw error;
   created.merchantIds.push(data.id);
   const { error: memberError } = await admin.from("merchant_members").insert({ merchant_id: data.id, user_id: ownerId, role: "owner" });
@@ -185,5 +185,32 @@ test.describe.serial("localisation de la boutique marchande", () => {
     } finally {
       await context.close();
     }
+  });
+
+  test("la carte publique de la boutique affiche aussi le contenu vectoriel", async ({ page }) => {
+    test.setTimeout(60_000);
+    const email = `location-public-${runId}@example.test`;
+    const ownerId = await createUser(email, "Marchand carte publique");
+    const shop = await createMerchant(ownerId, email, "-public");
+    // findShopBySlug (lib/infrastructure/supabase/repositories.ts) exige
+    // une zone de livraison active ou le retrait en boutique activé, sinon
+    // la boutique est considérée injoignable et traitée comme introuvable.
+    const { error } = await admin.from("merchant_accounts").update({
+      pickup_enabled: true,
+      pickup_latitude: 14.6717,
+      pickup_longitude: -17.4381,
+      pickup_address_line: "Marché Sandaga, Dakar",
+    }).eq("id", shop.id);
+    if (error) throw error;
+
+    let vectorTileRequested = false;
+    page.on("request", (request) => {
+      if (/tiles\.openfreemap\.org\/planet\/.+\.pbf/.test(request.url())) vectorTileRequested = true;
+    });
+
+    await page.goto(`/boutiques/${shop.slug}`);
+    await expect(page.locator(".location-map").first()).toBeVisible();
+    await page.waitForTimeout(16_000);
+    expect(vectorTileRequested, "la carte publique de la boutique n'a chargé aucune tuile vectorielle").toBe(true);
   });
 });

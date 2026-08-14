@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import type { Map as MapLibreMap, Marker as MapLibreMarker } from "maplibre-gl";
 import type { Coordinates, GeoPlace } from "@/lib/domain/geo";
 import { isInSenegalBounds, navigationLinks } from "@/lib/domain/geo";
-import { MAP_STYLE_URL, SENEGAL_MAP_CENTER, SENEGAL_MAP_ZOOM, toLngLat } from "@/lib/maps/config";
+import { MAP_STYLE_URL, SENEGAL_MAP_CENTER, SENEGAL_MAP_ZOOM, configureMapWorker, toLngLat } from "@/lib/maps/config";
 
 type LocationPickerProps = {
   value: Coordinates | null;
@@ -70,12 +70,7 @@ export function LocationPicker({ value, onChange, onPlace, label = "Position exa
     }, 15_000);
     void import("maplibre-gl").then(({ Map, Marker, NavigationControl, setWorkerUrl }) => {
       if (disposed || !containerRef.current) return;
-      // Sous Next.js, l'import dynamique empêche le bundler de résoudre
-      // correctement l'URL du worker interne de MapLibre (new Worker(new
-      // URL(...))) : les tuiles vectorielles ne se chargent alors jamais,
-      // sans erreur visible. On force explicitement le fichier worker
-      // publié en asset statique.
-      setWorkerUrl(`${window.location.origin}/maplibre-gl-worker.mjs`);
+      configureMapWorker(setWorkerUrl);
       const map = new Map({
         container: containerRef.current,
         style: MAP_STYLE_URL,
@@ -218,8 +213,9 @@ export function LocationMap({ point, label, route, destination }: LocationMapPro
     if (!containerRef.current) return;
     let map: MapLibreMap | null = null;
     let disposed = false;
-    void import("maplibre-gl").then(({ Map, Marker, NavigationControl, LngLatBounds, Popup }) => {
+    void import("maplibre-gl").then(({ Map, Marker, NavigationControl, LngLatBounds, Popup, setWorkerUrl }) => {
       if (disposed || !containerRef.current) return;
+      configureMapWorker(setWorkerUrl);
       map = new Map({ container: containerRef.current, style: MAP_STYLE_URL, center: toLngLat(point), zoom: destination ? 11 : 15, attributionControl: {} });
       map.addControl(new NavigationControl({ showCompass: false }), "top-right");
       const originMarker = new Marker({ color: "#173f2e" }).setLngLat(toLngLat(point));
