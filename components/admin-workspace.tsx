@@ -520,13 +520,7 @@ export function AdminWorkspace({ initialTab = "overview" }: { initialTab?: Admin
             {grantMerchant && (
               <form className="admin-decision-form" onSubmit={submitGrant}>
                 <p className="admin-merchant-note">Boutique sélectionnée : <strong>{grantMerchant.public_name}</strong> <button type="button" className="admin-text-button" onClick={() => setGrantMerchant(undefined)}>Changer</button></p>
-                <label>Plan
-                  <select name="planId" defaultValue="essential">
-                    <option value="essential">Essentiel</option>
-                    <option value="pro">Pro</option>
-                    <option value="network">Réseau</option>
-                  </select>
-                </label>
+                <input type="hidden" name="planId" value="essential" />
                 <label>Durée (jours)
                   <input name="days" type="number" min={1} max={365} defaultValue={30} required />
                 </label>
