@@ -68,8 +68,14 @@ export function LocationPicker({ value, onChange, onPlace, label = "Position exa
     const loadTimeout = window.setTimeout(() => {
       if (!disposed) setMapUnavailable(true);
     }, 15_000);
-    void import("maplibre-gl").then(({ Map, Marker, NavigationControl }) => {
+    void import("maplibre-gl").then(({ Map, Marker, NavigationControl, setWorkerUrl }) => {
       if (disposed || !containerRef.current) return;
+      // Sous Next.js, l'import dynamique empêche le bundler de résoudre
+      // correctement l'URL du worker interne de MapLibre (new Worker(new
+      // URL(...))) : les tuiles vectorielles ne se chargent alors jamais,
+      // sans erreur visible. On force explicitement le fichier worker
+      // publié en asset statique.
+      setWorkerUrl(`${window.location.origin}/maplibre-gl-worker.mjs`);
       const map = new Map({
         container: containerRef.current,
         style: MAP_STYLE_URL,

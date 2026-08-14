@@ -130,6 +130,16 @@ test.describe.serial("localisation de la boutique marchande", () => {
       page.on("requestfailed", (request) => { if (isMapRelated(request.url())) mapErrors.push(`[requestfailed] ${request.url()} — ${request.failure()?.errorText}`); });
       page.on("response", (response) => { if (!response.ok() && isMapRelated(response.url())) mapErrors.push(`[http${response.status()}] ${response.url()}`); });
 
+      // Preuve que le contenu vectoriel (routes, villes, frontières) se
+      // charge réellement, pas seulement le fond raster basse résolution :
+      // c'est précisément la régression que l'absence de message d'erreur
+      // ne suffit pas à détecter (le worker MapLibre pouvait ne jamais se
+      // créer sans qu'aucune erreur ne soit levée).
+      let vectorTileRequested = false;
+      page.on("request", (request) => {
+        if (/tiles\.openfreemap\.org\/planet\/.+\.pbf/.test(request.url())) vectorTileRequested = true;
+      });
+
       await openLivraisonTab(page);
 
       // Bug 1 : la carte doit se charger sans afficher le message de repli
@@ -140,6 +150,7 @@ test.describe.serial("localisation de la boutique marchande", () => {
       if (await mapUnavailableMessage.count()) {
         throw new Error(`Carte indisponible. Erreurs liées à la carte : ${JSON.stringify(mapErrors, null, 2)}`);
       }
+      expect(vectorTileRequested, "aucune tuile vectorielle (routes, villes, frontières) n'a été demandée : le worker MapLibre a probablement échoué silencieusement").toBe(true);
 
       // Bug 3 : la recherche renvoie un résultat exploitable et sélectionnable.
       const locationSection = page.locator("section.location-picker").filter({ hasText: "Position publique de la boutique" });
