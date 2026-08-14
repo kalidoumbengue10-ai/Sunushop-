@@ -12,7 +12,7 @@ export async function GET() {
       await Promise.all([
         supabase
           .from("conversations")
-          .select("id, kind, merchant_id, order_id, product_id, subject, last_message_at, buyer_last_read_at, merchant_accounts(public_name, slug)")
+          .select("id, kind, merchant_id, order_id, product_id, subject, last_message_at, buyer_last_read_at, merchant_accounts(public_name, slug), orders(public_code, status)")
           .eq("buyer_id", user.id)
           .order("last_message_at", { ascending: false }),
         supabase.from("merchant_members").select("merchant_id").eq("user_id", user.id).eq("active", true),
@@ -27,7 +27,7 @@ export async function GET() {
     if (merchantIds.length) {
       const { data, error } = await supabase
         .from("conversations")
-        .select("id, kind, buyer_id, merchant_id, order_id, product_id, subject, last_message_at, merchant_last_read_at, profiles!conversations_buyer_id_fkey(display_name, email)")
+        .select("id, kind, buyer_id, merchant_id, order_id, product_id, subject, last_message_at, merchant_last_read_at, profiles!conversations_buyer_id_fkey(display_name, email, phone), orders(public_code, status)")
         .in("merchant_id", merchantIds)
         .order("last_message_at", { ascending: false });
       if (error) throw error;
@@ -38,7 +38,7 @@ export async function GET() {
     if ((adminRoles ?? []).length) {
       const { data, error } = await supabase
         .from("conversations")
-        .select("id, kind, buyer_id, subject, last_message_at, admin_last_read_at, profiles!conversations_buyer_id_fkey(display_name, email)")
+        .select("id, kind, buyer_id, order_id, subject, last_message_at, admin_last_read_at, profiles!conversations_buyer_id_fkey(display_name, email, phone), orders(public_code, status)")
         .eq("kind", "buyer_support")
         .order("last_message_at", { ascending: false });
       if (error) throw error;
@@ -85,7 +85,19 @@ export async function POST(request: Request) {
         .eq("kind", "buyer_support")
         .maybeSingle();
       if (existingError) throw existingError;
-      if (existing) return apiSuccess({ id: existing.id, created: false }, { requestId });
+      if (existing) {
+        if (input.orderId || input.subject) {
+          const { error: updateError } = await supabase
+            .from("conversations")
+            .update({
+              order_id: input.orderId ?? null,
+              subject: input.subject ?? null,
+            })
+            .eq("id", existing.id);
+          if (updateError) throw updateError;
+        }
+        return apiSuccess({ id: existing.id, created: false }, { requestId });
+      }
     }
 
     const { data, error } = await supabase

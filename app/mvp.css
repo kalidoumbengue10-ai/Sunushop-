@@ -321,3 +321,24 @@
 @media (max-width: 640px) {
   .mvp-cycle-picker { grid-template-columns: 1fr; }
 }
+
+.aide-support-picker { display: grid; gap: 10px; max-width: 420px; }
+.aide-support-picker label { font-weight: 700; font-size: 14px; }
+
+.conversation-list__detail-inner { display: flex; flex-direction: column; width: 100%; min-height: 0; }
+
+.conversation-context {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 16px;
+  border-bottom: 1px solid rgba(23, 39, 31, .1);
+  background: #f7f5ee;
+  font-size: 13px;
+}
+.conversation-context__identity { display: grid; gap: 2px; }
+.conversation-context__identity strong { font-size: 14px; }
+.conversation-context__identity span { color: #65756d; font-size: 12px; }
+.conversation-context__order { font-weight: 700; color: #173f2e; }

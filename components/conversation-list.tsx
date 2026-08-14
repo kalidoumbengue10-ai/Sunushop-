@@ -17,7 +17,8 @@ type ConversationRow = {
   merchant_last_read_at?: string | null;
   admin_last_read_at?: string | null;
   merchant_accounts?: { public_name: string; slug: string } | Array<{ public_name: string; slug: string }>;
-  profiles?: { display_name: string | null; email: string | null } | Array<{ display_name: string | null; email: string | null }>;
+  profiles?: { display_name: string | null; email: string | null; phone?: string | null } | Array<{ display_name: string | null; email: string | null; phone?: string | null }>;
+  orders?: { public_code: string; status: string } | Array<{ public_code: string; status: string }>;
 };
 
 type View = "asBuyer" | "asMerchant" | "asAdmin";
@@ -30,6 +31,27 @@ function isUnread(conversation: ConversationRow, view: View) {
   const readAt = view === "asBuyer" ? conversation.buyer_last_read_at : view === "asMerchant" ? conversation.merchant_last_read_at : conversation.admin_last_read_at;
   if (!readAt) return true;
   return new Date(conversation.last_message_at) > new Date(readAt);
+}
+
+function ConversationContext({ conversation, view }: { conversation: ConversationRow; view: View }) {
+  if (view === "asBuyer") return null;
+  const profile = one(conversation.profiles);
+  const order = one(conversation.orders);
+  if (!profile && !order) return null;
+  return (
+    <div className="conversation-context">
+      {profile && (
+        <div className="conversation-context__identity">
+          <strong>{profile.display_name || "Client sans nom renseigné"}</strong>
+          {profile.email && <span>{profile.email}</span>}
+          {profile.phone && <span>{profile.phone}</span>}
+        </div>
+      )}
+      <div className="conversation-context__order">
+        {order ? <span>Commande {order.public_code}</span> : <span>Aucune commande liée</span>}
+      </div>
+    </div>
+  );
 }
 
 export function ConversationList({ view, currentUserId }: { view: View; currentUserId?: string }) {
@@ -73,6 +95,7 @@ export function ConversationList({ view, currentUserId }: { view: View; currentU
         {conversations.map((conversation) => {
           const merchant = one(conversation.merchant_accounts);
           const profile = one(conversation.profiles);
+          const order = one(conversation.orders);
           const title = view === "asBuyer"
             ? (conversation.kind === "buyer_support" ? "Support SunuShop" : merchant?.public_name ?? "Boutique")
             : (profile?.display_name || profile?.email || "Client");
@@ -84,7 +107,8 @@ export function ConversationList({ view, currentUserId }: { view: View; currentU
               onClick={() => { setActiveId(conversation.id); if (isUnread(conversation, view)) load(); }}
             >
               <strong>{title}</strong>
-              {conversation.subject && <small>{conversation.subject}</small>}
+              {order && <small>Commande {order.public_code}</small>}
+              {!order && conversation.subject && <small>{conversation.subject}</small>}
               <time dateTime={conversation.last_message_at}>{new Date(conversation.last_message_at).toLocaleDateString("fr-SN")}</time>
               {isUnread(conversation, view) && <span className="conversation-list__unread-dot" aria-label="Non lu" />}
             </button>
@@ -92,11 +116,14 @@ export function ConversationList({ view, currentUserId }: { view: View; currentU
         })}
       </div>
       <div className="conversation-list__detail">
-        {activeConversation && resolvedUserId
-          ? <ConversationThread conversationId={activeConversation.id} currentUserId={resolvedUserId} />
-          : activeConversation
-            ? <p className="mvp-empty">Chargement…</p>
-            : <p className="mvp-empty">Sélectionnez une conversation.</p>}
+        {activeConversation && resolvedUserId ? (
+          <div className="conversation-list__detail-inner">
+            <ConversationContext conversation={activeConversation} view={view} />
+            <ConversationThread conversationId={activeConversation.id} currentUserId={resolvedUserId} />
+          </div>
+        ) : activeConversation
+          ? <p className="mvp-empty">Chargement…</p>
+          : <p className="mvp-empty">Sélectionnez une conversation.</p>}
       </div>
     </div>
   );
