@@ -50,6 +50,7 @@ test("le bouton support ouvre un fil de discussion sans erreur", async ({ page, 
   });
 
   await page.getByRole("button", { name: "Discuter avec un admin SunuShop" }).click();
+  await page.getByRole("button", { name: "Continuer" }).click();
 
   // Doit rediriger vers /messages sans afficher d'erreur interne.
   await expect(page).toHaveURL(/\/messages$/, { timeout: 10_000 });
