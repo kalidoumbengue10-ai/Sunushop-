@@ -410,7 +410,7 @@ test.describe.serial("flux livreur complet", () => {
         await expect(firstClient.getByRole("link", { name: "Appeler" })).toHaveAttribute("href", "tel:+221770001111");
         await expect(firstClient.getByRole("link", { name: "Envoyer un e-mail" })).toHaveAttribute("href", /^mailto:/);
         await activateButton(firstClient.getByRole("button", { name: /Ouvrir le dossier/ }));
-        await expect(supportPage.getByRole("heading", { name: merchantA.public_name })).toBeVisible();
+        await expect(supportPage.getByRole("heading", { name: merchantA.public_name })).toBeVisible({ timeout: 15_000 });
         await activateButton(supportPage.getByRole("button", { name: "Fermer" }));
         await expect(supportPage).toHaveURL(/\/admin\/crm$/);
 

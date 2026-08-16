@@ -1,4 +1,4 @@
-import { requireAdminRole } from "@/lib/api/auth";
+import { requireAdminClient, requireAdminRole } from "@/lib/api/auth";
 import { apiFailure, apiSuccess } from "@/lib/api/response";
 
 const PAGE_SIZE = 25;
@@ -11,6 +11,7 @@ export async function GET(request: Request) {
   const requestId = crypto.randomUUID();
   try {
     const { supabase } = await requireAdminRole(["support", "admin"]);
+    const admin = requireAdminClient();
     const url = new URL(request.url);
     const segment = url.searchParams.get("segment") === "clients" ? "clients" : "prospects";
     const query = (url.searchParams.get("q") ?? "").trim().toLowerCase();
@@ -31,7 +32,7 @@ export async function GET(request: Request) {
       const merchantIds = [...new Set((leads ?? []).map((lead) => lead.merchant_id).filter(Boolean))] as string[];
       const customerMerchantIds = new Set<string>();
       if (merchantIds.length) {
-        const { data: customers, error: customerError } = await (supabase as any)
+        const { data: customers, error: customerError } = await admin
           .from("merchant_accounts")
           .select("id")
           .in("id", merchantIds)
@@ -53,7 +54,7 @@ export async function GET(request: Request) {
       return apiSuccess({ segment, items: filtered.slice(start, start + PAGE_SIZE), total: filtered.length, page, pageSize: PAGE_SIZE }, { requestId });
     }
 
-    const { data: merchants, error } = await (supabase as any)
+    const { data: merchants, error } = await admin
       .from("merchant_accounts")
       .select("id, public_name, legal_name, email, phone, city, region, description, status, verification_status, subscription_status, customer_since, created_at, merchant_subscriptions(id, plan_id, status, starts_at, current_period_ends_at, billing_cycle, subscription_plans(name)), crm_leads(id, full_name, business_type, status)")
       .not("customer_since", "is", null)
