@@ -255,6 +255,9 @@ export function MerchantWorkspace(props: MerchantWorkspaceProps) {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [showIntentLetterForm, setShowIntentLetterForm] = useState(false);
+  const [optimisticDocuments, setOptimisticDocuments] = useState<
+    Partial<Record<VerificationDocumentType, string>>
+  >({});
   const [subscriptionPlanId, setSubscriptionPlanId] = useState(
     props.subscription?.plan_id ?? props.plans[0]?.id ?? "",
   );
@@ -481,6 +484,19 @@ export function MerchantWorkspace(props: MerchantWorkspaceProps) {
       latestDocuments.set(document.document_type, document);
     }
   });
+  (Object.entries(optimisticDocuments) as [VerificationDocumentType, string][]).forEach(
+    ([type, documentId]) => {
+      if (!latestDocuments.has(type)) {
+        latestDocuments.set(type, {
+          id: documentId,
+          document_type: type,
+          version: 1,
+          status: "uploaded",
+          uploaded_at: new Date().toISOString(),
+        });
+      }
+    },
+  );
   const checklist = requiredVerificationDocuments(
     props.merchant.kind,
     props.merchant.representative_is_legal_owner,
@@ -651,6 +667,9 @@ export function MerchantWorkspace(props: MerchantWorkspaceProps) {
                   kind: props.merchant.kind,
                   representativeIsLegalOwner: props.merchant.representative_is_legal_owner,
                 }}
+                onSaved={(documentId) =>
+                  setOptimisticDocuments((current) => ({ ...current, intent_letter: documentId }))
+                }
                 onClose={() => setShowIntentLetterForm(false)}
               />
             )}
@@ -662,6 +681,9 @@ export function MerchantWorkspace(props: MerchantWorkspaceProps) {
                     type={type}
                     latest={latestDocuments.get(type)}
                     required={checklist.required.includes(type)}
+                    onSaved={(documentId) =>
+                      setOptimisticDocuments((current) => ({ ...current, [type]: documentId }))
+                    }
                     key={type}
                   />
                 ))}

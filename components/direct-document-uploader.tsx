@@ -29,11 +29,13 @@ export function DirectDocumentUploader({
   type,
   latest,
   required,
+  onSaved,
 }: {
   caseId: string;
   type: VerificationDocumentType;
   latest?: VerificationDocumentRow;
   required: boolean;
+  onSaved?: (documentId: string) => void;
 }) {
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -168,6 +170,7 @@ export function DirectDocumentUploader({
         },
       );
       const finalized = (await finalizeResponse.json()) as {
+        data?: { id: string };
         error?: { message?: string };
       };
       if (!finalizeResponse.ok) {
@@ -181,6 +184,7 @@ export function DirectDocumentUploader({
       setProgress(100);
       setSuccess(`${documentLabels[type]} enregistré avec succès.`);
       inputRef.current && (inputRef.current.value = "");
+      if (finalized.data?.id) onSaved?.(finalized.data.id);
       router.refresh();
     } catch (caught) {
       setError(
