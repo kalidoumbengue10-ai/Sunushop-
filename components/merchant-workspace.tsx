@@ -477,6 +477,8 @@ export function MerchantWorkspace(props: MerchantWorkspaceProps) {
 
   if (!props.merchant) return null;
   const merchantId = props.merchant.id;
+  const hasLocation = props.merchant.pickup_latitude != null && props.merchant.pickup_longitude != null;
+  const hasDeliveryOption = props.zones.some((zone) => zone.active);
 
   const latestDocuments = new Map<VerificationDocumentType, DocumentRow>();
   props.documents.forEach((document) => {
@@ -737,6 +739,24 @@ export function MerchantWorkspace(props: MerchantWorkspaceProps) {
 
         {tab === "livraison" && (
           <div className="mvp-card mvp-card--full">
+            <div className="merchant-delivery-readiness" role="status">
+              <p className="merchant-delivery-readiness__intro">Pour publier vos produits, deux étapes sont nécessaires — remplir l’une ne suffit pas sans l’autre :</p>
+              <ol className="merchant-delivery-readiness__steps">
+                <li className={hasLocation ? "is-done" : ""}>
+                  <span>{hasLocation ? "✓" : "1"}</span>
+                  {hasLocation
+                    ? "Localisation de la boutique enregistrée"
+                    : <>Placez votre boutique sur la carte ci-dessous et cliquez sur « Enregistrer la localisation »</>}
+                </li>
+                <li className={hasDeliveryOption ? "is-done" : ""}>
+                  <span>{hasDeliveryOption ? "✓" : "2"}</span>
+                  {hasDeliveryOption
+                    ? "Retrait en boutique ou région de livraison activé"
+                    : <>Plus bas, cliquez sur « Activer le retrait » ou ajoutez une région de livraison</>}
+                </li>
+              </ol>
+            </div>
+            <div className="mvp-divider" />
             <form className="mvp-form" onSubmit={savePaymentNumbers}>
               <h3>Coordonnées de paiement à la commande</h3>
               <p>
@@ -788,10 +808,13 @@ export function MerchantWorkspace(props: MerchantWorkspaceProps) {
             </form>
             <div className="mvp-divider" />
             <form className="mvp-form" onSubmit={savePickup}>
-              <h3>Retrait en boutique</h3>
+              <h3>Retrait en boutique — horaires et consignes</h3>
               <p>
                 Le client peut venir chercher sa commande directement à votre
-                adresse, sans frais de livraison.
+                adresse, sans frais de livraison. Ces horaires sont
+                facultatifs : pour activer réellement le retrait (obligatoire
+                pour publier si vous ne livrez pas), utilisez le bouton «
+                Activer le retrait » plus bas, dans la section Livraison.
               </p>
               <label className="mvp-field mvp-field--checkbox">
                 <input
