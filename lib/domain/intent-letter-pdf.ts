@@ -1,5 +1,11 @@
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 
+const WIN_ANSI_SAFE = /[^ -ÿ–—‘’“”…]/gu;
+
+function sanitizeForPdf(value: string): string {
+  return value.replace(WIN_ANSI_SAFE, "").replace(/\s+/g, " ").trim();
+}
+
 export type IntentLetterData = {
   signatoryName: string;
   signatoryBirthDate: string;
@@ -54,7 +60,24 @@ function wrapText(text: string, font: import("pdf-lib").PDFFont, fontSize: numbe
   return lines;
 }
 
-export async function renderIntentLetterPdf(data: IntentLetterData): Promise<Uint8Array> {
+export async function renderIntentLetterPdf(rawData: IntentLetterData): Promise<Uint8Array> {
+  const data: IntentLetterData = {
+    ...rawData,
+    signatoryName: sanitizeForPdf(rawData.signatoryName),
+    idNumber: sanitizeForPdf(rawData.idNumber),
+    signatoryRole: sanitizeForPdf(rawData.signatoryRole),
+    legalName: rawData.legalName ? sanitizeForPdf(rawData.legalName) : rawData.legalName,
+    publicName: sanitizeForPdf(rawData.publicName),
+    activityDescription: sanitizeForPdf(rawData.activityDescription),
+    addressHint: sanitizeForPdf(rawData.addressHint),
+    phone: sanitizeForPdf(rawData.phone),
+    email: sanitizeForPdf(rawData.email),
+    ninea: rawData.ninea ? sanitizeForPdf(rawData.ninea) : rawData.ninea,
+    rccm: sanitizeForPdf(rawData.rccm),
+    signaturePlace: sanitizeForPdf(rawData.signaturePlace),
+    certifiedByEmail: sanitizeForPdf(rawData.certifiedByEmail),
+  };
+
   const doc = await PDFDocument.create();
   const font = await doc.embedFont(StandardFonts.Helvetica);
   const bold = await doc.embedFont(StandardFonts.HelveticaBold);

@@ -48,6 +48,16 @@ describe("renderIntentLetterPdf", () => {
     expect(doc.getPageCount()).toBeGreaterThanOrEqual(1);
   });
 
+  it("ne plante pas quand un champ contient un emoji ou un caractère hors WinAnsi", async () => {
+    const bytes = await renderIntentLetterPdf({
+      ...baseData,
+      activityDescription: "Vente de basket 🏀 et vêtements de sport 👟 en ligne.",
+      signatoryName: "Awa 😀 Diop",
+    });
+    const header = Buffer.from(bytes.slice(0, 5)).toString("ascii");
+    expect(header).toBe("%PDF-");
+  });
+
   it("inclut les informations d'entreprise quand fournies (raison sociale, NINEA, RCCM)", async () => {
     const bytes = await renderIntentLetterPdf({
       ...baseData,
