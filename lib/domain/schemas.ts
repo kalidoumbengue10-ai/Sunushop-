@@ -335,7 +335,7 @@ export const productDetailsSchema = z.object({
   categoryId: uuid,
   title: z.string().trim().min(2).max(180),
   description: z.string().trim().min(10).max(5000),
-  optionNames: z.array(z.string().trim().min(1).max(40)).max(3).default([]),
+  optionNames: z.array(z.string().trim().min(1).max(40)).max(4).default([]),
   variants: z.array(productVariantEditorSchema).min(1).max(50),
 }).superRefine((value, context) => {
   const combinations = new Set<string>();

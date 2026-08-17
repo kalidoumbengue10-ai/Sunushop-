@@ -90,7 +90,7 @@ export default async function MarchandPage({ searchParams }: { searchParams: Pro
 
   const categoriesPromise = supabase
     .from("categories")
-    .select("id, name")
+    .select("id, name, slug")
     .eq("active", true)
     .order("position");
   const plansPromise = supabase

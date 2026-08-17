@@ -80,7 +80,7 @@ type MerchantWorkspaceProps = {
   merchant: Merchant | null;
   verificationCase: VerificationCase | null;
   documents: DocumentRow[];
-  categories: Array<{ id: string; name: string }>;
+  categories: Array<{ id: string; name: string; slug: string }>;
   plans: Array<{
     id: string;
     name: string;

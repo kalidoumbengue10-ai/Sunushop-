@@ -8,6 +8,7 @@ import { ImagePlus, Images, Star, Trash2, UploadCloud } from "lucide-react";
 import { formatPrice } from "@/lib/marketplace";
 import { merchantStatusLabel } from "@/lib/domain/merchant-ui";
 import { computeVariantMatrix, parseVariantValues } from "@/lib/domain/variant-matrix";
+import { suggestedAxesForCategory } from "@/lib/domain/category-variant-templates";
 
 type VariantEditor = {
   id?: string;
@@ -44,18 +45,19 @@ export type MerchantProductEditor = {
 
 type OptionAxis = { name: string; values: string };
 
-const MAX_AXES = 3;
+const MAX_AXES = 4;
 
 const emptyVariant = (): VariantEditor => ({
   title: "Standard", attributes: {}, sku: "", priceXof: 0, stock: 0,
   reserved: 0, lowStockThreshold: 5, active: true,
 });
 
-const emptyAxes = (): OptionAxis[] => [{ name: "Taille", values: "" }, { name: "Couleur", values: "" }];
+const emptyAxes = (categorySlug?: string): OptionAxis[] =>
+  suggestedAxesForCategory(categorySlug).map((axis) => ({ ...axis }));
 
 export function MerchantProductWizard({ merchantId, categories, products, deliveryReady, subscriptionReady, onOpenSubscription, onOpenDelivery }: {
   merchantId: string;
-  categories: Array<{ id: string; name: string }>;
+  categories: Array<{ id: string; name: string; slug: string }>;
   products: MerchantProductEditor[];
   deliveryReady: boolean;
   subscriptionReady: boolean;
@@ -70,7 +72,8 @@ export function MerchantProductWizard({ merchantId, categories, products, delive
   const [categoryId, setCategoryId] = useState(categories[0]?.id ?? "");
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
-  const [axes, setAxes] = useState<OptionAxis[]>(emptyAxes());
+  const [axes, setAxes] = useState<OptionAxis[]>(emptyAxes(categories[0]?.slug));
+  const [axesTouched, setAxesTouched] = useState(false);
   const [variants, setVariants] = useState<VariantEditor[]>([emptyVariant()]);
   const [photos, setPhotos] = useState<Array<{ id: string; name: string; url?: string; altText: string; position: number }>>([]);
   const [isDraggingPhotos, setIsDraggingPhotos] = useState(false);
@@ -78,6 +81,8 @@ export function MerchantProductWizard({ merchantId, categories, products, delive
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [confirmNoVariants, setConfirmNoVariants] = useState(false);
+
+  const categorySlugById = useMemo(() => new Map(categories.map((category) => [category.id, category.slug])), [categories]);
 
   const sellableStock = useMemo(() => variants.reduce((sum, variant) => sum + Math.max(0, variant.stock - variant.reserved), 0), [variants]);
 
@@ -92,7 +97,12 @@ export function MerchantProductWizard({ merchantId, categories, products, delive
     revokeBlobUrls();
     setStep(0); setProductId(undefined); setCategoryId(categories[0]?.id ?? "");
     setTitle(""); setDescription(""); setVariants([emptyVariant()]); setPhotos([]);
-    setAxes(emptyAxes()); setMessage(""); setError(""); setConfirmNoVariants(false);
+    setAxes(emptyAxes(categories[0]?.slug)); setAxesTouched(false); setMessage(""); setError(""); setConfirmNoVariants(false);
+  };
+
+  const selectCategory = (nextCategoryId: string) => {
+    setCategoryId(nextCategoryId);
+    if (!axesTouched) setAxes(emptyAxes(categorySlugById.get(nextCategoryId)));
   };
 
   const editProduct = (product: MerchantProductEditor, targetStep: 1 | 2 | 3 = 1) => {
@@ -127,8 +137,9 @@ export function MerchantProductWizard({ merchantId, categories, products, delive
         values: [...new Set(activeVariants.map((variant) => variant.attributes?.[name]).filter((value): value is string => Boolean(value)))].join(", "),
       })));
     } else {
-      setAxes(emptyAxes());
+      setAxes(emptyAxes(categorySlugById.get(product.category_id)));
     }
+    setAxesTouched(true);
     setStep(targetStep); setMessage(""); setError(""); setConfirmNoVariants(false);
   };
 
@@ -181,11 +192,12 @@ export function MerchantProductWizard({ merchantId, categories, products, delive
   const updateVariant = (index: number, patch: Partial<VariantEditor>) => setVariants((current) => current.map((variant, position) => position === index ? { ...variant, ...patch } : variant));
 
   const updateAxis = (index: number, patch: Partial<OptionAxis>) => {
+    setAxesTouched(true);
     setAxes((current) => current.map((axis, position) => position === index ? { ...axis, ...patch } : axis));
     setError(""); setMessage(""); setConfirmNoVariants(false);
   };
-  const addAxis = () => setAxes((current) => current.length >= MAX_AXES ? current : [...current, { name: "", values: "" }]);
-  const removeAxis = (index: number) => setAxes((current) => current.filter((_, position) => position !== index));
+  const addAxis = () => { setAxesTouched(true); setAxes((current) => current.length >= MAX_AXES ? current : [...current, { name: "", values: "" }]); };
+  const removeAxis = (index: number) => { setAxesTouched(true); setAxes((current) => current.filter((_, position) => position !== index)); };
 
   const hasNoAttributes = variants.every((variant) => Object.keys(variant.attributes).length === 0);
 
@@ -372,8 +384,8 @@ export function MerchantProductWizard({ merchantId, categories, products, delive
       <div className="merchant-section-heading"><div><span className="mvp-eyebrow">Assistant produit</span><h2>{productId ? title : "Nouveau produit"}</h2></div><button className="mvp-button mvp-button--secondary" onClick={reset}>Quitter l’assistant</button></div>
       <div className="merchant-wizard-steps">{["Informations", "Variantes et stock", "Photos", "Vérification"].map((label, index) => <span className={step === index + 1 ? "is-active" : step > index + 1 ? "is-complete" : ""} key={label}><b>{index + 1}</b>{label}</span>)}</div>
       {message && <p className="mvp-alert">{message}</p>}{error && <p className="mvp-alert mvp-alert--error">{error}</p>}
-      {step === 1 && <form className="mvp-form" onSubmit={productId ? (event) => { event.preventDefault(); setStep(2); } : createDraft}><div className="mvp-form__grid"><label className="mvp-field">Nom du produit<input value={title} onChange={(event) => setTitle(event.target.value)} required /></label><label className="mvp-field">Catégorie<select value={categoryId} onChange={(event) => setCategoryId(event.target.value)} required>{categories.map((category) => <option value={category.id} key={category.id}>{category.name}</option>)}</select></label></div><label className="mvp-field">Description<textarea rows={5} value={description} onChange={(event) => setDescription(event.target.value)} minLength={10} required /></label><button className="mvp-button" disabled={busy}>{busy ? "Enregistrement…" : "Continuer vers les variantes"}</button></form>}
-      {step === 2 && <div className="mvp-form"><div className="variant-builder"><h3>Générer les combinaisons</h3><p>Définissez jusqu’à trois axes d’attributs (ex. Taille, Couleur, Matière), laissez les valeurs vides pour un produit sans option.</p>{axes.map((axis, index) => (<div className="mvp-form__grid variant-axis-row" key={index}><label className="mvp-field">{`Axe ${index + 1} (ex. Taille)`}<input value={axis.name} onChange={(event) => updateAxis(index, { name: event.target.value })} /></label><label className="mvp-field">Valeurs, séparées par virgule, point-virgule ou ligne<input value={axis.values} onChange={(event) => updateAxis(index, { values: event.target.value })} placeholder="S, M, L" /></label>{axes.length > 1 && <button type="button" className="mvp-button mvp-button--secondary" onClick={() => removeAxis(index)} aria-label={`Retirer l’axe ${index + 1}`}>Retirer</button>}</div>))}<div className="mvp-actions">{axes.length < MAX_AXES && <button type="button" className="mvp-button mvp-button--secondary" onClick={addAxis}>Ajouter un axe</button>}<button type="button" className="mvp-button mvp-button--secondary" onClick={generateMatrix}>Générer la matrice</button></div></div><div className="variant-table-wrap"><table className="mvp-table variant-table"><thead><tr><th>Variante</th><th>Prix</th><th>Stock physique</th><th>Réservé</th><th>Seuil d’alerte</th><th>SKU facultatif</th></tr></thead><tbody>{variants.map((variant, index) => <tr key={`${variant.title}-${index}`}><td data-label="Variante"><strong>{variant.title}</strong></td><td data-label="Prix"><input aria-label={`Prix ${variant.title}`} type="number" min="0" value={variant.priceXof} onChange={(event) => updateVariant(index, { priceXof: Number(event.target.value) })} /></td><td data-label="Stock physique"><input aria-label={`Stock ${variant.title}`} type="number" min={variant.reserved} value={variant.stock} onChange={(event) => updateVariant(index, { stock: Number(event.target.value) })} /></td><td data-label="Réservé">{variant.reserved}</td><td data-label="Seuil d’alerte"><input aria-label={`Seuil ${variant.title}`} type="number" min="0" value={variant.lowStockThreshold} onChange={(event) => updateVariant(index, { lowStockThreshold: Number(event.target.value) })} /></td><td data-label="SKU facultatif"><input aria-label={`SKU ${variant.title}`} value={variant.sku} placeholder="Généré automatiquement" onChange={(event) => updateVariant(index, { sku: event.target.value })} /></td></tr>)}</tbody></table></div><p><strong>{sellableStock}</strong> unité(s) disponibles à la vente, après réservations.</p><button type="button" className="mvp-button" disabled={busy} onClick={saveVariants}>{busy ? "Enregistrement…" : confirmNoVariants ? "Confirmer sans taille/couleur" : "Enregistrer et ajouter les photos"}</button></div>}
+      {step === 1 && <form className="mvp-form" onSubmit={productId ? (event) => { event.preventDefault(); setStep(2); } : createDraft}><div className="mvp-form__grid"><label className="mvp-field">Nom du produit<input value={title} onChange={(event) => setTitle(event.target.value)} required /></label><label className="mvp-field">Catégorie<select value={categoryId} onChange={(event) => selectCategory(event.target.value)} required>{categories.map((category) => <option value={category.id} key={category.id}>{category.name}</option>)}</select></label></div><label className="mvp-field">Description<textarea rows={5} value={description} onChange={(event) => setDescription(event.target.value)} minLength={10} required /></label><button className="mvp-button" disabled={busy}>{busy ? "Enregistrement…" : "Continuer vers les variantes"}</button></form>}
+      {step === 2 && <div className="mvp-form"><div className="variant-builder"><h3>Générer les combinaisons</h3><p>Définissez jusqu’à quatre axes d’attributs (ex. Taille, Couleur, Poids, Volume) — pré-remplis selon la catégorie choisie, à ajuster librement. Laissez les valeurs vides pour un produit sans option.</p>{axes.map((axis, index) => (<div className="mvp-form__grid variant-axis-row" key={index}><label className="mvp-field">{`Axe ${index + 1} (ex. Taille)`}<input value={axis.name} onChange={(event) => updateAxis(index, { name: event.target.value })} /></label><label className="mvp-field">Valeurs, séparées par virgule, point-virgule ou ligne<input value={axis.values} onChange={(event) => updateAxis(index, { values: event.target.value })} placeholder="S, M, L" /></label>{axes.length > 1 && <button type="button" className="mvp-button mvp-button--secondary" onClick={() => removeAxis(index)} aria-label={`Retirer l’axe ${index + 1}`}>Retirer</button>}</div>))}<div className="mvp-actions">{axes.length < MAX_AXES && <button type="button" className="mvp-button mvp-button--secondary" onClick={addAxis}>Ajouter un axe</button>}<button type="button" className="mvp-button mvp-button--secondary" onClick={generateMatrix}>Générer la matrice</button></div></div><div className="variant-table-wrap"><table className="mvp-table variant-table"><thead><tr><th>Variante</th><th>Prix</th><th>Stock physique</th><th>Réservé</th><th>Seuil d’alerte</th><th>SKU facultatif</th></tr></thead><tbody>{variants.map((variant, index) => <tr key={`${variant.title}-${index}`}><td data-label="Variante"><strong>{variant.title}</strong></td><td data-label="Prix"><input aria-label={`Prix ${variant.title}`} type="number" min="0" value={variant.priceXof} onChange={(event) => updateVariant(index, { priceXof: Number(event.target.value) })} /></td><td data-label="Stock physique"><input aria-label={`Stock ${variant.title}`} type="number" min={variant.reserved} value={variant.stock} onChange={(event) => updateVariant(index, { stock: Number(event.target.value) })} /></td><td data-label="Réservé">{variant.reserved}</td><td data-label="Seuil d’alerte"><input aria-label={`Seuil ${variant.title}`} type="number" min="0" value={variant.lowStockThreshold} onChange={(event) => updateVariant(index, { lowStockThreshold: Number(event.target.value) })} /></td><td data-label="SKU facultatif"><input aria-label={`SKU ${variant.title}`} value={variant.sku} placeholder="Généré automatiquement" onChange={(event) => updateVariant(index, { sku: event.target.value })} /></td></tr>)}</tbody></table></div><p><strong>{sellableStock}</strong> unité(s) disponibles à la vente, après réservations.</p><button type="button" className="mvp-button" disabled={busy} onClick={saveVariants}>{busy ? "Enregistrement…" : confirmNoVariants ? "Confirmer sans taille/couleur" : "Enregistrer et ajouter les photos"}</button></div>}
       {step === 3 && <div className="merchant-photo-step">
         <div className="merchant-photo-intro"><span><Images /></span><div><h3>Ajoutez les photos du produit</h3><p>La première photo devient l’image principale visible dans la boutique. Ajoutez jusqu’à 8 photos.</p></div><strong>{photos.length}/8</strong></div>
         <button
