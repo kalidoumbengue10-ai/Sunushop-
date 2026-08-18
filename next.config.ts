@@ -18,7 +18,7 @@ const nextConfig: NextConfig = {
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: blob: https:",
       "font-src 'self' data:",
-      "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://challenges.cloudflare.com https://tiles.openfreemap.org https://*.ingest.de.sentry.io",
+      "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://challenges.cloudflare.com https://tiles.openfreemap.org https://*.ingest.de.sentry.io https://*.i.posthog.com",
       "worker-src 'self' blob:",
       "frame-src https://challenges.cloudflare.com",
       ...(isDevelopment ? [] : ["upgrade-insecure-requests"]),

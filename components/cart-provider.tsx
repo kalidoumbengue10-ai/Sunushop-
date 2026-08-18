@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import posthog from "posthog-js";
 import type { CatalogItem } from "@/lib/domain/repositories";
 import {
   addCartLine,
@@ -104,6 +105,13 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         const line = updated.find((entry) => entry.product.variant.id === product.variant.id);
         if (line) sync(product.variant.id, line.quantity);
         return updated;
+      });
+      posthog.capture("product_added_to_cart", {
+        product_id: product.id,
+        variant_id: product.variant.id,
+        merchant_id: product.merchant.id,
+        price_xof: product.variant.priceXof,
+        quantity,
       });
     },
     setQuantity(variantId, quantity) {

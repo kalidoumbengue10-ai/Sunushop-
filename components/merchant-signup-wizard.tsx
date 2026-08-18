@@ -2,6 +2,7 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import Script from "next/script";
+import posthog from "posthog-js";
 import { useRouter } from "next/navigation";
 import { Check } from "lucide-react";
 import { DirectDocumentUploader } from "@/components/direct-document-uploader";
@@ -212,6 +213,13 @@ export function MerchantSignupWizard({
         // Sans conséquence si le stockage est indisponible.
       }
       setCreated({ merchantId: payload.data.merchantId, caseId: payload.data.caseId });
+      posthog.capture("merchant_signup_completed", {
+        merchant_id: payload.data.merchantId,
+        case_id: payload.data.caseId,
+        business_type: draft.businessType,
+        sales_channel: draft.salesChannel,
+        city: draft.city || undefined,
+      });
       setStep("identite");
     } catch {
       setError("Impossible de joindre SunuShop. Vérifiez la connexion puis réessayez.");

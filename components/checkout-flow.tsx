@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
+import posthog from "posthog-js";
 import { useCart } from "@/components/cart-provider";
 import { OrderBatchConfirmation, type ConfirmedOrder } from "@/components/order-batch-confirmation";
 import { ShopContact } from "@/components/shop-contact";
@@ -396,9 +397,22 @@ export function CheckoutFlow() {
       clearCheckoutDraft();
       cart.clear();
       const merchantNames = Object.fromEntries(groups.map((group) => [group.merchantId, group.merchantName]));
-      setConfirmedOrders(
-        payload.data.orders.map((order: ConfirmedOrder) => ({ ...order, merchantName: merchantNames[order.merchantId] })),
+      const confirmedOrders = payload.data.orders.map((order: ConfirmedOrder) => ({
+        ...order,
+        merchantName: merchantNames[order.merchantId],
+      }));
+      setConfirmedOrders(confirmedOrders);
+      const batchTotalXof = confirmedOrders.reduce(
+        (sum: number, order: ConfirmedOrder) => sum + order.totalXof,
+        0,
       );
+      posthog.capture("order_completed", {
+        batch_id: payload.data.batchId,
+        order_ids: confirmedOrders.map((order: ConfirmedOrder) => order.id),
+        merchant_ids: confirmedOrders.map((order: ConfirmedOrder) => order.merchantId),
+        total_xof: batchTotalXof,
+        order_count: confirmedOrders.length,
+      });
       setStep("confirmation");
     } catch (submissionError) {
       setError(submissionError instanceof Error ? submissionError.message : "Une erreur est survenue.");

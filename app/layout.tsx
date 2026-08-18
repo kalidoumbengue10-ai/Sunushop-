@@ -4,6 +4,7 @@ import "./globals.css";
 import "./mvp.css";
 import "./access-spaces.css";
 import "./admin.css";
+import { PostHogProvider } from "@/components/posthog-provider";
 
 export const metadata: Metadata = {
   metadataBase: new URL(
@@ -30,7 +31,9 @@ export default function RootLayout({
 }) {
   return (
     <html lang="fr" data-scroll-behavior="smooth">
-      <body suppressHydrationWarning>{children}</body>
+      <body suppressHydrationWarning>
+        <PostHogProvider>{children}</PostHogProvider>
+      </body>
     </html>
   );
 }
