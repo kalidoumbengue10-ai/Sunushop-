@@ -24,7 +24,23 @@ export async function POST(request: Request) {
       p_recipient: input.recipient,
       p_groups: input.groups,
     });
-    if (error) throw error;
+    if (error) {
+      if (typeof error.message === "string" && error.message.includes("DELIVERY_REGION_MISMATCH")) {
+        const details = (error as { details?: unknown }).details;
+        console.error("[order_batch_region_mismatch]", {
+          requestId,
+          details,
+          recipientRegion: input.recipient.region,
+          recipientCity: input.recipient.city,
+          groups: input.groups.map((group) => ({
+            merchantId: group.merchantId,
+            methodKind: group.methodKind,
+            deliveryZoneId: group.deliveryZoneId,
+          })),
+        });
+      }
+      throw error;
+    }
     const result = data as { batchId: string; publicCode: string; totalXof: number };
 
     // À partir d'ici, la commande est déjà créée et committée en base par le RPC.
