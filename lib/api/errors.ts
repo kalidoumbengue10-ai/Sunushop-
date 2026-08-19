@@ -142,6 +142,10 @@ const databaseErrorMap: Record<string, { status: number; message: string }> = {
     status: 404,
     message: "Commande introuvable.",
   },
+  ORDER_NOT_REMOVABLE: {
+    status: 409,
+    message: "Cette commande doit rester visible pour son suivi ou son remboursement.",
+  },
   COURIER_FEE_NOT_CONFIGURED: {
     status: 409,
     message: "Fixez d’abord la rémunération du livreur pour cette zone.",

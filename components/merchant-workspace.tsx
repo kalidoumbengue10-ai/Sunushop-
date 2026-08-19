@@ -632,7 +632,7 @@ export function MerchantWorkspace(props: MerchantWorkspaceProps) {
         {tab === "dashboard" && <section className="merchant-content-surface merchant-content-surface--dashboard"><MerchantDashboard merchantId={props.merchant.id} /></section>}
 
         {tab === "livreurs" && (
-          <CourierManager merchantId={props.merchant.id} canManagePayments={["owner", "manager"].includes(props.memberRole)} />
+          <CourierManager merchantId={props.merchant.id} canManagePayments={["owner", "manager"].includes(props.memberRole)} onOpenOrders={() => setTab("commandes")} />
         )}
 
         {tab === "fidelite" && <MerchantLoyalty merchantId={props.merchant.id} />}

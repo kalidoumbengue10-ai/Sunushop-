@@ -1,4 +1,9 @@
-export const ASSIGNABLE_ORDER_STATUSES = ["confirmed", "preparing", "ready_for_handoff"] as const;
+export const ASSIGNABLE_ORDER_STATUSES = [
+  "pending_seller_confirmation",
+  "confirmed",
+  "preparing",
+  "ready_for_handoff",
+] as const;
 
 const REASSIGNABLE_DELIVERY_STATUSES = new Set(["assigned", "accepted", "at_pickup"]);
 
@@ -26,6 +31,17 @@ export function isReadyForAssignment(order: AssignableOrderInput) {
   return isAssignableOrder(order) && order.status === "ready_for_handoff";
 }
 
-export function assignableOrderLabel(status: string): "prête" | "à préparer" {
-  return status === "ready_for_handoff" ? "prête" : "à préparer";
+export function isVisibleInAssignmentQueue(status: string, paymentStatus: string) {
+  return status !== "pending_seller_confirmation" || paymentStatus === "paid";
+}
+
+export function assignableOrderLabel(
+  status: string,
+  paymentStatus?: string,
+): "prête" | "à préparer" | "à confirmer" | "paiement en attente" {
+  if (status === "ready_for_handoff") return "prête";
+  if (status === "pending_seller_confirmation") {
+    return paymentStatus === "paid" ? "à confirmer" : "paiement en attente";
+  }
+  return "à préparer";
 }

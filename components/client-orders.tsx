@@ -6,6 +6,7 @@ import { formatPrice } from "@/lib/marketplace";
 import { merchantStatusLabel } from "@/lib/domain/merchant-ui";
 import { StartConversationButton } from "@/components/start-conversation-button";
 import { getBrowserSupabase } from "@/lib/infrastructure/supabase/browser";
+import { canBuyerCancelOrder, canBuyerHideOrder } from "@/lib/domain/client-order-actions";
 
 type OrderItem = { id: string; product_snapshot: { title?: string; variantTitle?: string }; quantity: number; line_total_xof: number };
 type Order = {
@@ -13,6 +14,7 @@ type Order = {
   merchant_id: string;
   public_code: string;
   status: string;
+  payment_status: string;
   total_xof: number;
   loyalty_points_redeemed: number;
   loyalty_discount_xof: number;
@@ -20,6 +22,7 @@ type Order = {
   created_at: string;
   merchant_accounts: { public_name: string; slug: string } | Array<{ public_name: string; slug: string }>;
   order_items: OrderItem[];
+  deliveries: Array<{ id: string; status: string; delivered_at: string | null }>;
 };
 
 const CANCELLED_STATUSES = new Set(["cancelled", "disputed"]);
@@ -50,6 +53,7 @@ export function ClientOrders() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("toutes");
   const [merchantFilter, setMerchantFilter] = useState("toutes");
   const [search, setSearch] = useState("");
+  const [busyOrderId, setBusyOrderId] = useState("");
 
   const loadOrders = useCallback(() =>
     fetch("/api/client/orders")
@@ -101,6 +105,36 @@ export function ClientOrders() {
     });
   }, [orders, statusFilter, merchantFilter, search]);
 
+  const cancelOrder = async (order: Order) => {
+    if (!window.confirm(`Annuler la commande ${order.public_code} ? Cette action est définitive.`)) return;
+    setBusyOrderId(order.id); setError("");
+    try {
+      const response = await fetch(`/api/orders/${order.id}/status`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ status: "cancelled", publicMessage: "La commande a été annulée par le client." }),
+      });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error?.message ?? "Annulation impossible.");
+      await loadOrders();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Annulation impossible.");
+    } finally { setBusyOrderId(""); }
+  };
+
+  const hideOrder = async (order: Order) => {
+    if (!window.confirm(`Retirer ${order.public_code} de votre liste ? Son historique restera conservé par la boutique.`)) return;
+    setBusyOrderId(order.id); setError("");
+    try {
+      const response = await fetch(`/api/client/orders/${order.id}`, { method: "DELETE" });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error?.message ?? "Suppression impossible.");
+      setOrders((current) => current.filter((item) => item.id !== order.id));
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Suppression impossible.");
+    } finally { setBusyOrderId(""); }
+  };
+
   return (
     <div className="client-orders">
       <section className="mvp-card mvp-card--full">
@@ -141,6 +175,9 @@ export function ClientOrders() {
       <div className="client-orders__list">
         {filtered.map((order) => {
           const merchant = one(order.merchant_accounts);
+          const delivery = order.deliveries[0];
+          const canCancel = canBuyerCancelOrder(order.status, delivery?.status);
+          const canHide = canBuyerHideOrder(order.status, order.payment_status);
           return (
             <article className="client-order-card" key={order.id}>
               <header>
@@ -170,6 +207,8 @@ export function ClientOrders() {
                     label="Discuter"
                   />
                   <Link className="mvp-button mvp-button--secondary" href={`/boutiques/${merchant.slug}`}>Commander à nouveau</Link>
+                  {canCancel && <button type="button" className="mvp-button mvp-button--danger" disabled={busyOrderId === order.id} onClick={() => void cancelOrder(order)}>Annuler</button>}
+                  {canHide && <button type="button" className="mvp-button mvp-button--secondary" disabled={busyOrderId === order.id} onClick={() => void hideOrder(order)}>Retirer de ma liste</button>}
                 </div>
               </footer>
             </article>

@@ -85,7 +85,7 @@ async function createCatalogAndZone(context: BrowserContext, merchantId: string,
 
 async function prepareOrderUpTo(
   client: BrowserContext, merchant: BrowserContext, merchantId: string, zoneId: string, variantId: string, label: string,
-  finalStatus: "confirmed" | "preparing" | "ready_for_handoff",
+  finalStatus: "pending_seller_confirmation" | "confirmed" | "preparing" | "ready_for_handoff",
 ) {
   const batch = await responseData<{ orders: Array<{ id: string; publicCode: string; totalXof: number }> }>(await client.request.post("/api/orders/batch", {
     headers: { "idempotency-key": `assign-${runId}-${label}` },
@@ -94,6 +94,7 @@ async function prepareOrderUpTo(
   const order = batch.orders[0];
   const declaration = await responseData<{ id: string }>(await client.request.post(`/api/orders/${order.id}/payment-declarations`, { data: { channel: "wave", externalReference: `ORDER-ASSIGN-${runId}-${label}`, amountXof: order.totalXof, declaredAt: new Date().toISOString() } }), 201);
   await responseData(await merchant.request.patch(`/api/orders/${order.id}/payment-declarations`, { data: { declarationId: declaration.id, decision: "confirmed" } }));
+  if (finalStatus === "pending_seller_confirmation") return order;
   const sequence = ["confirmed", "preparing", "ready_for_handoff"] as const;
   for (const status of sequence) {
     await responseData(await merchant.request.post(`/api/orders/${order.id}/status`, { data: { status, publicMessage: `Préparation ${label}` } }));
@@ -182,7 +183,8 @@ test.describe.serial("affectation livreur : commandes visibles et enregistrement
       const form = await assignmentForm(merchantPage);
       await expect(form.locator(`select[name="courierMembershipId"] option[value="${membershipId}"]`)).toBeAttached({ timeout: 15_000 });
 
-      const [confirmedOrder, preparingOrder, readyOrder, pickupOrder] = await Promise.all([
+      const [pendingOrder, confirmedOrder, preparingOrder, readyOrder, pickupOrder] = await Promise.all([
+        prepareOrderUpTo(clientContext, merchantContext, merchant.id, catalog.zoneId, catalog.variantId, "pending", "pending_seller_confirmation"),
         prepareOrderUpTo(clientContext, merchantContext, merchant.id, catalog.zoneId, catalog.variantId, "confirmed", "confirmed"),
         prepareOrderUpTo(clientContext, merchantContext, merchant.id, catalog.zoneId, catalog.variantId, "preparing", "preparing"),
         prepareOrderUpTo(clientContext, merchantContext, merchant.id, catalog.zoneId, catalog.variantId, "ready", "ready_for_handoff"),
@@ -193,7 +195,9 @@ test.describe.serial("affectation livreur : commandes visibles et enregistrement
       await openCourierTab(merchantPage);
       const populatedForm = await assignmentForm(merchantPage);
 
-      // Scénario 3 : commandes confirmed/preparing visibles mais désactivées, ready_for_handoff activable.
+      // Scénario 3 : commandes payées en attente/confirmed/preparing visibles mais désactivées, ready_for_handoff activable.
+      await expect(populatedForm.locator(`select[name="orderId"] option[value="${pendingOrder.id}"]`)).toContainText("à confirmer");
+      await expect(populatedForm.locator(`select[name="orderId"] option[value="${pendingOrder.id}"]`)).toHaveAttribute("disabled", "");
       await expect(populatedForm.locator(`select[name="orderId"] option[value="${confirmedOrder.id}"]`)).toBeAttached({ timeout: 15_000 });
       await expect(populatedForm.locator(`select[name="orderId"] option[value="${confirmedOrder.id}"]`)).toContainText("à préparer");
       await expect(populatedForm.locator(`select[name="orderId"] option[value="${confirmedOrder.id}"]`)).toHaveAttribute("disabled", "");

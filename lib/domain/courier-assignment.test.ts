@@ -3,6 +3,7 @@ import {
   assignableOrderLabel,
   assignableOrderReason,
   isReadyForAssignment,
+  isVisibleInAssignmentQueue,
 } from "./courier-assignment";
 
 const readyOrder = {
@@ -12,14 +13,15 @@ const readyOrder = {
 };
 
 describe("éligibilité des commandes à l'affectation d'un livreur", () => {
-  it("accepte une commande prête, confirmée ou en préparation avec une zone de livraison", () => {
+  it("affiche une commande en attente, prête, confirmée ou en préparation avec une zone de livraison", () => {
     expect(assignableOrderReason(readyOrder)).toBe("assignable");
+    expect(assignableOrderReason({ ...readyOrder, status: "pending_seller_confirmation" })).toBe("assignable");
     expect(assignableOrderReason({ ...readyOrder, status: "confirmed" })).toBe("assignable");
     expect(assignableOrderReason({ ...readyOrder, status: "preparing" })).toBe("assignable");
   });
 
   it("rejette les statuts hors du flux d'affectation", () => {
-    for (const status of ["pending_seller_confirmation", "in_transit", "delivered", "cancelled", "disputed"]) {
+    for (const status of ["in_transit", "delivered", "cancelled", "disputed"]) {
       expect(assignableOrderReason({ ...readyOrder, status })).toBe("status_not_assignable");
     }
   });
@@ -54,8 +56,16 @@ describe("éligibilité des commandes à l'affectation d'un livreur", () => {
 
   it("libelle prête uniquement le statut ready_for_handoff", () => {
     expect(assignableOrderLabel("ready_for_handoff")).toBe("prête");
+    expect(assignableOrderLabel("pending_seller_confirmation", "paid")).toBe("à confirmer");
+    expect(assignableOrderLabel("pending_seller_confirmation", "awaiting_payment")).toBe("paiement en attente");
     expect(assignableOrderLabel("confirmed")).toBe("à préparer");
     expect(assignableOrderLabel("preparing")).toBe("à préparer");
+  });
+
+  it("n'affiche en attente vendeur que la commande déjà payée", () => {
+    expect(isVisibleInAssignmentQueue("pending_seller_confirmation", "paid")).toBe(true);
+    expect(isVisibleInAssignmentQueue("pending_seller_confirmation", "awaiting_payment")).toBe(false);
+    expect(isVisibleInAssignmentQueue("preparing", "paid")).toBe(true);
   });
 
   it("n'est prête pour affectation immédiate que si assignable et déjà au statut ready_for_handoff", () => {

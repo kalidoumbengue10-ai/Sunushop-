@@ -2603,6 +2603,7 @@ export type Database = {
       orders: {
         Row: {
           batch_id: string
+          buyer_hidden_at: string | null
           buyer_id: string
           cancelled_at: string | null
           created_at: string
@@ -2633,6 +2634,7 @@ export type Database = {
         }
         Insert: {
           batch_id: string
+          buyer_hidden_at?: string | null
           buyer_id: string
           cancelled_at?: string | null
           created_at?: string
@@ -2663,6 +2665,7 @@ export type Database = {
         }
         Update: {
           batch_id?: string
+          buyer_hidden_at?: string | null
           buyer_id?: string
           cancelled_at?: string | null
           created_at?: string
@@ -4430,6 +4433,7 @@ export type Database = {
         Args: { p_order_id: string }
         Returns: {
           batch_id: string
+          buyer_hidden_at: string | null
           buyer_id: string
           cancelled_at: string | null
           created_at: string
@@ -4881,6 +4885,7 @@ export type Database = {
         }
         Returns: {
           batch_id: string
+          buyer_hidden_at: string | null
           buyer_id: string
           cancelled_at: string | null
           created_at: string

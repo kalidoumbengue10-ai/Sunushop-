@@ -9,6 +9,7 @@ import { StartConversationButton } from "@/components/start-conversation-button"
 import { siteConfig } from "@/app/site-config";
 import { formatPrice } from "@/lib/marketplace";
 import { getBrowserSupabase } from "@/lib/infrastructure/supabase/browser";
+import { canBuyerCancelOrder, canBuyerHideOrder } from "@/lib/domain/client-order-actions";
 
 type OrderPayload = {
   order: {
@@ -246,6 +247,38 @@ export function OrderTracking({ orderId }: { orderId: string }) {
     }
   };
 
+  const cancelOrder = async () => {
+    if (!payload || !window.confirm(`Annuler la commande ${payload.order.public_code} ? Cette action est définitive.`)) return;
+    setBusy(true); setError(""); setSavMessage("");
+    try {
+      const response = await fetch(`/api/orders/${orderId}/status`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ status: "cancelled", publicMessage: "La commande a été annulée par le client." }),
+      });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error?.message ?? "Annulation impossible.");
+      setSavMessage("Votre commande a bien été annulée. La boutique a été informée.");
+      await loadOrder();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Annulation impossible.");
+    } finally { setBusy(false); }
+  };
+
+  const hideOrder = async () => {
+    if (!payload || !window.confirm(`Retirer ${payload.order.public_code} de votre liste ? Son historique restera conservé par la boutique.`)) return;
+    setBusy(true); setError("");
+    try {
+      const response = await fetch(`/api/client/orders/${orderId}`, { method: "DELETE" });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error?.message ?? "Suppression impossible.");
+      router.push("/client/commandes");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Suppression impossible.");
+      setBusy(false);
+    }
+  };
+
   if (error) {
     return (
       <p className="mvp-alert mvp-alert--error">
@@ -291,6 +324,17 @@ export function OrderTracking({ orderId }: { orderId: string }) {
           ))}
         </div>
         <div className="mvp-divider" />
+        {canBuyerCancelOrder(payload.order.status, payload.delivery?.status) && (
+          <div className="mvp-actions">
+            <button type="button" className="mvp-button mvp-button--danger" disabled={busy} onClick={() => void cancelOrder()}>{busy ? "Annulation…" : "Annuler cette commande"}</button>
+          </div>
+        )}
+        {canBuyerHideOrder(payload.order.status, payload.order.payment_status) && (
+          <div className="mvp-actions">
+            <button type="button" className="mvp-button mvp-button--secondary" disabled={busy} onClick={() => void hideOrder()}>Retirer de mes commandes</button>
+          </div>
+        )}
+        {(canBuyerCancelOrder(payload.order.status, payload.delivery?.status) || canBuyerHideOrder(payload.order.status, payload.order.payment_status)) && <div className="mvp-divider" />}
         <h2>Contacter le commerçant</h2>
         <ShopContact
           phone={payload.order.merchant_accounts.phone}
