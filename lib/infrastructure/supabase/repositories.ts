@@ -318,10 +318,11 @@ export class SupabaseCatalogRepository implements CatalogRepository {
         this.client
           .from("delivery_zones")
           .select(
-            "id, label, region, city, fee_xof, min_delay_minutes, max_delay_minutes",
+            "id, label, region, city, fee_xof, min_delay_minutes, max_delay_minutes, delivery_methods!inner(kind)",
           )
           .eq("merchant_id", merchant.id)
           .eq("active", true)
+          .eq("delivery_methods.kind", "merchant_delivery")
           .order("fee_xof"),
       ]);
 
@@ -398,11 +399,12 @@ export class SupabaseCatalogRepository implements CatalogRepository {
           : this.client
               .from("delivery_zones")
               .select(
-                "id, merchant_id, label, region, city, fee_xof, min_delay_minutes, max_delay_minutes, delivery_category_rates(category_id, fee_xof)",
+                "id, merchant_id, label, region, city, fee_xof, min_delay_minutes, max_delay_minutes, delivery_category_rates(category_id, fee_xof), delivery_methods!inner(kind)",
               )
               .eq("id", group.deliveryZoneId ?? "")
               .eq("merchant_id", group.merchantId)
               .eq("active", true)
+              .eq("delivery_methods.kind", "merchant_delivery")
               .maybeSingle(),
         this.client
           .from("product_variants")
