@@ -1,7 +1,10 @@
+import * as Sentry from "@sentry/nextjs";
 import { requireAdminClient } from "@/lib/api/auth";
 import { requireCron } from "@/lib/api/cron";
 import { apiFailure, apiSuccess } from "@/lib/api/response";
 import { sendNotificationEmail } from "@/lib/notifications/email";
+
+const MAX_ATTEMPTS = 5;
 
 export async function GET(request: Request) {
   const requestId = crypto.randomUUID();
@@ -41,6 +44,11 @@ export async function GET(request: Request) {
             last_error: sendError instanceof Error ? sendError.message.slice(0, 500) : "SEND_FAILED",
           })
           .eq("id", item.id);
+        if (attempts >= MAX_ATTEMPTS) {
+          Sentry.captureException(sendError, {
+            tags: { outboxId: item.id, template: item.template, attempts },
+          });
+        }
       }
     }
     return apiSuccess({ processed: pending?.length ?? 0, sent }, { requestId });

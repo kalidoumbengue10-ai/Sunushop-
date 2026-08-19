@@ -102,6 +102,8 @@ export function CheckoutFlow() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const resumedRef = useRef(false);
+  const recipientRef = useRef(recipient);
+  recipientRef.current = recipient;
 
   // Charge les fiches boutique (zones de livraison, moyens de paiement) pour chaque marchand du panier.
   useEffect(() => {
@@ -113,9 +115,13 @@ export function CheckoutFlow() {
           if (!payload?.data) return;
           const shop = payload.data as ShopInfo;
           setShops((current) => ({ ...current, [group.merchantId]: shop }));
-          setSelectedZones((current) =>
-            current[group.merchantId] ? current : { ...current, [group.merchantId]: shop.deliveryZones[0]?.id ?? "" },
-          );
+          setSelectedZones((current) => {
+            if (current[group.merchantId]) return current;
+            const matching = recipientRef.current.region
+              ? shop.deliveryZones.find((zone) => zone.region === recipientRef.current.region)
+              : undefined;
+            return { ...current, [group.merchantId]: matching?.id ?? shop.deliveryZones[0]?.id ?? "" };
+          });
           setMethodKinds((current) => {
             const wanted = current[group.merchantId];
             // Le brouillon restauré (readCheckoutDraft) peut pointer vers "pickup" pour une
@@ -278,18 +284,29 @@ export function CheckoutFlow() {
     let cancelled = false;
     queueMicrotask(() => {
       if (cancelled) return;
+      let unavailableForRegion = false;
       setSelectedZones((current) => {
         let changed = false;
         const next = { ...current };
         for (const group of groups) {
           const zones = shops[group.merchantId]?.deliveryZones ?? [];
+          if (zones.length === 0) continue;
           const selected = zones.find((zone) => zone.id === current[group.merchantId]);
           if (selected?.region === recipient.region) continue;
           const matching = zones.find((zone) => zone.region === recipient.region);
-          if (matching) { next[group.merchantId] = matching.id; changed = true; }
+          if (matching) {
+            next[group.merchantId] = matching.id;
+          } else {
+            next[group.merchantId] = "";
+            unavailableForRegion = true;
+          }
+          changed = true;
         }
         return changed ? next : current;
       });
+      if (unavailableForRegion) {
+        setError("Aucune zone de livraison n’est disponible pour la région choisie chez au moins une boutique. Sélectionnez une autre zone ou région.");
+      }
     });
     return () => { cancelled = true; };
   }, [groups, recipient.region, shops]);
@@ -341,6 +358,13 @@ export function CheckoutFlow() {
     const hasDelivery = groups.some((group) => (methodKinds[group.merchantId] ?? "merchant_delivery") === "merchant_delivery");
     if (hasDelivery && (recipient.latitude === undefined || recipient.longitude === undefined)) {
       setError("Placez la destination sur la carte avant de continuer.");
+      return;
+    }
+    const missingZone = groups.some((group) =>
+      (methodKinds[group.merchantId] ?? "merchant_delivery") === "merchant_delivery" && !selectedZones[group.merchantId],
+    );
+    if (missingZone) {
+      setError("Choisissez une zone de livraison disponible pour votre région chez chaque boutique.");
       return;
     }
     if (!(await requestQuote())) return;

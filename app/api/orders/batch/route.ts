@@ -1,3 +1,4 @@
+import * as Sentry from "@sentry/nextjs";
 import { requireAdminClient, requireUser } from "@/lib/api/auth";
 import { ApiError } from "@/lib/api/errors";
 import { apiFailure, apiSuccess } from "@/lib/api/response";
@@ -25,17 +26,47 @@ export async function POST(request: Request) {
     });
     if (error) throw error;
     const result = data as { batchId: string; publicCode: string; totalXof: number };
-    const { data: orders, error: ordersError } = await supabase
-      .from("orders")
-      .select("id, public_code, merchant_id, merchant_sequence, subtotal_xof, total_xof, status, loyalty_points_redeemed, loyalty_discount_xof, loyalty_points_earned")
-      .eq("batch_id", result.batchId)
-      .order("created_at");
-    if (ordersError) throw ordersError;
+
+    // À partir d'ici, la commande est déjà créée et committée en base par le RPC.
+    // Toute erreur ci-dessous (relecture, envoi d'emails) ne doit plus faire échouer
+    // la requête côté client : ça créerait une commande "fantôme" pour l'acheteur,
+    // qui verrait une erreur alors que sa commande a bien été passée.
     const admin = requireAdminClient();
-    const merchantIds = [...new Set((orders ?? []).map((order) => order.merchant_id))];
+    let orders: Array<{
+      id: string;
+      public_code: string;
+      merchant_id: string;
+      merchant_sequence: number;
+      subtotal_xof: number;
+      total_xof: number;
+      status: string;
+      loyalty_points_redeemed: number | null;
+      loyalty_discount_xof: number | null;
+      loyalty_points_earned: number | null;
+    }> = [];
+    try {
+      const { data: fetchedOrders, error: ordersError } = await admin
+        .from("orders")
+        .select("id, public_code, merchant_id, merchant_sequence, subtotal_xof, total_xof, status, loyalty_points_redeemed, loyalty_discount_xof, loyalty_points_earned")
+        .eq("batch_id", result.batchId)
+        .order("created_at");
+      if (ordersError) throw ordersError;
+      orders = fetchedOrders ?? [];
+    } catch (postCommitError) {
+      console.error("[order_batch_post_commit_read_failed]", {
+        requestId,
+        batchId: result.batchId,
+        message: postCommitError instanceof Error ? postCommitError.message : String(postCommitError),
+      });
+      Sentry.captureException(postCommitError, {
+        tags: { requestId, errorCode: "ORDER_BATCH_POST_COMMIT_READ_FAILED" },
+        extra: { batchId: result.batchId },
+      });
+    }
+    const merchantIds = [...new Set(orders.map((order) => order.merchant_id))];
     const { data: merchants } = await admin.from("merchant_accounts").select("id, public_name, email").in("id", merchantIds);
     const merchantMap = new Map((merchants ?? []).map((merchant) => [merchant.id, merchant]));
-    await Promise.allSettled((orders ?? []).flatMap((order) => {
+    await Promise.allSettled(orders.flatMap((order) => {
       const merchant = merchantMap.get(order.merchant_id);
       const url = new URL(`/commandes/${order.id}`, request.url).toString();
       return [
@@ -45,8 +76,8 @@ export async function POST(request: Request) {
     }));
     return apiSuccess({
       ...result,
-      totalXof: (orders ?? []).reduce((total, order) => total + order.total_xof, 0),
-      orders: (orders ?? []).map((order) => ({
+      totalXof: orders.length > 0 ? orders.reduce((total, order) => total + order.total_xof, 0) : result.totalXof,
+      orders: orders.map((order) => ({
         id: order.id,
         publicCode: order.public_code,
         merchantId: order.merchant_id,

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import * as Sentry from "@sentry/nextjs";
 import { normalizeApiError } from "./errors";
 
 export function apiSuccess<T>(
@@ -26,6 +27,9 @@ export function apiFailure(error: unknown, requestId = crypto.randomUUID()) {
       causeName: typeof cause?.name === "string" ? cause.name : undefined,
       causeMessage:
         typeof cause?.message === "string" ? cause.message : "Unknown error",
+    });
+    Sentry.captureException(error, {
+      tags: { requestId, errorCode: normalized.code },
     });
   }
   return NextResponse.json(
