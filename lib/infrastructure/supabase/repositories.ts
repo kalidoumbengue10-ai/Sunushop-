@@ -2,6 +2,7 @@ import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { ApiError } from "@/lib/api/errors";
+import { sameDeliveryAreaName } from "@/lib/domain/delivery-area";
 import { highestCategoryDeliveryFee } from "@/lib/domain/delivery-pricing";
 import type {
   CatalogItem,
@@ -456,10 +457,10 @@ export class SupabaseCatalogRepository implements CatalogRepository {
         if (!destination) {
           throw new ApiError(422, "DELIVERY_DESTINATION_REQUIRED", "La destination GPS est requise.");
         }
-        if (zone.region.trim().toLocaleLowerCase("fr") !== destination.region.trim().toLocaleLowerCase("fr")) {
+        if (!sameDeliveryAreaName(zone.region, destination.region)) {
           throw new ApiError(422, "DELIVERY_REGION_MISMATCH", "La zone choisie ne correspond pas à la région de livraison.");
         }
-        if (zone.city && zone.city.trim().toLocaleLowerCase("fr") !== destination.city.trim().toLocaleLowerCase("fr")) {
+        if (zone.city && !sameDeliveryAreaName(zone.city, destination.city)) {
           throw new ApiError(422, "DELIVERY_REGION_MISMATCH", "La zone choisie ne correspond pas à la ville de livraison.");
         }
       }

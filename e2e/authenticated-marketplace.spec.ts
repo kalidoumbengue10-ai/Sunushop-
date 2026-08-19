@@ -1,6 +1,7 @@
 import { expect, test, type APIResponse, type BrowserContext } from "@playwright/test";
 import { loadEnvConfig } from "@next/env";
 import { createClient } from "@supabase/supabase-js";
+import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
 
 loadEnvConfig(process.cwd());
 
@@ -41,6 +42,24 @@ async function responseData<T extends JsonObject>(response: APIResponse, status:
   expect(response.status(), JSON.stringify(payload)).toBe(status);
   expect(payload?.data, JSON.stringify(payload)).toBeTruthy();
   return payload!.data!;
+}
+
+async function receiptText(response: APIResponse) {
+  expect(response.status()).toBe(200);
+  expect(response.headers()["content-type"]).toContain("application/pdf");
+  const loadingTask = getDocument({ data: new Uint8Array(await response.body()) });
+  const document = await loadingTask.promise;
+  try {
+    const pages: string[] = [];
+    for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber += 1) {
+      const page = await document.getPage(pageNumber);
+      const content = await page.getTextContent();
+      pages.push(content.items.flatMap((item) => ("str" in item ? [item.str] : [])).join(" "));
+    }
+    return pages.join(" ").replace(/\s+/gu, " ").trim();
+  } finally {
+    await loadingTask.destroy();
+  }
 }
 
 async function signIn(context: BrowserContext, email: string) {
@@ -113,6 +132,8 @@ test.describe.serial("flux authentifiés marketplace", () => {
     const merchantUserId = await createUser(emails.merchant, "Marchand E2E");
     const clientUserId = await createUser(emails.client, "Client E2E");
     const courierUserId = await createUser(emails.courier, "Livreur E2E");
+    const { error: emptyClientNameError } = await admin.from("profiles").update({ display_name: "" }).eq("id", clientUserId);
+    if (emptyClientNameError) throw emptyClientNameError;
 
     const { data: category, error: categoryError } = await admin
       .from("categories")
@@ -407,6 +428,16 @@ test.describe.serial("flux authentifiés marketplace", () => {
           expect(duplicate.batchId).toBe(batch.batchId);
           const declaration = await responseData<{ id: string }>(await clientContext.request.post(`/api/orders/${created.orderId}/payment-declarations`, { data: { channel: "wave", externalReference: `WAVE-ORDER-${runId}`, amountXof: batch.orders[0].totalXof, declaredAt: new Date().toISOString() } }), 201);
           await responseData(await merchantContext.request.patch(`/api/orders/${created.orderId}/payment-declarations`, { data: { declarationId: declaration.id, decision: "confirmed" } }), 200);
+
+          for (const context of [clientContext, merchantContext]) {
+            const text = await receiptText(await context.request.get(`/api/orders/${created.orderId}/receipt`));
+            expect(text).toContain("Reçu de paiement de commande");
+            expect(text).toContain("Client E2E");
+            expect(text).toContain(merchant.public_name);
+            expect(text).toContain(`WAVE-ORDER-${runId}`);
+            expect(text).toContain(`Produit E2E ${runId}`);
+            expect(text).toContain("Total payé");
+          }
 
           const clientPage = await clientContext.newPage();
           await clientPage.goto("/client");

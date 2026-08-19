@@ -34,8 +34,18 @@ begin
     raise exception using errcode = '23514', message = 'DELIVERY_DESTINATION_INVALID';
   end if;
 
-  v_zone_region := lower(trim(normalize(coalesce(new.delivery_snapshot ->> 'region', ''), nfkc)));
-  v_recipient_region := lower(trim(normalize(coalesce(new.recipient_snapshot ->> 'region', ''), nfkc)));
+  v_zone_region := lower(trim(regexp_replace(
+    normalize(coalesce(new.delivery_snapshot ->> 'region', ''), nfkc),
+    '[[:space:]]+',
+    ' ',
+    'g'
+  )));
+  v_recipient_region := lower(trim(regexp_replace(
+    normalize(coalesce(new.recipient_snapshot ->> 'region', ''), nfkc),
+    '[[:space:]]+',
+    ' ',
+    'g'
+  )));
   if v_zone_region <> v_recipient_region then
     raise exception using
       errcode = '23514',

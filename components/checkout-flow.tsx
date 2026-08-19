@@ -16,6 +16,7 @@ import {
 } from "@/lib/domain/checkout-draft";
 import { formatPrice } from "@/lib/marketplace";
 import type { CartLine } from "@/lib/domain/cart";
+import { sameDeliveryAreaName } from "@/lib/domain/delivery-area";
 import { SENEGAL_REGIONS } from "@/lib/domain/merchant-ui";
 import type { Coordinates, GeoPlace } from "@/lib/domain/geo";
 
@@ -103,7 +104,10 @@ export function CheckoutFlow() {
   const [busy, setBusy] = useState(false);
   const resumedRef = useRef(false);
   const recipientRef = useRef(recipient);
-  recipientRef.current = recipient;
+
+  useEffect(() => {
+    recipientRef.current = recipient;
+  }, [recipient]);
 
   // Charge les fiches boutique (zones de livraison, moyens de paiement) pour chaque marchand du panier.
   useEffect(() => {
@@ -118,7 +122,7 @@ export function CheckoutFlow() {
           setSelectedZones((current) => {
             if (current[group.merchantId]) return current;
             const matching = recipientRef.current.region
-              ? shop.deliveryZones.find((zone) => zone.region === recipientRef.current.region)
+              ? shop.deliveryZones.find((zone) => sameDeliveryAreaName(zone.region, recipientRef.current.region))
               : undefined;
             return { ...current, [group.merchantId]: matching?.id ?? shop.deliveryZones[0]?.id ?? "" };
           });
@@ -272,7 +276,7 @@ export function CheckoutFlow() {
     setSelectedZones((current) => {
       const next = { ...current };
       for (const group of groups) {
-        const matching = shops[group.merchantId]?.deliveryZones.find((zone) => zone.region === region);
+        const matching = shops[group.merchantId]?.deliveryZones.find((zone) => sameDeliveryAreaName(zone.region, region));
         if (matching) next[group.merchantId] = matching.id;
       }
       return next;
@@ -292,8 +296,8 @@ export function CheckoutFlow() {
           const zones = shops[group.merchantId]?.deliveryZones ?? [];
           if (zones.length === 0) continue;
           const selected = zones.find((zone) => zone.id === current[group.merchantId]);
-          if (selected?.region === recipient.region) continue;
-          const matching = zones.find((zone) => zone.region === recipient.region);
+          if (selected && sameDeliveryAreaName(selected.region, recipient.region)) continue;
+          const matching = zones.find((zone) => sameDeliveryAreaName(zone.region, recipient.region));
           if (matching) {
             next[group.merchantId] = matching.id;
           } else {
@@ -331,7 +335,9 @@ export function CheckoutFlow() {
   };
 
   const applyResolvedPlace = (place: GeoPlace) => {
-    const canonicalRegion = SENEGAL_REGIONS.find((region) => region.toLocaleLowerCase("fr") === place.region?.toLocaleLowerCase("fr"));
+    const canonicalRegion = place.region
+      ? SENEGAL_REGIONS.find((region) => sameDeliveryAreaName(region, place.region!))
+      : undefined;
     setRecipient((current) => ({
       ...current,
       addressHint: place.label,
@@ -514,7 +520,7 @@ export function CheckoutFlow() {
                       value={selectedZones[group.merchantId] ?? ""}
                       onChange={(event) => setSelectedZones((current) => ({ ...current, [group.merchantId]: event.target.value }))}
                     >
-                      {shop.deliveryZones.filter((zone) => !recipient.region || zone.region === recipient.region).map((zone) => (
+                      {shop.deliveryZones.filter((zone) => !recipient.region || sameDeliveryAreaName(zone.region, recipient.region)).map((zone) => (
                         <option key={zone.id} value={zone.id}>
                           {zone.label} — {formatPrice(zone.feeXof)}
                         </option>

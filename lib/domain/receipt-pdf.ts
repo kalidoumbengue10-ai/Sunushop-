@@ -1,4 +1,7 @@
-import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
+import fontkit from "@pdf-lib/fontkit";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
+import { PDFDocument, rgb, type PDFFont, type RGB } from "pdf-lib";
 
 export type OrderReceiptData = {
   publicCode: string;
@@ -21,20 +24,63 @@ const PAGE_WIDTH = 595.28;
 const PAGE_HEIGHT = 841.89;
 const MARGIN = 50;
 const CONTENT_WIDTH = PAGE_WIDTH - MARGIN * 2;
+const FONT_DIRECTORY = join(process.cwd(), "public", "fonts");
+
+let receiptFontsPromise: Promise<{ regular: Uint8Array; bold: Uint8Array }> | null = null;
+
+function loadReceiptFonts() {
+  receiptFontsPromise ??= Promise.all([
+    readFile(join(FONT_DIRECTORY, "NotoSans-Regular.ttf")),
+    readFile(join(FONT_DIRECTORY, "NotoSans-Bold.ttf")),
+  ]).then(([regular, bold]) => ({ regular: new Uint8Array(regular), bold: new Uint8Array(bold) }));
+  return receiptFontsPromise;
+}
+
+function cleanPdfText(value: string) {
+  return value.normalize("NFC").replace(/[\u0000-\u001f\u007f]/gu, "").replace(/\s+/gu, " ").trim();
+}
+
+export function resolveOrderReceiptBuyerName(recipientName: unknown, profileDisplayName: unknown) {
+  const snapshotName = typeof recipientName === "string" ? cleanPdfText(recipientName) : "";
+  const profileName = typeof profileDisplayName === "string" ? cleanPdfText(profileDisplayName) : "";
+  return snapshotName || profileName || "Client SunuShop";
+}
 
 function formatXof(value: number) {
   return `${new Intl.NumberFormat("fr-SN").format(value)} F`;
 }
 
-function wrapText(text: string, font: import("pdf-lib").PDFFont, fontSize: number, maxWidth: number) {
-  const words = text.split(/\s+/);
+function splitLongToken(token: string, font: PDFFont, fontSize: number, maxWidth: number) {
+  const chunks: string[] = [];
+  let current = "";
+  for (const character of token) {
+    const candidate = `${current}${character}`;
+    if (current && font.widthOfTextAtSize(candidate, fontSize) > maxWidth) {
+      chunks.push(current);
+      current = character;
+    } else {
+      current = candidate;
+    }
+  }
+  if (current) chunks.push(current);
+  return chunks;
+}
+
+function wrapText(rawText: string, font: PDFFont, fontSize: number, maxWidth: number) {
+  const text = cleanPdfText(rawText);
+  if (!text) return [""];
+  const tokens = text.split(" ").flatMap((token) =>
+    font.widthOfTextAtSize(token, fontSize) > maxWidth
+      ? splitLongToken(token, font, fontSize, maxWidth)
+      : [token],
+  );
   const lines: string[] = [];
   let current = "";
-  for (const word of words) {
-    const candidate = current ? `${current} ${word}` : word;
-    if (font.widthOfTextAtSize(candidate, fontSize) > maxWidth && current) {
+  for (const token of tokens) {
+    const candidate = current ? `${current} ${token}` : token;
+    if (current && font.widthOfTextAtSize(candidate, fontSize) > maxWidth) {
       lines.push(current);
-      current = word;
+      current = token;
     } else {
       current = candidate;
     }
@@ -43,10 +89,30 @@ function wrapText(text: string, font: import("pdf-lib").PDFFont, fontSize: numbe
   return lines;
 }
 
-export async function renderOrderReceiptPdf(data: OrderReceiptData): Promise<Uint8Array> {
+export async function renderOrderReceiptPdf(rawData: OrderReceiptData): Promise<Uint8Array> {
+  const data: OrderReceiptData = {
+    ...rawData,
+    publicCode: cleanPdfText(rawData.publicCode),
+    merchantOrderNumber: rawData.merchantOrderNumber ? cleanPdfText(rawData.merchantOrderNumber) : null,
+    issuedAt: cleanPdfText(rawData.issuedAt),
+    paymentMethodLabel: cleanPdfText(rawData.paymentMethodLabel),
+    paymentReference: rawData.paymentReference ? cleanPdfText(rawData.paymentReference) : null,
+    paidAt: rawData.paidAt ? cleanPdfText(rawData.paidAt) : null,
+    buyerName: resolveOrderReceiptBuyerName(rawData.buyerName, null),
+    merchantName: cleanPdfText(rawData.merchantName) || "Boutique SunuShop",
+    merchantPhone: rawData.merchantPhone ? cleanPdfText(rawData.merchantPhone) : null,
+    items: rawData.items.map((item) => ({ ...item, title: cleanPdfText(item.title) || "Article" })),
+  };
+
   const doc = await PDFDocument.create();
-  const font = await doc.embedFont(StandardFonts.Helvetica);
-  const bold = await doc.embedFont(StandardFonts.HelveticaBold);
+  doc.registerFontkit(fontkit);
+  const receiptFonts = await loadReceiptFonts();
+  const font = await doc.embedFont(receiptFonts.regular, { subset: true });
+  const bold = await doc.embedFont(receiptFonts.bold, { subset: true });
+  doc.setTitle(`Reçu de paiement ${data.publicCode}`);
+  doc.setAuthor("SunuShop");
+  doc.setSubject("Reçu de paiement de commande");
+  doc.setCreator("SunuShop");
 
   let page = doc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
   let y = PAGE_HEIGHT - MARGIN;
@@ -62,60 +128,78 @@ export async function renderOrderReceiptPdf(data: OrderReceiptData): Promise<Uin
     }
   };
 
-  const drawText = (text: string, options: { size?: number; bold?: boolean; color?: ReturnType<typeof rgb>; gap?: number; x?: number } = {}) => {
+  const drawText = (text: string, options: { size?: number; bold?: boolean; color?: RGB; gap?: number } = {}) => {
     const size = options.size ?? 11;
     const usedFont = options.bold ? bold : font;
-    const color = options.color ?? ink;
-    const lines = wrapText(text, usedFont, size, CONTENT_WIDTH - (options.x ?? 0));
+    const lines = wrapText(text, usedFont, size, CONTENT_WIDTH);
+    const lineHeight = size + 4;
+    ensureSpace(lines.length * lineHeight + (options.gap ?? 4));
     for (const line of lines) {
-      ensureSpace(size + 4);
-      page.drawText(line, { x: MARGIN + (options.x ?? 0), y, size, font: usedFont, color });
-      y -= size + 4;
+      page.drawText(line, { x: MARGIN, y, size, font: usedFont, color: options.color ?? ink });
+      y -= lineHeight;
     }
     y -= options.gap ?? 4;
   };
 
-  const drawRow = (left: string, right: string, options: { bold?: boolean; size?: number } = {}) => {
+  const drawColumns = (
+    left: string,
+    right: string,
+    options: { bold?: boolean; size?: number; leftWidth?: number; gap?: number } = {},
+  ) => {
     const size = options.size ?? 11;
     const usedFont = options.bold ? bold : font;
-    ensureSpace(size + 4);
-    page.drawText(left, { x: MARGIN, y, size, font: usedFont, color: ink });
-    const rightWidth = usedFont.widthOfTextAtSize(right, size);
-    page.drawText(right, { x: MARGIN + CONTENT_WIDTH - rightWidth, y, size, font: usedFont, color: ink });
-    y -= size + 4;
+    const columnGap = 18;
+    const leftWidth = options.leftWidth ?? 145;
+    const rightWidth = CONTENT_WIDTH - leftWidth - columnGap;
+    const leftLines = wrapText(left, usedFont, size, leftWidth);
+    const rightLines = wrapText(right, usedFont, size, rightWidth);
+    const lineHeight = size + 4;
+    const rowHeight = Math.max(leftLines.length, rightLines.length) * lineHeight + (options.gap ?? 2);
+    ensureSpace(rowHeight);
+    leftLines.forEach((line, index) => {
+      page.drawText(line, { x: MARGIN, y: y - index * lineHeight, size, font: usedFont, color: ink });
+    });
+    rightLines.forEach((line, index) => {
+      page.drawText(line, { x: MARGIN + leftWidth + columnGap, y: y - index * lineHeight, size, font: usedFont, color: ink });
+    });
+    y -= rowHeight;
   };
 
   drawText("SUNUSHOP", { size: 10, bold: true, color: brand, gap: 2 });
   drawText("Reçu de paiement de commande", { size: 16, bold: true, gap: 2 });
   drawText(`Émis le ${data.issuedAt}`, { size: 10, color: muted, gap: 10 });
 
-  drawRow("Commande", data.merchantOrderNumber ?? data.publicCode, { bold: true });
-  drawRow("Code de suivi", data.publicCode);
-  drawRow("Client", data.buyerName);
-  drawRow("Boutique", data.merchantName);
-  if (data.merchantPhone) drawRow("Contact boutique", data.merchantPhone);
+  drawColumns("Commande", data.merchantOrderNumber ?? data.publicCode, { bold: true });
+  drawColumns("Code de suivi", data.publicCode);
+  drawColumns("Client", data.buyerName);
+  drawColumns("Boutique", data.merchantName);
+  if (data.merchantPhone) drawColumns("Contact boutique", data.merchantPhone);
   y -= 6;
 
   drawText("Paiement", { size: 13, bold: true, gap: 4 });
-  drawRow("Moyen de paiement", data.paymentMethodLabel);
-  if (data.paymentReference) drawRow("Référence de transaction", data.paymentReference);
-  if (data.paidAt) drawRow("Payé le", data.paidAt);
+  drawColumns("Moyen de paiement", data.paymentMethodLabel);
+  if (data.paymentReference) drawColumns("Référence de transaction", data.paymentReference);
+  if (data.paidAt) drawColumns("Payé le", data.paidAt);
   y -= 6;
 
   drawText("Détail de la commande", { size: 13, bold: true, gap: 4 });
-  drawRow("Article", "Qté · Prix unitaire · Total", { bold: true, size: 10 });
+  drawColumns("Article", "Qté · Prix unitaire · Total", { bold: true, size: 10, leftWidth: 245 });
   y -= 2;
   for (const item of data.items) {
-    drawRow(item.title, `${item.quantity} × ${formatXof(item.unitPriceXof)} = ${formatXof(item.lineTotalXof)}`, { size: 10 });
+    drawColumns(
+      item.title,
+      `${item.quantity} × ${formatXof(item.unitPriceXof)} = ${formatXof(item.lineTotalXof)}`,
+      { size: 10, leftWidth: 245, gap: 4 },
+    );
   }
   y -= 6;
 
-  drawRow("Sous-total", formatXof(data.subtotalXof));
-  drawRow("Frais de livraison", formatXof(data.deliveryFeeXof));
-  if (data.loyaltyDiscountXof > 0) drawRow("Remise fidélité", `- ${formatXof(data.loyaltyDiscountXof)}`);
-  drawRow("Total payé", formatXof(data.totalXof), { bold: true, size: 13 });
+  drawColumns("Sous-total", formatXof(data.subtotalXof));
+  drawColumns("Frais de livraison", formatXof(data.deliveryFeeXof));
+  if (data.loyaltyDiscountXof > 0) drawColumns("Remise fidélité", `- ${formatXof(data.loyaltyDiscountXof)}`);
+  drawColumns("Total payé", formatXof(data.totalXof), { bold: true, size: 13, gap: 6 });
 
-  y -= 10;
+  y -= 8;
   drawText(
     "Ce reçu atteste de la confirmation du paiement direct entre le client et la boutique sur SunuShop. Il ne constitue pas une facture fiscale.",
     { size: 9, color: muted },

@@ -2,7 +2,7 @@ import { requireAdminClient, requireUser } from "@/lib/api/auth";
 import { ApiError } from "@/lib/api/errors";
 import { apiFailure } from "@/lib/api/response";
 import { formatMerchantOrderNumber } from "@/lib/domain/merchant-ui";
-import { renderOrderReceiptPdf } from "@/lib/domain/receipt-pdf";
+import { renderOrderReceiptPdf, resolveOrderReceiptBuyerName } from "@/lib/domain/receipt-pdf";
 
 const paymentMethodLabels: Record<string, string> = {
   cash_on_delivery: "Espèces au retrait",
@@ -28,7 +28,7 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
     const { data: order, error: orderError } = await db
       .from("orders")
       .select(
-        "id, buyer_id, merchant_id, merchant_sequence, public_code, payment_method, payment_status, subtotal_xof, delivery_fee_xof, loyalty_discount_xof, total_xof, created_at",
+        "id, buyer_id, merchant_id, merchant_sequence, public_code, payment_method, payment_status, subtotal_xof, delivery_fee_xof, loyalty_discount_xof, total_xof, recipient_snapshot, created_at",
       )
       .eq("id", id)
       .single();
@@ -57,7 +57,7 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
     const admin = requireAdminClient();
     const [{ data: merchant, error: merchantError }, { data: buyer, error: buyerError }] = await Promise.all([
       admin.from("merchant_accounts").select("public_name, phone").eq("id", order.merchant_id).single(),
-      admin.from("profiles").select("display_name").eq("id", order.buyer_id).single(),
+      admin.from("profiles").select("display_name").eq("id", order.buyer_id).maybeSingle(),
     ]);
     if (merchantError) throw merchantError;
     if (buyerError) throw buyerError;
@@ -69,7 +69,7 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
       paymentMethodLabel: paymentMethodLabels[order.payment_method] ?? order.payment_method,
       paymentReference: declaration?.external_reference ?? null,
       paidAt: declaration?.confirmed_by_merchant_at ? formatDateTime(declaration.confirmed_by_merchant_at) : null,
-      buyerName: buyer.display_name ?? "Client SunuShop",
+      buyerName: resolveOrderReceiptBuyerName(order.recipient_snapshot?.name, buyer?.display_name),
       merchantName: merchant.public_name,
       merchantPhone: merchant.phone ?? null,
       items: (items ?? []).map((item: any) => ({
