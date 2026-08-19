@@ -2,8 +2,9 @@
 
 import Link from "next/link";
 import Script from "next/script";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { FormEvent, useEffect, useState } from "react";
+import { PasswordInput } from "@/components/password-input";
 
 type AuthMode = "sign_in" | "sign_up" | "recover";
 
@@ -17,7 +18,6 @@ declare global {
 }
 
 export function AuthFlow({ turnstileSiteKey }: { turnstileSiteKey?: string }) {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const requestedProfile = searchParams.get("profil");
   const requestedNext = searchParams.get("next");
@@ -197,8 +197,9 @@ export function AuthFlow({ turnstileSiteKey }: { turnstileSiteKey?: string }) {
         return;
       }
 
-      router.push(next);
-      router.refresh();
+      // Navigation complète : le cookie de session est ainsi relu avant que
+      // /commander ne restaure le panier et le brouillon de livraison.
+      window.location.assign(next);
     } catch {
       setBusy(false);
       resetCaptcha();
@@ -225,7 +226,7 @@ export function AuthFlow({ turnstileSiteKey }: { turnstileSiteKey?: string }) {
       <section className="mvp-card mvp-card--full auth-card">
         <nav className="auth-profile-tabs" aria-label="Choisir un espace">
           <Link
-            href={`/connexion?profil=client&next=/client${mode === "sign_up" ? "&mode=inscription" : ""}`}
+            href={`/connexion?profil=client&next=${encodeURIComponent(profile === "client" ? next : "/client")}${mode === "sign_up" ? "&mode=inscription" : ""}`}
             className={profile === "client" ? "is-active" : ""}
           >
             Acheter
@@ -313,10 +314,10 @@ export function AuthFlow({ turnstileSiteKey }: { turnstileSiteKey?: string }) {
           {mode !== "recover" && (
             <label className="mvp-field">
               Mot de passe
-              <input
+              <PasswordInput
+                aria-label="Mot de passe"
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
-                type="password"
                 minLength={10}
                 maxLength={128}
                 autoComplete={
@@ -331,12 +332,12 @@ export function AuthFlow({ turnstileSiteKey }: { turnstileSiteKey?: string }) {
           {mode === "sign_up" && (
             <label className="mvp-field">
               Confirmer le mot de passe
-              <input
+              <PasswordInput
+                aria-label="Confirmer le mot de passe"
                 value={passwordConfirmation}
                 onChange={(event) =>
                   setPasswordConfirmation(event.target.value)
                 }
-                type="password"
                 minLength={10}
                 maxLength={128}
                 autoComplete="new-password"

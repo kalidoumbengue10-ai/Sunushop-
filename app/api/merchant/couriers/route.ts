@@ -1,32 +1,9 @@
-import { requireAdminClient, requireUser } from "@/lib/api/auth";
+import { requireAdminClient } from "@/lib/api/auth";
 import { ApiError } from "@/lib/api/errors";
+import { requireFulfillment as requireManager } from "@/lib/api/merchant-guards";
 import { apiFailure, apiSuccess } from "@/lib/api/response";
 import { createInvitationToken, invitationUrl } from "@/lib/domain/invitation-token";
 import { courierInvitationSchema, courierUpdateSchema } from "@/lib/domain/schemas";
-
-async function requireManager(merchantId: string) {
-  const { user, supabase } = await requireUser();
-  const { data } = await supabase
-    .from("merchant_members")
-    .select("role")
-    .eq("merchant_id", merchantId)
-    .eq("user_id", user.id)
-    .eq("active", true)
-    .in("role", ["owner", "manager", "fulfillment"])
-    .maybeSingle();
-  if (!data) throw new ApiError(403, "FORBIDDEN", "Accès refusé.");
-  const admin = requireAdminClient();
-  const { data: merchant, error } = await admin
-    .from("merchant_accounts")
-    .select("status")
-    .eq("id", merchantId)
-    .maybeSingle();
-  if (error) throw error;
-  if (merchant?.status !== "active") {
-    throw new ApiError(403, "MERCHANT_NOT_ACTIVE", "La boutique doit être active pour gérer des livreurs.");
-  }
-  return user;
-}
 
 export async function GET(request: Request) {
   const requestId = crypto.randomUUID();
@@ -85,6 +62,59 @@ export async function POST(request: Request) {
     const input = courierInvitationSchema.parse(await request.json());
     const user = await requireManager(input.merchantId);
     const admin = requireAdminClient();
+
+    const { data: existingMembership, error: existingError } = await admin
+      .from("courier_memberships")
+      .select("id, courier_user_id")
+      .eq("merchant_id", input.merchantId)
+      .eq("email", input.email)
+      .maybeSingle();
+    if (existingError) throw existingError;
+
+    let membershipId: string;
+    if (existingMembership) {
+      const { data, error } = await admin
+        .from("courier_memberships")
+        .update({
+          display_name: input.displayName,
+          phone: input.phone,
+          vehicle_type: input.vehicleType ?? null,
+          vehicle_registration: input.vehicleRegistration ?? null,
+          status: "active",
+        })
+        .eq("id", existingMembership.id)
+        .select("id")
+        .single();
+      if (error) throw error;
+      membershipId = data.id;
+    } else {
+      const { data, error } = await admin
+        .from("courier_memberships")
+        .insert({
+          merchant_id: input.merchantId,
+          courier_user_id: null,
+          email: input.email,
+          display_name: input.displayName,
+          phone: input.phone,
+          vehicle_type: input.vehicleType ?? null,
+          vehicle_registration: input.vehicleRegistration ?? null,
+          status: "active",
+          invited_by: user.id,
+        })
+        .select("id")
+        .single();
+      if (error) throw error;
+      membershipId = data.id;
+    }
+
+    await admin
+      .from("workspace_invitations")
+      .update({ status: "revoked" })
+      .eq("kind", "courier")
+      .eq("merchant_id", input.merchantId)
+      .eq("email", input.email)
+      .eq("status", "pending");
+
     const { token, tokenHash } = createInvitationToken();
     const expiresAt = new Date(Date.now() + 7 * 86_400_000).toISOString();
     const { data, error } = await admin
@@ -114,7 +144,16 @@ export async function POST(request: Request) {
       payload: { to: input.email, displayName: input.displayName, url, expiresAt },
     });
     if (outboxError) throw outboxError;
-    return apiSuccess({ id: data.id, expiresAt }, { status: 201, requestId });
+    await admin.from("audit_events").insert({
+      actor_id: user.id,
+      merchant_id: input.merchantId,
+      action: existingMembership ? "courier.membership.update" : "courier.membership.create",
+      entity_type: "courier_membership",
+      entity_id: membershipId,
+      request_id: requestId,
+      metadata: { email: input.email },
+    });
+    return apiSuccess({ id: data.id, membershipId, expiresAt }, { status: 201, requestId });
   } catch (error) {
     return apiFailure(error, requestId);
   }

@@ -44,6 +44,12 @@ export default async function ConnexionPage({
     }
   }
 
+  if (configured && requestedNext === "/commander") {
+    const supabase = await getServerSupabase();
+    const { data: { user } } = supabase ? await supabase.auth.getUser() : { data: { user: null } };
+    if (user) redirect("/commander");
+  }
+
   return (
     <MvpShell>
       <main className="mvp-auth">

@@ -11,6 +11,7 @@ export type ConfirmedOrder = {
   loyaltyPointsRedeemed?: number;
   loyaltyDiscountXof?: number;
   loyaltyPointsEarnable?: number;
+  paymentMethod?: "cash_on_delivery" | "wave_direct" | "orange_money_direct";
 };
 
 export function OrderBatchConfirmation({ orders, batchTotalXof }: { orders: ConfirmedOrder[]; batchTotalXof: number }) {
@@ -33,14 +34,18 @@ export function OrderBatchConfirmation({ orders, batchTotalXof }: { orders: Conf
               {Boolean(order.loyaltyDiscountXof) && <small>{order.loyaltyPointsRedeemed} points utilisés · remise {formatPrice(order.loyaltyDiscountXof ?? 0)}</small>}
               {Boolean(order.loyaltyPointsEarnable) && <small>{order.loyaltyPointsEarnable} points après livraison</small>}
             </div>
-            <Link href={`/commandes/${order.id}`} className="mvp-button mvp-button--secondary">
-              Suivre
+            <Link
+              href={`/commandes/${order.id}${order.paymentMethod === "cash_on_delivery" ? "#retrait" : "#paiement"}`}
+              className="mvp-button"
+            >
+              {order.paymentMethod === "cash_on_delivery" ? "Voir les instructions de retrait" : "Continuer vers le paiement"}
             </Link>
           </li>
         ))}
       </ul>
       <div className="mvp-actions">
-        <Link href="/marche" className="mvp-button">Continuer mes achats</Link>
+        <Link href="/client/commandes" className="mvp-button mvp-button--secondary">Voir toutes mes commandes</Link>
+        <Link href="/marche" className="mvp-button mvp-button--secondary">Continuer mes achats</Link>
       </div>
     </div>
   );

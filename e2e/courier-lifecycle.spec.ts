@@ -141,12 +141,12 @@ async function prepareOrder(client: BrowserContext, merchant: BrowserContext, me
 async function openCourierTab(page: Page) {
   await page.goto("/marchand");
   await page.getByRole("button", { name: /^Livreurs/ }).click({ force: true });
-  await expect(page.getByRole("heading", { name: "Inviter un livreur" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Enregistrer un livreur" })).toBeVisible();
 }
 
 async function inviteCourier(page: Page, merchantId: string, email: string, suffix: string) {
   await openCourierTab(page);
-  const card = page.locator("section.mvp-card").filter({ has: page.getByRole("heading", { name: "Inviter un livreur" }) });
+  const card = page.locator("section.mvp-card").filter({ has: page.getByRole("heading", { name: "Enregistrer un livreur" }) });
   await card.getByLabel("Nom complet").fill(`Livreur ${suffix}`);
   await card.getByLabel("Email").fill(email);
   await card.getByLabel("Téléphone").fill("+221770003333");
@@ -155,11 +155,11 @@ async function inviteCourier(page: Page, merchantId: string, email: string, suff
   const invitationResponse = page.waitForResponse(
     (response) => response.url().endsWith("/api/merchant/couriers") && response.request().method() === "POST",
   );
-  const invitationButton = card.getByRole("button", { name: "Envoyer l’invitation" });
+  const invitationButton = card.getByRole("button", { name: "Enregistrer le livreur" });
   await invitationButton.focus();
   await invitationButton.press("Enter");
   expect((await invitationResponse).status()).toBe(201);
-  await expect(page.getByRole("status")).toContainText("Invitation livreur envoyée", { timeout: 15_000 });
+  await expect(page.locator(".mvp-alert[role=\"status\"]")).toContainText("Livreur enregistré", { timeout: 15_000 });
   await expect.poll(async () => (await admin.from("workspace_invitations").select("id").eq("merchant_id", merchantId).eq("email", email).eq("kind", "courier").order("created_at", { ascending: false }).limit(1).maybeSingle()).data?.id).toBeTruthy();
   const { data: invitation } = await admin.from("workspace_invitations").select("id").eq("merchant_id", merchantId).eq("email", email).eq("kind", "courier").order("created_at", { ascending: false }).limit(1).single();
   if (!invitation) throw new Error("Invitation livreur introuvable dans l’outbox.");
@@ -185,10 +185,11 @@ async function assignmentForm(page: Page) {
 async function assignViaUi(page: Page, orderId: string, membershipId: string) {
   await openCourierTab(page);
   const form = await assignmentForm(page);
+  await expect(form.locator(`select[name="orderId"] option[value="${orderId}"]`)).toBeAttached({ timeout: 15_000 });
   await form.locator('select[name="orderId"]').selectOption(orderId);
   await form.locator('select[name="courierMembershipId"]').selectOption(membershipId);
   await activateButton(form.getByRole("button", { name: "Affecter" }));
-  await expect(page.getByRole("status")).toContainText("Livraison affectée");
+  await expect(page.locator(".mvp-alert[role=\"status\"]")).toContainText("Livraison affectée");
 }
 
 async function completeMission(options: {
@@ -208,7 +209,7 @@ async function completeMission(options: {
   const merchantMission = merchantPage.locator("article.courier-delivery-row").filter({ hasText: order.publicCode });
   await merchantMission.locator('input[name="code"]').fill(pickupCode);
   await activateButton(merchantMission.getByRole("button", { name: "Autoriser le retrait" }));
-  await expect(merchantPage.getByRole("status")).toContainText("Retrait confirmé");
+  await expect(merchantPage.locator(".mvp-alert[role=\"status\"]")).toContainText("Retrait confirmé");
   const afterPickup = await responseData<{ items: Array<{ id: string; pickupCode: string | null }> }>(await courierPage.context().request.get("/api/deliveries/mine"));
   expect(afterPickup.items.find((item) => item.id === deliveryId)?.pickupCode).toBeNull();
 
@@ -276,6 +277,7 @@ test.describe.serial("flux livreur complet", () => {
 
       await openCourierTab(merchantAPage);
       const blockedForm = await assignmentForm(merchantAPage);
+      await expect(blockedForm.locator(`select[name="orderId"] option[value="${orderA1.id}"]`)).toBeAttached({ timeout: 15_000 });
       await blockedForm.locator('select[name="orderId"]').selectOption(orderA1.id);
       await blockedForm.locator('select[name="courierMembershipId"]').selectOption(membershipA!.id);
       await activateButton(blockedForm.getByRole("button", { name: "Affecter" }));
@@ -285,7 +287,7 @@ test.describe.serial("flux livreur complet", () => {
       await activateButton(merchantAPage.getByRole("button", { name: "Modifier les tarifs" }));
       await merchantAPage.getByLabel("Rémunération du livreur (FCFA)").fill("1200");
       await activateButton(merchantAPage.getByRole("button", { name: "Enregistrer Dakar" }));
-      await expect(merchantAPage.getByRole("status")).toContainText("Tarifs de Dakar enregistrés");
+      await expect(merchantAPage.locator(".mvp-alert[role=\"status\"]")).toContainText("Tarifs de Dakar enregistrés");
 
       await assignViaUi(merchantAPage, orderA1.id, membershipA!.id);
       const { data: deliveryA1 } = await admin.from("deliveries").select("id").eq("order_id", orderA1.id).single();
@@ -308,7 +310,7 @@ test.describe.serial("flux livreur complet", () => {
       const failedRow = merchantAPage.locator("article.courier-delivery-row").filter({ hasText: orderA2.publicCode });
       merchantAPage.once("dialog", (dialog) => dialog.accept("2500"));
       await activateButton(failedRow.getByRole("button", { name: "Fixer la compensation" }));
-      await expect(merchantAPage.getByRole("status")).toContainText("Compensation enregistrée");
+      await expect(merchantAPage.locator(".mvp-alert[role=\"status\"]")).toContainText("Compensation enregistrée");
       expect((await admin.from("deliveries").select("courier_payable_xof, courier_payment_status").eq("id", deliveryA2!.id).single()).data).toMatchObject({ courier_payable_xof: 2500, courier_payment_status: "due" });
 
       await assignViaUi(merchantAPage, orderA3.id, membershipA!.id);
@@ -351,7 +353,7 @@ test.describe.serial("flux livreur complet", () => {
       );
       await activateButton(payments.getByRole("button", { name: /Déclarer le transfert \(1\)/ }));
       expect((await singlePayoutResponse).status()).toBe(201);
-      await expect(merchantAPage.getByRole("status")).toContainText("Transfert déclaré", { timeout: 15_000 });
+      await expect(merchantAPage.locator(".mvp-alert[role=\"status\"]")).toContainText("Transfert déclaré", { timeout: 15_000 });
       await expect(payments.getByRole("button", { name: "Déclarer le transfert (0)" })).toBeDisabled({ timeout: 15_000 });
       await selectCheckbox(payments.getByText(orderA2.publicCode).locator("..").getByRole("checkbox"));
       await selectCheckbox(payments.getByText(orderA3.publicCode).locator("..").getByRole("checkbox"));
@@ -362,7 +364,7 @@ test.describe.serial("flux livreur complet", () => {
       );
       await activateButton(payments.getByRole("button", { name: /Déclarer le transfert \(2\)/ }));
       expect((await groupedPayoutResponse).status()).toBe(201);
-      await expect(merchantAPage.getByRole("status")).toContainText("Transfert déclaré", { timeout: 15_000 });
+      await expect(merchantAPage.locator(".mvp-alert[role=\"status\"]")).toContainText("Transfert déclaré", { timeout: 15_000 });
       const { data: payouts } = await admin.from("courier_payouts").select("amount_xof, external_reference, status").eq("merchant_id", merchantA.id).order("amount_xof");
       expect(payouts).toEqual(expect.arrayContaining([expect.objectContaining({ amount_xof: 1200, status: "pending_confirmation" }), expect.objectContaining({ amount_xof: 3700, external_reference: `WAVE-${runId}`, status: "pending_confirmation" })]));
       await courierPage.goto("/marchand?mode=missions");
@@ -370,11 +372,11 @@ test.describe.serial("flux livreur complet", () => {
       await expect(courierPage.getByText(`réf. WAVE-${runId}`)).toBeVisible();
       const singlePayout = courierPage.locator("article.courier-shop-profile").filter({ hasText: `WAVE-SINGLE-${runId}` });
       await activateButton(singlePayout.getByRole("button", { name: "Confirmer la réception" }));
-      await expect(courierPage.getByRole("status")).toContainText("confirmée");
+      await expect(courierPage.locator(".mvp-alert[role=\"status\"]")).toContainText("confirmée");
       const contestedPayout = courierPage.locator("article.courier-shop-profile").filter({ hasText: `WAVE-${runId}` }).filter({ hasNotText: `WAVE-SINGLE-${runId}` });
       courierPage.once("dialog", (dialog) => dialog.accept("Le transfert groupé n’est pas visible dans mon wallet"));
       await activateButton(contestedPayout.getByRole("button", { name: "Contester" }));
-      await expect(courierPage.getByRole("status")).toContainText("missions redeviennent dues");
+      await expect(courierPage.locator(".mvp-alert[role=\"status\"]")).toContainText("missions redeviennent dues");
       expect(await courierPage.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
 
       await merchantAPage.reload();
@@ -383,7 +385,7 @@ test.describe.serial("flux livreur complet", () => {
       const groupedPayoutRow = refreshedPayments.locator(".mvp-row").filter({ hasText: `WAVE-${runId}` }).filter({ hasNotText: `WAVE-SINGLE-${runId}` });
       merchantAPage.once("dialog", (dialog) => dialog.accept("Référence saisie sur le mauvais bordereau"));
       await activateButton(groupedPayoutRow.getByRole("button", { name: "Annuler" }));
-      await expect(merchantAPage.getByRole("status")).toContainText("missions sont de nouveau dues");
+      await expect(merchantAPage.locator(".mvp-alert[role=\"status\"]")).toContainText("missions sont de nouveau dues");
       const { data: voidedGroup } = await admin.from("courier_payouts").select("status, void_reason").eq("external_reference", `WAVE-${runId}`).single();
       expect(voidedGroup).toMatchObject({ status: "voided", void_reason: "Référence saisie sur le mauvais bordereau" });
       const { data: payableAgain } = await admin.from("deliveries").select("id, courier_payment_status").in("id", [deliveryA2!.id, deliveryA3!.id]);

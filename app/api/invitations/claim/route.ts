@@ -67,23 +67,52 @@ export async function POST(request: Request) {
         vehicleType?: string;
         vehicleRegistration?: string;
       };
-      const { error: membershipError } = await admin
+
+      const { data: activatedMembership, error: activatedError } = await admin
         .from("courier_memberships")
-        .upsert(
-          {
-            merchant_id: merchantId,
-            courier_user_id: user.id,
-            display_name: payload.displayName,
-            email: invitation.email,
-            phone: payload.phone,
-            vehicle_type: payload.vehicleType ?? null,
-            vehicle_registration: payload.vehicleRegistration ?? null,
-            status: "active",
-            invited_by: invitation.invited_by,
-          },
-          { onConflict: "merchant_id,courier_user_id" },
-        );
-      if (membershipError) throw membershipError;
+        .select("id")
+        .eq("merchant_id", merchantId)
+        .eq("courier_user_id", user.id)
+        .maybeSingle();
+      if (activatedError) throw activatedError;
+
+      if (!activatedMembership) {
+        const { data: pendingMembership, error: pendingError } = await admin
+          .from("courier_memberships")
+          .select("id")
+          .eq("merchant_id", merchantId)
+          .eq("email", invitation.email)
+          .is("courier_user_id", null)
+          .maybeSingle();
+        if (pendingError) throw pendingError;
+
+        if (pendingMembership) {
+          const { error: mergeError } = await admin
+            .from("courier_memberships")
+            .update({ courier_user_id: user.id, status: "active", accepted_at: new Date().toISOString() })
+            .eq("id", pendingMembership.id)
+            .is("courier_user_id", null);
+          if (mergeError) throw mergeError;
+        } else {
+          const { error: membershipError } = await admin
+            .from("courier_memberships")
+            .upsert(
+              {
+                merchant_id: merchantId,
+                courier_user_id: user.id,
+                display_name: payload.displayName,
+                email: invitation.email,
+                phone: payload.phone,
+                vehicle_type: payload.vehicleType ?? null,
+                vehicle_registration: payload.vehicleRegistration ?? null,
+                status: "active",
+                invited_by: invitation.invited_by,
+              },
+              { onConflict: "merchant_id,courier_user_id" },
+            );
+          if (membershipError) throw membershipError;
+        }
+      }
     }
 
     const { error: claimError } = await admin

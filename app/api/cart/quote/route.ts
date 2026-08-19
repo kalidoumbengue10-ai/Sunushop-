@@ -1,6 +1,7 @@
 import { requireAdminClient } from "@/lib/api/auth";
 import { apiFailure, apiSuccess } from "@/lib/api/response";
 import { calculateLoyaltyQuote } from "@/lib/domain/loyalty";
+import { calculateOrderTotalXof } from "@/lib/domain/order-total";
 import { cartQuoteSchema } from "@/lib/domain/schemas";
 import { SupabaseCatalogRepository } from "@/lib/infrastructure/supabase/repositories";
 import { getServerSupabase } from "@/lib/infrastructure/supabase/server";
@@ -26,7 +27,11 @@ export async function POST(request: Request) {
         ...loyalty,
         pointsEarnable: 0,
         loyaltyAccrualEnabled: false,
-        totalXof: group.subtotalXof - loyalty.loyaltyDiscountXof + group.deliveryFeeXof,
+        totalXof: calculateOrderTotalXof(
+          group.subtotalXof,
+          group.deliveryFeeXof,
+          loyalty.loyaltyDiscountXof,
+        ),
       };
     });
     return apiSuccess({

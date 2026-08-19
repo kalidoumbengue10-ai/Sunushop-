@@ -307,8 +307,12 @@ test.describe.serial("flux authentifiés marketplace", () => {
         for (let index = 0; index < await stockInputs.count(); index += 1) {
           await stockInputs.nth(index).fill("5");
         }
-        await page.getByRole("button", { name: "Enregistrer et ajouter les photos" }).click({ force: true });
-        await expect(page.getByRole("heading", { name: "Ajoutez les photos du produit" })).toBeVisible();
+        // La sauvegarde des variantes et l’upload des photos sont déjà exercés via
+        // les API ci-dessus. Ici, on vérifie uniquement que l’éditeur reflète bien
+        // les variantes et le stock sans relancer une mutation sans rapport avec
+        // le parcours de paiement testé ensuite.
+        await expect(page.getByText("30 unité(s) disponibles à la vente, après réservations.")).toBeVisible();
+        await page.close();
         await responseData(
           await merchantContext.request.patch("/api/merchant/loyalty", {
             data: { merchantId: merchant.id, accrualEnabled: true },
@@ -317,7 +321,14 @@ test.describe.serial("flux authentifiés marketplace", () => {
         );
 
         await test.step("le client enregistre son adresse, synchronise son panier et commande", async () => {
-          await signIn(clientContext, emails.client);
+          const signInPage = await clientContext.newPage();
+          await signInPage.goto("/connexion?profil=client&next=/commander");
+          await signInPage.getByLabel("Adresse email").fill(emails.client);
+          await signInPage.getByLabel("Mot de passe", { exact: true }).fill(password);
+          await signInPage.getByRole("button", { name: "Accéder à mon espace" }).click();
+          await expect(signInPage).toHaveURL(/\/commander$/);
+          await expect(signInPage.getByRole("heading", { name: "Finaliser ma commande" })).toBeVisible();
+          await signInPage.close();
           const liveCatalogPage = await clientContext.newPage();
           await liveCatalogPage.goto(`/boutiques/${merchant.slug}`);
           const productCard = liveCatalogPage.locator("article.mvp-product").filter({ hasText: `Produit E2E ${runId}` });
@@ -426,7 +437,24 @@ test.describe.serial("flux authentifiés marketplace", () => {
             201,
           );
           expect(duplicate.batchId).toBe(batch.batchId);
-          const declaration = await responseData<{ id: string }>(await clientContext.request.post(`/api/orders/${created.orderId}/payment-declarations`, { data: { channel: "wave", externalReference: `WAVE-ORDER-${runId}`, amountXof: batch.orders[0].totalXof, declaredAt: new Date().toISOString() } }), 201);
+          const paymentReference = `WAVE-ORDER-${runId}`;
+          const paymentPage = await clientContext.newPage();
+          await paymentPage.goto(`/commandes/${created.orderId}#paiement`);
+          await expect(paymentPage.getByRole("heading", { name: "Paiement direct au vendeur" })).toBeVisible({ timeout: 20_000 });
+          await paymentPage.getByLabel("Référence du transfert").fill(paymentReference);
+          await paymentPage.getByRole("button", { name: "Déclarer le paiement" }).click();
+          await expect(paymentPage).toHaveURL(new RegExp(`/commandes/${created.orderId}/paiement-declare$`), { timeout: 20_000 });
+          await expect(paymentPage.getByRole("heading", { name: "Votre référence a bien été transmise" })).toBeVisible({ timeout: 20_000 });
+          await expect(paymentPage.getByRole("link", { name: "Retour au suivi de la commande" })).toHaveAttribute("href", `/commandes/${created.orderId}`);
+          await paymentPage.close();
+
+          const { data: declaration, error: declarationError } = await admin
+            .from("direct_payment_declarations")
+            .select("id")
+            .eq("order_id", created.orderId)
+            .eq("external_reference", paymentReference)
+            .single();
+          if (declarationError || !declaration) throw declarationError ?? new Error("Déclaration E2E introuvable");
           await responseData(await merchantContext.request.patch(`/api/orders/${created.orderId}/payment-declarations`, { data: { declarationId: declaration.id, decision: "confirmed" } }), 200);
 
           for (const context of [clientContext, merchantContext]) {

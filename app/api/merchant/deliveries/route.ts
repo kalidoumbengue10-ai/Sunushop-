@@ -1,29 +1,10 @@
-import { requireAdminClient, requireUser } from "@/lib/api/auth";
+import { requireAdminClient } from "@/lib/api/auth";
 import { ApiError } from "@/lib/api/errors";
+import { requireFulfillment } from "@/lib/api/merchant-guards";
 import { apiFailure, apiSuccess } from "@/lib/api/response";
 import { deriveDeliveryCode, hashDeliveryCode } from "@/lib/domain/delivery-code";
 import { deliveryAssignmentSchema } from "@/lib/domain/schemas";
 import { enqueueEmail } from "@/lib/notifications/outbox";
-
-async function requireFulfillment(merchantId: string) {
-  const { user, supabase } = await requireUser();
-  const { data } = await supabase
-    .from("merchant_members")
-    .select("role")
-    .eq("merchant_id", merchantId)
-    .eq("user_id", user.id)
-    .eq("active", true)
-    .in("role", ["owner", "manager", "fulfillment"])
-    .maybeSingle();
-  if (!data) throw new ApiError(403, "FORBIDDEN", "Accès refusé.");
-  const admin = requireAdminClient();
-  const { data: merchant, error } = await admin.from("merchant_accounts").select("status").eq("id", merchantId).maybeSingle();
-  if (error) throw error;
-  if (merchant?.status !== "active") {
-    throw new ApiError(403, "MERCHANT_NOT_ACTIVE", "La boutique doit être active pour gérer les livraisons.");
-  }
-  return user;
-}
 
 export async function GET(request: Request) {
   const requestId = crypto.randomUUID();
@@ -116,7 +97,9 @@ export async function POST(request: Request) {
         public_message: "La livraison a été réaffectée.",
         metadata: { previousCourierMembershipId: existing.courier_membership_id, courierMembershipId: courier.id },
       });
-      await enqueueEmail(admin, { dedupeKey: `delivery-assigned:${data.id}:${courier.id}`, template: "delivery_assigned", recipientUserId: courier.courier_user_id, payload: { orderCode: order.public_code, url: new URL("/marchand?mode=missions", request.url).toString() } }).catch(() => false);
+      if (courier.courier_user_id) {
+        await enqueueEmail(admin, { dedupeKey: `delivery-assigned:${data.id}:${courier.id}`, template: "delivery_assigned", recipientUserId: courier.courier_user_id, payload: { orderCode: order.public_code, url: new URL("/marchand?mode=missions", request.url).toString() } }).catch(() => false);
+      }
       return apiSuccess(data, { requestId });
     }
     if (order.status !== "ready_for_handoff") {
@@ -163,7 +146,9 @@ export async function POST(request: Request) {
       to_status: "assigned",
       public_message: "Un livreur a été affecté à la commande.",
     });
-    await enqueueEmail(admin, { dedupeKey: `delivery-assigned:${id}:${courier.id}`, template: "delivery_assigned", recipientUserId: courier.courier_user_id, payload: { orderCode: order.public_code, url: new URL("/marchand?mode=missions", request.url).toString() } }).catch(() => false);
+    if (courier.courier_user_id) {
+      await enqueueEmail(admin, { dedupeKey: `delivery-assigned:${id}:${courier.id}`, template: "delivery_assigned", recipientUserId: courier.courier_user_id, payload: { orderCode: order.public_code, url: new URL("/marchand?mode=missions", request.url).toString() } }).catch(() => false);
+    }
     return apiSuccess(data, { status: 201, requestId });
   } catch (error) {
     return apiFailure(error, requestId);

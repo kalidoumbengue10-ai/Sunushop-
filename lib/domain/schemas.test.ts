@@ -3,6 +3,7 @@ import {
   cartQuoteSchema,
   courierPayoutSchema,
   crmLeadUpdateSchema,
+  deliveryRegionInputSchema,
   intentLetterSubmissionSchema,
   merchantApplicationSchema,
   orderBatchSchema,
@@ -167,6 +168,18 @@ describe("validation des entrées métier", () => {
 
   it("refuse une mise à jour CRM vide", () => {
     expect(crmLeadUpdateSchema.safeParse({}).success).toBe(false);
+  });
+
+  it("configure les régions de livraison pour le jour même sans délais saisis", () => {
+    const input = deliveryRegionInputSchema.parse({
+      merchantId: merchantA,
+      region: "Dakar",
+      feeXof: 1500,
+      courierFeeXof: 1500,
+    });
+
+    expect(input).toMatchObject({ minDelayDays: 0, maxDelayDays: 0 });
+    expect(deliveryRegionInputSchema.safeParse({ ...input, maxDelayDays: 1 }).success).toBe(false);
   });
 });
 

@@ -1,10 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { formatPrice } from "@/lib/marketplace";
 import { merchantStatusLabel } from "@/lib/domain/merchant-ui";
 import { StartConversationButton } from "@/components/start-conversation-button";
+import { getBrowserSupabase } from "@/lib/infrastructure/supabase/browser";
 
 type OrderItem = { id: string; product_snapshot: { title?: string; variantTitle?: string }; quantity: number; line_total_xof: number };
 type Order = {
@@ -50,7 +51,7 @@ export function ClientOrders() {
   const [merchantFilter, setMerchantFilter] = useState("toutes");
   const [search, setSearch] = useState("");
 
-  useEffect(() => {
+  const loadOrders = useCallback(() =>
     fetch("/api/client/orders")
       .then(async (response) => {
         const payload = await response.json();
@@ -58,8 +59,31 @@ export function ClientOrders() {
         setOrders(payload.data.items);
       })
       .catch((caught: Error) => setError(caught.message))
-      .finally(() => setLoading(false));
-  }, []);
+      .finally(() => setLoading(false)), []);
+
+  useEffect(() => {
+    void loadOrders();
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === "visible") void loadOrders();
+    }, 30_000);
+    let channel: ReturnType<ReturnType<typeof getBrowserSupabase>["channel"]> | undefined;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const supabase = getBrowserSupabase();
+        const { data: { user } } = await supabase.auth.getUser();
+        if (cancelled || !user) return;
+        channel = supabase.channel("client-order-list")
+          .on("postgres_changes", { event: "*", schema: "public", table: "orders", filter: `buyer_id=eq.${user.id}` }, () => void loadOrders())
+          .subscribe();
+      } catch { /* Le rafraîchissement périodique reste actif. */ }
+    })();
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+      if (channel) void channel.unsubscribe();
+    };
+  }, [loadOrders]);
 
   const merchants = useMemo(
     () => [...new Map(orders.map((order) => { const m = one(order.merchant_accounts); return [m.slug, m.public_name]; })).entries()],

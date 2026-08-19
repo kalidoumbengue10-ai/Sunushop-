@@ -5,6 +5,8 @@ import Script from "next/script";
 import posthog from "posthog-js";
 import { useRouter } from "next/navigation";
 import { Check } from "lucide-react";
+import { PasswordInput } from "@/components/password-input";
+import { SenegalPhoneInput } from "@/components/senegal-phone-input";
 import { DirectDocumentUploader } from "@/components/direct-document-uploader";
 import { IntentLetterForm } from "@/components/intent-letter-form";
 import { requiredVerificationDocuments } from "@/lib/domain/verification";
@@ -63,7 +65,7 @@ type Draft = {
 const emptyDraft: Draft = {
   contactName: "",
   shopName: "",
-  phone: "",
+  phone: "+221",
   city: "",
   businessType: "",
   legalName: "",
@@ -308,7 +310,7 @@ export function MerchantSignupWizard({
                 </label>
                 <label className="mvp-field">
                   Téléphone
-                  <input id="signup-phone" name="phone" type="tel" inputMode="tel" autoComplete="tel" placeholder="+221 77 000 00 00" required disabled={commerceLocked} value={draft.phone} onChange={(e) => setDraft({ ...draft, phone: e.target.value })} />
+                  <SenegalPhoneInput id="signup-phone" required disabled={commerceLocked} value={draft.phone} onChange={(phone) => setDraft({ ...draft, phone })} />
                 </label>
                 <label className="mvp-field">
                   Ville
@@ -381,7 +383,7 @@ export function MerchantSignupWizard({
               ) : (
                 <label className="mvp-field">
                   Mot de passe
-                  <input id="signup-password" name="password" type="password" autoComplete="new-password" required minLength={10} value={password} onChange={(e) => setPassword(e.target.value)} />
+                  <PasswordInput id="signup-password" name="password" aria-label="Mot de passe" autoComplete="new-password" required minLength={10} value={password} onChange={(e) => setPassword(e.target.value)} />
                 </label>
               )}
               {turnstileSiteKey && !resume && !created && (

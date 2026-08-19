@@ -343,3 +343,18 @@
 .conversation-context__identity strong { font-size: 14px; }
 .conversation-context__identity span { color: #65756d; font-size: 12px; }
 .conversation-context__order { font-weight: 700; color: #173f2e; }
+
+.secure-input,
+.senegal-phone-input { position: relative; display: flex; width: 100%; align-items: center; }
+.secure-input input,
+.senegal-phone-input input[type="tel"] { width: 100%; }
+.secure-input input { padding-right: 3rem; }
+.secure-input__toggle { position: absolute; right: .35rem; width: 2.25rem; height: 2.25rem; display: grid; place-items: center; border: 0; border-radius: 50%; background: transparent; color: #52655b; cursor: pointer; }
+.secure-input__toggle:hover,
+.secure-input__toggle:focus-visible { background: rgba(23, 63, 46, .09); color: #173f2e; }
+.secure-input__toggle svg { width: 1.1rem; height: 1.1rem; }
+.senegal-phone-input { overflow: hidden; border: 1px solid rgba(23, 39, 31, .16); border-radius: 12px; background: #fff; }
+.senegal-phone-input__prefix { align-self: stretch; display: flex; align-items: center; padding: 0 .8rem; border-right: 1px solid rgba(23, 39, 31, .14); background: #f2efe6; color: #173f2e; font-weight: 850; }
+.senegal-phone-input input[type="tel"] { border: 0 !important; border-radius: 0 !important; box-shadow: none !important; }
+.payment-declaration-confirmation { max-width: 760px; margin: 0 auto; text-align: center; }
+.payment-declaration-confirmation .mvp-actions { justify-content: center; }

@@ -1,12 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { FormEvent, useCallback, useEffect, useState } from "react";
 import { AideSupportButton } from "@/components/aide-support-button";
 import { ShopContact } from "@/components/shop-contact";
 import { StartConversationButton } from "@/components/start-conversation-button";
 import { siteConfig } from "@/app/site-config";
 import { formatPrice } from "@/lib/marketplace";
+import { getBrowserSupabase } from "@/lib/infrastructure/supabase/browser";
 
 type OrderPayload = {
   order: {
@@ -29,7 +31,15 @@ type OrderPayload = {
       minDelayMinutes?: number;
       maxDelayMinutes?: number;
     };
-    merchant_accounts: { public_name: string; slug: string; phone: string | null; email: string | null };
+    merchant_accounts: {
+      public_name: string;
+      slug: string;
+      phone: string | null;
+      email: string | null;
+      pickup_address_line: string | null;
+      pickup_latitude: number | null;
+      pickup_longitude: number | null;
+    };
   };
   items: Array<{
     id: string;
@@ -92,6 +102,7 @@ const paymentStatusLabels: Record<string, string> = {
 };
 
 export function OrderTracking({ orderId }: { orderId: string }) {
+  const router = useRouter();
   const [payload, setPayload] = useState<OrderPayload>();
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -99,53 +110,74 @@ export function OrderTracking({ orderId }: { orderId: string }) {
   const [showDeliveryDisputeForm, setShowDeliveryDisputeForm] = useState(false);
   const [savMessage, setSavMessage] = useState("");
 
-  const loadOrder = () =>
+  const loadOrder = useCallback(() =>
     fetch(`/api/orders/${orderId}`).then(async (response) => {
       const body = await response.json();
       if (!response.ok) throw new Error(body.error?.message);
       setPayload(body.data as OrderPayload);
-    });
+      setError("");
+    }), [orderId]);
 
   useEffect(() => {
-    loadOrder()
-      .catch((caught: Error) =>
-        setError(caught.message || "Commande introuvable."),
-      );
-    // orderId est l’unique clé du chargement initial.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [orderId]);
+    let cancelled = false;
+    const refresh = () => loadOrder().catch((caught: Error) => {
+      if (!cancelled) setError(caught.message || "Commande introuvable.");
+    });
+    void refresh();
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === "visible") void refresh();
+    }, 30_000);
+    let channel: ReturnType<ReturnType<typeof getBrowserSupabase>["channel"]> | undefined;
+    try {
+      const supabase = getBrowserSupabase();
+      channel = supabase.channel(`order-tracking-${orderId}`)
+        .on("postgres_changes", { event: "*", schema: "public", table: "orders", filter: `id=eq.${orderId}` }, () => void refresh())
+        .on("postgres_changes", { event: "*", schema: "public", table: "deliveries", filter: `order_id=eq.${orderId}` }, () => void refresh())
+        .subscribe();
+    } catch { /* Le rafraîchissement périodique reste actif. */ }
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+      if (channel) void channel.unsubscribe();
+    };
+  }, [loadOrder, orderId]);
 
   const declarePayment = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!payload) return;
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
     setBusy(true);
     setError("");
-    const form = new FormData(event.currentTarget);
     const channel =
       payload.order.payment_method === "wave_direct"
         ? "wave"
         : "orange_money";
-    const response = await fetch(
-      `/api/orders/${orderId}/payment-declarations`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          channel,
-          externalReference: form.get("externalReference"),
-          amountXof: payload.order.total_xof,
-          declaredAt: new Date().toISOString(),
-        }),
-      },
-    );
-    const body = await response.json();
-    setBusy(false);
-    if (!response.ok) {
-      setError(body.error?.message ?? "Déclaration impossible.");
-      return;
+    try {
+      const response = await fetch(
+        `/api/orders/${orderId}/payment-declarations`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            channel,
+            externalReference: form.get("externalReference"),
+            amountXof: payload.order.total_xof,
+            declaredAt: new Date().toISOString(),
+          }),
+        },
+      );
+      const body = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(body?.error?.message ?? "Déclaration impossible.");
+      }
+      formElement.reset();
+      router.push(`/commandes/${orderId}/paiement-declare`);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Déclaration impossible.");
+    } finally {
+      setBusy(false);
     }
-    event.currentTarget.reset();
-    await loadOrder();
   };
 
   const submitDispute = async (event: FormEvent<HTMLFormElement>) => {
@@ -232,6 +264,7 @@ export function OrderTracking({ orderId }: { orderId: string }) {
         >
           {payload.order.status.replaceAll("_", " ")}
         </span>
+        <small>Suivi actualisé en direct</small>
         <h1 className="mvp-title">{payload.order.public_code}</h1>
         <p className="mvp-lede">
           {payload.order.merchant_accounts.public_name} ·{" "}
@@ -262,6 +295,9 @@ export function OrderTracking({ orderId }: { orderId: string }) {
         <ShopContact
           phone={payload.order.merchant_accounts.phone}
           email={payload.order.merchant_accounts.email}
+          addressLine={payload.order.merchant_accounts.pickup_address_line}
+          latitude={payload.order.merchant_accounts.pickup_latitude}
+          longitude={payload.order.merchant_accounts.pickup_longitude}
         />
         <StartConversationButton
           merchantId={payload.order.merchant_id}
@@ -270,8 +306,18 @@ export function OrderTracking({ orderId }: { orderId: string }) {
           label="Discuter de cette commande"
         />
 
+        {payload.order.payment_method === "cash_on_delivery" && (
+          <section id="retrait">
+            <div className="mvp-divider" />
+            <h2>Retrait et paiement en boutique</h2>
+            <p className="mvp-alert">
+              Votre commande est enregistrée. Vous réglerez <strong>{formatPrice(payload.order.total_xof)}</strong> en espèces au moment du retrait.
+            </p>
+          </section>
+        )}
+
         {payload.order.payment_method !== "cash_on_delivery" && (
-          <>
+          <section id="paiement">
             <div className="mvp-divider" />
             <h2>Paiement direct au vendeur</h2>
             <p className="mvp-status" data-status={payload.order.payment_status}>Statut : {paymentStatusLabels[payload.order.payment_status] ?? payload.order.payment_status}</p>
@@ -306,7 +352,7 @@ export function OrderTracking({ orderId }: { orderId: string }) {
               Paiement {declaration.external_reference} · {declaration.status === "confirmed" ? "confirmé par le vendeur" : declaration.status === "rejected" ? "refusé par le vendeur" : "en attente de confirmation"}
               {declaration.rejection_reason ? <><br />Motif : {declaration.rejection_reason}</> : null}
             </p>)}
-          </>
+          </section>
         )}
         {payload.refunds.map((refund) => <div className="mvp-alert" key={refund.id}>
           <strong>Remboursement de {formatPrice(refund.amount_xof)}</strong><br />

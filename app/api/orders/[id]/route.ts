@@ -31,7 +31,7 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
       if (error) throw error;
     }
     const { data: merchant, error: merchantError } = await requireAdminClient()
-      .from("merchant_accounts").select("public_name, slug, phone, email").eq("id", order.merchant_id).single();
+      .from("merchant_accounts").select("public_name, slug, phone, email, pickup_address_line, pickup_latitude, pickup_longitude").eq("id", order.merchant_id).single();
     if (merchantError) throw merchantError;
     return apiSuccess({
       order: { ...order, merchant_accounts: merchant },

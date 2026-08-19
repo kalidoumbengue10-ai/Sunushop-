@@ -63,7 +63,7 @@ test("une zone Unicode équivalente à la région choisie permet de continuer ve
         city: null,
         feeXof: 1500,
         minDelayMinutes: 0,
-        maxDelayMinutes: 1440,
+        maxDelayMinutes: 0,
       }],
       pickup: { enabled: false, hours: null, instructions: null },
       location: { addressLine: "Kédougou", latitude: 12.56, longitude: -12.18 },
@@ -102,7 +102,8 @@ test("une zone Unicode équivalente à la région choisie permet de continuer ve
   await page.getByRole("button", { name: "Continuer vers la livraison" }).click();
 
   await page.getByLabel("Nom du destinataire").fill("Awa Ndiaye");
-  await page.getByLabel("Téléphone").fill("+221770000000");
+  await expect(page.getByText("+221", { exact: true })).toBeVisible();
+  await page.getByLabel("Téléphone").fill("770000000");
   await page.getByRole("combobox", { name: "Région", exact: true }).selectOption({ label: "Kédougou" });
   await page.getByLabel("Ville").fill("Kédougou");
   await page.getByLabel("Précisions d’adresse").fill("Quartier Dandé Mayo");
@@ -110,11 +111,87 @@ test("une zone Unicode équivalente à la région choisie permet de continuer ve
   await page.getByLabel("Latitude").fill("12.560000");
   await page.getByLabel("Longitude").fill("-12.180000");
   await page.getByRole("button", { name: "Appliquer les coordonnées" }).click();
-  await page.getByRole("button", { name: "Continuer vers la connexion" }).click();
+  await Promise.all([
+    page.waitForResponse((response) => response.url().includes("/api/cart/quote") && response.request().method() === "POST"),
+    page.getByRole("button", { name: "Continuer vers la connexion" }).click({ force: true }),
+  ]);
 
-  await expect(page.getByRole("heading", { name: "Connexion ou création de compte" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Connexion ou création de compte" })).toBeVisible({ timeout: 15_000 });
   expect(quoteBody).toMatchObject({
     destination: { region: "Kédougou", city: "Kédougou" },
     groups: [{ merchantId, deliveryZoneId: zoneId, methodKind: "merchant_delivery" }],
   });
+});
+
+test("le retrait en boutique continue sans demander d’adresse de livraison", async ({ page }) => {
+  const cart = [{
+    quantity: 1,
+    product: {
+      id: productId,
+      title: "Produit retrait E2E",
+      slug: "produit-retrait-e2e",
+      description: "Produit utilisé pour le parcours retrait en boutique.",
+      optionNames: [],
+      category: { id: "00000000-0000-4000-8000-000000000105", name: "Test", slug: "test" },
+      merchant: { id: merchantId, name: "Boutique retrait E2E", slug: "boutique-retrait-e2e", city: "Dakar" },
+      variant: { id: variantId, sku: "PICKUP-E2E", title: "Standard", attributes: {}, priceXof: 2500, compareAtPriceXof: null, availableQuantity: 5 },
+      variants: [], imageUrl: null, imageUrls: [],
+    },
+  }];
+
+  await page.addInitScript(({ key, value }) => localStorage.setItem(key, value), {
+    key: CART_STORAGE_KEY,
+    value: JSON.stringify(cart),
+  });
+  await page.route("**/api/client/cart", (route) => route.fulfill({ status: 401, body: "" }));
+  await page.route("**/api/client/addresses", (route) => route.fulfill({ status: 401, body: "" }));
+  await page.route("**/api/client/shop-follows", (route) => route.fulfill({ status: 401, body: "" }));
+  await page.route("**/api/shops/boutique-retrait-e2e", (route) => route.fulfill({
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify({ data: {
+      id: merchantId,
+      name: "Boutique retrait E2E",
+      slug: "boutique-retrait-e2e",
+      phone: "+221770000000",
+      email: "boutique@example.test",
+      paymentMethods: { cashOnDelivery: true, wave: true, orangeMoney: false },
+      deliveryZones: [{ id: zoneId, label: "Dakar", region: "Dakar", city: null, feeXof: 1500, minDelayMinutes: 0, maxDelayMinutes: 0 }],
+      pickup: { enabled: true, hours: "9h-18h", instructions: "Présentez votre numéro de commande." },
+      location: { addressLine: "Point de retrait E2E, Dakar", latitude: 14.72, longitude: -17.45 },
+    } }),
+  }));
+
+  let quoteBody: Record<string, unknown> | null = null;
+  await page.route("**/api/cart/quote", async (route) => {
+    quoteBody = route.request().postDataJSON() as Record<string, unknown>;
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ data: {
+        groups: [{ merchantId, merchantName: "Boutique retrait E2E", deliveryZoneId: null, deliveryLabel: "Retrait en boutique", methodKind: "pickup", subtotalXof: 2500, deliveryFeeXof: 0, availablePoints: 0, pointsApplied: 0, loyaltyDiscountXof: 0, pointsEarnable: 0, loyaltyAccrualEnabled: false, totalXof: 2500 }],
+        totalXof: 2500,
+      } }),
+    });
+  });
+
+  await page.goto("/commander");
+  await expect(page.getByLabel(/Retrait en boutique/)).toBeChecked();
+  await page.getByRole("button", { name: "Continuer vers la livraison" }).click();
+  await expect(page.getByRole("heading", { name: "Retrait en boutique" })).toBeVisible();
+  await expect(page.getByRole("combobox", { name: "Région", exact: true })).toHaveCount(0);
+  await expect(page.getByText("+221", { exact: true })).toBeVisible();
+  await page.getByLabel("Nom du destinataire").fill("Awa Ndiaye");
+  await page.getByLabel("Téléphone").fill("770000000");
+  await expect(page.getByLabel(/Espèces au retrait/)).toBeChecked();
+  await Promise.all([
+    page.waitForResponse((response) => response.url().includes("/api/cart/quote") && response.request().method() === "POST"),
+    page.getByRole("button", { name: "Continuer vers la connexion" }).click({ force: true }),
+  ]);
+
+  await expect(page.getByRole("heading", { name: "Connexion ou création de compte" })).toBeVisible({ timeout: 15_000 });
+  expect(quoteBody).toMatchObject({
+    groups: [{ merchantId, methodKind: "pickup" }],
+  });
+  expect(quoteBody).not.toHaveProperty("destination");
 });

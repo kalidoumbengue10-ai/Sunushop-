@@ -2,6 +2,7 @@
 
 import { FormEvent, useEffect, useState } from "react";
 import Script from "next/script";
+import { SenegalPhoneInput } from "@/components/senegal-phone-input";
 
 declare global {
   interface Window {
@@ -17,6 +18,7 @@ export function MerchantApplicationForm({ categories, turnstileSiteKey }: { cate
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [captchaToken, setCaptchaToken] = useState<string>();
+  const [phone, setPhone] = useState("+221");
   useEffect(() => {
     window.sunuShopMerchantTurnstile = (token) => { setCaptchaToken(token); setError(""); };
     window.sunuShopMerchantTurnstileError = () => { setCaptchaToken(undefined); setError("Le contrôle anti-robot n’a pas pu se charger. Actualisez la page ou désactivez votre bloqueur de contenu."); };
@@ -33,7 +35,7 @@ export function MerchantApplicationForm({ categories, turnstileSiteKey }: { cate
     const response = await fetch("/api/candidatures/marchands", {
       method: "POST", headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        contactName: form.get("contactName"), shopName: form.get("shopName"), email: form.get("email"), phone: form.get("phone"),
+        contactName: form.get("contactName"), shopName: form.get("shopName"), email: form.get("email"), phone,
         city: form.get("city") || undefined, businessType: form.get("businessType"), legalName: form.get("legalName") || undefined, salesChannel: form.get("salesChannel"),
         categories: form.getAll("categories"), message: form.get("message") || undefined, consent: form.get("consent") === "on", captchaToken,
       }),
@@ -42,6 +44,7 @@ export function MerchantApplicationForm({ categories, turnstileSiteKey }: { cate
     if (!response.ok) return setError(payload?.error?.message ?? "La candidature n’a pas pu être envoyée.");
     setMessage(payload.data.invitationEmailSent ? "Votre candidature est enregistrée. Consultez votre email pour créer votre mot de passe et déposer vos justificatifs." : "Votre candidature est enregistrée. Le mail d’accès aux documents est en cours d’envoi ; vérifiez aussi vos courriers indésirables.");
     formElement.reset();
+    setPhone("+221");
   };
   return (
     <><>{turnstileSiteKey && <Script src="https://challenges.cloudflare.com/turnstile/v0/api.js" strategy="afterInteractive" />}</><section className="merchant-application-layout">
@@ -64,7 +67,7 @@ export function MerchantApplicationForm({ categories, turnstileSiteKey }: { cate
             <label className="mvp-field">Nom et prénom<input name="contactName" autoComplete="name" required /></label>
             <label className="mvp-field">Nom du commerce<input name="shopName" required /></label>
             <label className="mvp-field">Adresse email<input name="email" type="email" autoComplete="email" required /></label>
-            <label className="mvp-field">Téléphone<input name="phone" type="tel" inputMode="tel" placeholder="+221 77 000 00 00" required /></label>
+            <label className="mvp-field">Téléphone<SenegalPhoneInput value={phone} onChange={setPhone} required /></label>
             <label className="mvp-field">Ville<input name="city" autoComplete="address-level2" /></label>
             <label className="mvp-field">Statut de l’activité<select name="businessType" required><option value="">Choisir</option><option value="informal">Commerçant individuel / activité informelle</option><option value="formal">Entreprise enregistrée</option></select></label>
             <label className="mvp-field">Raison sociale, si entreprise<input name="legalName" placeholder="Nom enregistré de l’entreprise" /></label>

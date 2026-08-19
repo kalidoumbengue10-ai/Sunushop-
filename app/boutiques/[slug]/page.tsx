@@ -67,8 +67,7 @@ export default async function BoutiquePage({
               <div className="mvp-row" key={zone.id}>
                 <strong>{zone.label}</strong>
                 <small>
-                  {formatPrice(zone.feeXof)} · {zone.minDelayMinutes} à{" "}
-                  {zone.maxDelayMinutes} minutes
+                  {formatPrice(zone.feeXof)} · Livraison le jour même
                 </small>
               </div>
             ))}

@@ -2,6 +2,7 @@
 
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
+import { PasswordInput } from "@/components/password-input";
 
 export function PasswordUpdateForm({ next }: { next?: string }) {
   const router = useRouter();
@@ -49,10 +50,10 @@ export function PasswordUpdateForm({ next }: { next?: string }) {
       <form className="mvp-form" onSubmit={submit}>
         <label className="mvp-field">
           Nouveau mot de passe
-          <input
+          <PasswordInput
+            aria-label="Nouveau mot de passe"
             value={password}
             onChange={(event) => setPassword(event.target.value)}
-            type="password"
             minLength={10}
             maxLength={128}
             autoComplete="new-password"
@@ -61,10 +62,10 @@ export function PasswordUpdateForm({ next }: { next?: string }) {
         </label>
         <label className="mvp-field">
           Confirmer le mot de passe
-          <input
+          <PasswordInput
+            aria-label="Confirmer le mot de passe"
             value={confirmation}
             onChange={(event) => setConfirmation(event.target.value)}
-            type="password"
             minLength={10}
             maxLength={128}
             autoComplete="new-password"

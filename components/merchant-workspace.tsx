@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   BadgeDollarSign,
@@ -18,6 +18,7 @@ import {
   Truck,
 } from "lucide-react";
 import { formatPrice } from "@/lib/marketplace";
+import { getBrowserSupabase } from "@/lib/infrastructure/supabase/browser";
 import { CourierManager } from "@/components/courier-manager";
 import { MerchantMedia } from "@/components/merchant-media";
 import { MerchantDashboard } from "@/components/merchant-dashboard";
@@ -246,6 +247,7 @@ const merchantSectionTitles: Record<MerchantTab, { eyebrow: string; title: strin
 
 export function MerchantWorkspace(props: MerchantWorkspaceProps) {
   const router = useRouter();
+  const realtimeMerchantId = props.merchant?.id;
   const [tab, setTab] = useState<MerchantTab>(
     props.merchant && ["active", "grace"].includes(props.merchant.subscription_status)
       ? "dashboard"
@@ -275,6 +277,25 @@ export function MerchantWorkspace(props: MerchantWorkspaceProps) {
   const [pickupEnabled, setPickupEnabled] = useState(props.merchant?.pickup_enabled ?? false);
   const [pickupHours, setPickupHours] = useState(props.merchant?.pickup_hours ?? "");
   const [pickupInstructions, setPickupInstructions] = useState(props.merchant?.pickup_instructions ?? "");
+
+  useEffect(() => {
+    if (!realtimeMerchantId) return;
+    const refresh = () => router.refresh();
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === "visible") refresh();
+    }, 30_000);
+    let channel: ReturnType<ReturnType<typeof getBrowserSupabase>["channel"]> | undefined;
+    try {
+      const supabase = getBrowserSupabase();
+      channel = supabase.channel(`merchant-orders-${realtimeMerchantId}`)
+        .on("postgres_changes", { event: "*", schema: "public", table: "orders", filter: `merchant_id=eq.${realtimeMerchantId}` }, refresh)
+        .subscribe();
+    } catch { /* Le rafraîchissement périodique reste actif. */ }
+    return () => {
+      window.clearInterval(interval);
+      if (channel) void channel.unsubscribe();
+    };
+  }, [realtimeMerchantId, router]);
 
   const submitJson = async (
     url: string,
@@ -611,7 +632,7 @@ export function MerchantWorkspace(props: MerchantWorkspaceProps) {
         {tab === "dashboard" && <section className="merchant-content-surface merchant-content-surface--dashboard"><MerchantDashboard merchantId={props.merchant.id} /></section>}
 
         {tab === "livreurs" && (
-          <CourierManager merchantId={props.merchant.id} orders={props.orders} canManagePayments={["owner", "manager"].includes(props.memberRole)} />
+          <CourierManager merchantId={props.merchant.id} canManagePayments={["owner", "manager"].includes(props.memberRole)} />
         )}
 
         {tab === "fidelite" && <MerchantLoyalty merchantId={props.merchant.id} />}

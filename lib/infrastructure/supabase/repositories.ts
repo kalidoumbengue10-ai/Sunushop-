@@ -4,6 +4,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { ApiError } from "@/lib/api/errors";
 import { sameDeliveryAreaName } from "@/lib/domain/delivery-area";
 import { highestCategoryDeliveryFee } from "@/lib/domain/delivery-pricing";
+import { calculateOrderTotalXof } from "@/lib/domain/order-total";
 import type {
   CatalogItem,
   CatalogRepository,
@@ -551,7 +552,7 @@ export class SupabaseCatalogRepository implements CatalogRepository {
         methodKind: "merchant_delivery",
         subtotalXof,
         deliveryFeeXof,
-        totalXof: subtotalXof + deliveryFeeXof,
+        totalXof: calculateOrderTotalXof(subtotalXof, deliveryFeeXof),
         minDelayMinutes: zone!.min_delay_minutes,
         maxDelayMinutes: zone!.max_delay_minutes,
         items,

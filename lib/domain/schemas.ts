@@ -379,15 +379,12 @@ export const deliveryRegionInputSchema = z.object({
   enabled: z.boolean().default(true),
   feeXof: z.int().min(0),
   courierFeeXof: z.int().min(0).nullable(),
-  minDelayDays: z.int().min(0).max(30),
-  maxDelayDays: z.int().min(0).max(30),
+  minDelayDays: z.literal(0).default(0),
+  maxDelayDays: z.literal(0).default(0),
   categoryRates: z.array(z.object({
     categoryId: uuid,
     feeXof: z.int().min(0),
   })).max(100).default([]),
-}).refine((value) => value.maxDelayDays >= value.minDelayDays, {
-  path: ["maxDelayDays"],
-  message: "Le délai maximal doit être supérieur au délai minimal.",
 });
 
 export const merchantAnalyticsQuerySchema = z.object({

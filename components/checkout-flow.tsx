@@ -7,6 +7,7 @@ import { useCart } from "@/components/cart-provider";
 import { OrderBatchConfirmation, type ConfirmedOrder } from "@/components/order-batch-confirmation";
 import { ShopContact } from "@/components/shop-contact";
 import { LocationPicker } from "@/components/location-map";
+import { SenegalPhoneInput } from "@/components/senegal-phone-input";
 import {
   clearCheckoutDraft,
   readCheckoutDraft,
@@ -83,7 +84,7 @@ function groupLinesByMerchant(lines: CartLine[]) {
   return [...byMerchant.values()];
 }
 
-const emptyRecipient: CheckoutRecipient = { name: "", phone: "", region: "", city: "", addressHint: "" };
+const emptyRecipient: CheckoutRecipient = { name: "", phone: "+221", region: "", city: "", addressHint: "" };
 
 export function CheckoutFlow() {
   const cart = useCart();
@@ -104,6 +105,18 @@ export function CheckoutFlow() {
   const [busy, setBusy] = useState(false);
   const resumedRef = useRef(false);
   const recipientRef = useRef(recipient);
+  const hasHomeDelivery = groups.some(
+    (group) => (methodKinds[group.merchantId] ?? "merchant_delivery") === "merchant_delivery",
+  );
+
+  const recipientForSubmission = hasHomeDelivery
+    ? recipient
+    : {
+        ...recipient,
+        region: recipient.region || "Retrait en boutique",
+        city: recipient.city || "Retrait en boutique",
+        addressHint: recipient.addressHint || "Retrait en boutique",
+      };
 
   useEffect(() => {
     recipientRef.current = recipient;
@@ -348,7 +361,11 @@ export function CheckoutFlow() {
   };
 
   const confirmLivraison = async () => {
-    if (!recipient.name || !recipient.phone || !recipient.region || !recipient.city || !recipient.addressHint) {
+    if (!recipient.name || recipient.phone.replace(/\D/g, "").length !== 12) {
+      setError("Renseignez le nom du destinataire et un numéro sénégalais valide.");
+      return;
+    }
+    if (hasHomeDelivery && (!recipient.region || !recipient.city || !recipient.addressHint)) {
       setError("Merci de renseigner toutes les informations de livraison.");
       return;
     }
@@ -361,8 +378,7 @@ export function CheckoutFlow() {
       setError("La livraison doit être payée directement par Wave ou Orange Money.");
       return;
     }
-    const hasDelivery = groups.some((group) => (methodKinds[group.merchantId] ?? "merchant_delivery") === "merchant_delivery");
-    if (hasDelivery && (recipient.latitude === undefined || recipient.longitude === undefined)) {
+    if (hasHomeDelivery && (recipient.latitude === undefined || recipient.longitude === undefined)) {
       setError("Placez la destination sur la carte avant de continuer.");
       return;
     }
@@ -399,7 +415,7 @@ export function CheckoutFlow() {
         method: "POST",
         headers: { "content-type": "application/json", "idempotency-key": idempotencyKey },
         body: JSON.stringify({
-          recipient,
+          recipient: recipientForSubmission,
           groups: groups.map((group) => {
             const methodKind = methodKinds[group.merchantId] ?? "merchant_delivery";
             return {
@@ -430,6 +446,7 @@ export function CheckoutFlow() {
       const confirmedOrders = payload.data.orders.map((order: ConfirmedOrder) => ({
         ...order,
         merchantName: merchantNames[order.merchantId],
+        paymentMethod: paymentMethods[order.merchantId],
       }));
       setConfirmedOrders(confirmedOrders);
       const batchTotalXof = confirmedOrders.reduce(
@@ -550,7 +567,7 @@ export function CheckoutFlow() {
 
       {step === "livraison" && (
         <section className="checkout-step">
-          <h2>Livraison</h2>
+          <h2>{hasHomeDelivery ? "Livraison" : "Retrait en boutique"}</h2>
           {savedAddresses.length > 0 && <div className="mvp-card">
             <h3>Mes adresses enregistrées</h3>
             <div className="mvp-actions">{savedAddresses.map((address) => (
@@ -567,8 +584,9 @@ export function CheckoutFlow() {
               </label>
               <label className="mvp-field">
                 Téléphone
-                <input value={recipient.phone} onChange={(event) => setRecipient({ ...recipient, phone: event.target.value })} placeholder="+221..." required />
+                <SenegalPhoneInput value={recipient.phone} onChange={(phone) => setRecipient({ ...recipient, phone })} required />
               </label>
+              {hasHomeDelivery && <>
               <label className="mvp-field">
                 Région
                 <select value={recipient.region} onChange={(event) => chooseRegion(event.target.value)} required>
@@ -580,20 +598,21 @@ export function CheckoutFlow() {
                 Ville
                 <input value={recipient.city} onChange={(event) => setRecipient({ ...recipient, city: event.target.value })} required />
               </label>
+              </>}
             </div>
+            {hasHomeDelivery && <>
             <label className="mvp-field">
               Précisions d’adresse
               <textarea value={recipient.addressHint} onChange={(event) => setRecipient({ ...recipient, addressHint: event.target.value })} required />
             </label>
-            {groups.some((group) => (methodKinds[group.merchantId] ?? "merchant_delivery") === "merchant_delivery") && (
-              <LocationPicker
+            <LocationPicker
                 value={recipient.latitude !== undefined && recipient.longitude !== undefined ? { latitude: recipient.latitude, longitude: recipient.longitude } : null}
                 onChange={setRecipientCoordinates}
                 onPlace={applyResolvedPlace}
                 label="Destination exacte de la livraison"
                 required
               />
-            )}
+            </>}
           </div>
 
           <div className="mvp-card"><h3>Paiement direct par boutique</h3><p>Chaque transfert est envoyé directement au marchand concerné. Après la commande, vous recevrez son numéro et devrez transmettre la référence du paiement.</p></div>
