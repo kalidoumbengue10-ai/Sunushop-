@@ -21,9 +21,17 @@ describe("éligibilité des commandes à l'affectation d'un livreur", () => {
   });
 
   it("rejette les statuts hors du flux d'affectation", () => {
-    for (const status of ["in_transit", "delivered", "cancelled", "disputed"]) {
+    for (const status of ["delivered", "cancelled", "disputed"]) {
       expect(assignableOrderReason({ ...readyOrder, status })).toBe("status_not_assignable");
     }
+  });
+
+  it("récupère une commande passée en transit sans aucune livraison", () => {
+    const orphan = { ...readyOrder, status: "in_transit" };
+    expect(assignableOrderReason(orphan)).toBe("assignable");
+    expect(isReadyForAssignment(orphan)).toBe(true);
+    expect(assignableOrderLabel("in_transit")).toBe("affectation requise");
+    expect(assignableOrderReason({ ...orphan, delivery: { status: "assigned" } })).toBe("delivery_locked");
   });
 
   it("exclut les commandes de retrait en boutique", () => {

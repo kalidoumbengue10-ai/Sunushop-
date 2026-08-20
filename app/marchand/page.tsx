@@ -179,7 +179,7 @@ export default async function MarchandPage({ searchParams }: { searchParams: Pro
     admin!
       .from("orders")
       .select(
-        "id, public_code, merchant_sequence, status, payment_method, payment_status, total_xof, created_at, direct_payment_declarations(id, external_reference, status, rejection_reason, confirmed_by_merchant_at)",
+        "id, public_code, merchant_sequence, status, payment_method, payment_status, total_xof, delivery_snapshot, created_at, deliveries(id), direct_payment_declarations(id, external_reference, status, rejection_reason, confirmed_by_merchant_at)",
       )
       .eq("merchant_id", merchant.id)
       .order("created_at", { ascending: false })

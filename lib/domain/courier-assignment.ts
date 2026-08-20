@@ -3,6 +3,7 @@ export const ASSIGNABLE_ORDER_STATUSES = [
   "confirmed",
   "preparing",
   "ready_for_handoff",
+  "in_transit",
 ] as const;
 
 const REASSIGNABLE_DELIVERY_STATUSES = new Set(["assigned", "accepted", "at_pickup"]);
@@ -19,6 +20,7 @@ export function assignableOrderReason(order: AssignableOrderInput): AssignableRe
   const snapshot = order.deliverySnapshot;
   if (!snapshot || snapshot.methodKind === "pickup" || !snapshot.zoneId) return "pickup_order";
   if (!(ASSIGNABLE_ORDER_STATUSES as readonly string[]).includes(order.status)) return "status_not_assignable";
+  if (order.status === "in_transit" && order.delivery) return "delivery_locked";
   if (order.delivery && !REASSIGNABLE_DELIVERY_STATUSES.has(order.delivery.status)) return "delivery_locked";
   return "assignable";
 }
@@ -28,7 +30,10 @@ export function isAssignableOrder(order: AssignableOrderInput) {
 }
 
 export function isReadyForAssignment(order: AssignableOrderInput) {
-  return isAssignableOrder(order) && order.status === "ready_for_handoff";
+  return isAssignableOrder(order) && (
+    order.status === "ready_for_handoff"
+    || (order.status === "in_transit" && !order.delivery)
+  );
 }
 
 export function isVisibleInAssignmentQueue(status: string, paymentStatus: string) {
@@ -38,8 +43,9 @@ export function isVisibleInAssignmentQueue(status: string, paymentStatus: string
 export function assignableOrderLabel(
   status: string,
   paymentStatus?: string,
-): "prête" | "à préparer" | "à confirmer" | "paiement en attente" {
+): "prête" | "à préparer" | "à confirmer" | "paiement en attente" | "affectation requise" {
   if (status === "ready_for_handoff") return "prête";
+  if (status === "in_transit") return "affectation requise";
   if (status === "pending_seller_confirmation") {
     return paymentStatus === "paid" ? "à confirmer" : "paiement en attente";
   }

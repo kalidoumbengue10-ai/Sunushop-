@@ -115,15 +115,15 @@ async function preparePickupOrder(client: BrowserContext, merchant: BrowserConte
   return order;
 }
 
-async function openCourierTab(page: Page) {
+async function openCourierTab(page: Page, innerTab: "Missions" | "À affecter" | "Livreurs" | "Paiements" = "Missions") {
   await page.goto("/marchand");
   await page.getByRole("button", { name: /^Livreurs/ }).click({ force: true });
-  await expect(page.getByRole("heading", { name: "Enregistrer un livreur" })).toBeVisible();
+  await page.getByRole("tab", { name: new RegExp(`^${innerTab}`) }).click();
 }
 
 async function registerCourier(page: Page, merchantId: string, email: string, suffix: string) {
-  await openCourierTab(page);
-  const card = page.locator("section.mvp-card").filter({ has: page.getByRole("heading", { name: "Enregistrer un livreur" }) });
+  await openCourierTab(page, "Livreurs");
+  const card = page.locator("section.mvp-card").filter({ has: page.getByRole("heading", { name: "Inviter un livreur" }) });
   await card.getByLabel("Nom complet").fill(`Livreur ${suffix}`);
   await card.getByLabel("Email").fill(email);
   await card.getByLabel("Téléphone").fill("+221770006666");
@@ -134,14 +134,17 @@ async function registerCourier(page: Page, merchantId: string, email: string, su
   await button.press("Enter");
   const rawResponse = await registerResponse;
   expect(rawResponse.status()).toBe(201);
-  const payload = (await rawResponse.json()) as { data: { membershipId: string } };
+  const payload = (await rawResponse.json()) as { data: { membershipId: string; emailSent: boolean } };
   await expect(page.getByRole("status")).toContainText("Livreur enregistré", { timeout: 15_000 });
+  await expect(page.getByRole("link", { name: "Envoyer par WhatsApp" })).toHaveAttribute("href", /^https:\/\/wa\.me\/221770006666\?text=/);
+  await expect(page.getByText(payload.data.emailSent ? "Email envoyé" : "Échec de l’envoi")).toBeVisible();
   await expect.poll(async () => (await admin.from("courier_memberships").select("courier_user_id").eq("id", payload.data.membershipId).single()).data?.courier_user_id).toBeNull();
   return payload.data.membershipId;
 }
 
 async function assignmentForm(page: Page) {
-  return page.locator("section.mvp-card").filter({ has: page.getByRole("heading", { name: "Affecter une commande prête" }) });
+  await page.getByRole("tab", { name: /^À affecter/ }).click();
+  return page.locator("form.mvp-card").filter({ has: page.locator('select[name="orderId"]') });
 }
 
 async function cleanup() {
@@ -152,7 +155,7 @@ async function cleanup() {
 test.describe.serial("affectation livreur : commandes visibles et enregistrement direct", () => {
   test.afterAll(cleanup);
 
-  test("un livreur enregistré directement est sélectionnable et les commandes éligibles s’affichent correctement", async ({ browser }) => {
+  test("un livreur enregistré directement est sélectionnable et les commandes éligibles s’affichent correctement", async ({ browser }, testInfo) => {
     test.setTimeout(600_000);
     const emails = {
       merchant: `assign-merchant-${runId}@example.test`,
@@ -165,8 +168,10 @@ test.describe.serial("affectation livreur : commandes visibles et enregistrement
     ]);
     expect(merchantUser).toBeTruthy(); expect(clientUser).toBeTruthy();
 
-    const merchantContext = await browser.newContext();
-    const clientContext = await browser.newContext();
+    const mobile = testInfo.project.name.includes("mobile");
+    const contextOptions = mobile ? { viewport: { width: 393, height: 851 }, isMobile: true, hasTouch: true } : {};
+    const merchantContext = await browser.newContext(contextOptions);
+    const clientContext = await browser.newContext(contextOptions);
     await Promise.all([signIn(merchantContext, emails.merchant), signIn(clientContext, emails.client)]);
     const merchantPage = await merchantContext.newPage();
 
@@ -176,12 +181,13 @@ test.describe.serial("affectation livreur : commandes visibles et enregistrement
 
       // Scénario 6 : état vide avant toute commande éligible.
       await openCourierTab(merchantPage);
+      await assignmentForm(merchantPage);
       await expect(merchantPage.getByText("Aucune commande à affecter.")).toBeVisible();
 
       // Scénario 1 : enregistrement direct, sans claim, le livreur devient sélectionnable.
       const membershipId = await registerCourier(merchantPage, merchant.id, emails.courier, "M");
       const form = await assignmentForm(merchantPage);
-      await expect(form.locator(`select[name="courierMembershipId"] option[value="${membershipId}"]`)).toBeAttached({ timeout: 15_000 });
+      await expect(form.getByLabel("2. Livreur")).toContainText("Livreur M", { timeout: 15_000 });
 
       const [pendingOrder, confirmedOrder, preparingOrder, readyOrder, pickupOrder] = await Promise.all([
         prepareOrderUpTo(clientContext, merchantContext, merchant.id, catalog.zoneId, catalog.variantId, "pending", "pending_seller_confirmation"),
@@ -190,31 +196,58 @@ test.describe.serial("affectation livreur : commandes visibles et enregistrement
         prepareOrderUpTo(clientContext, merchantContext, merchant.id, catalog.zoneId, catalog.variantId, "ready", "ready_for_handoff"),
         preparePickupOrder(clientContext, merchantContext, merchant.id, catalog.pickupZoneId, catalog.variantId, "pickup"),
       ]);
+      // Régression : un clic historique sur « Remise au livreur » pouvait mettre
+      // la commande en transit avant même la création d'une livraison.
+      const { error: orphanError } = await admin.from("orders").update({ status: "in_transit" }).eq("id", readyOrder.id);
+      if (orphanError) throw orphanError;
 
       await merchantPage.reload();
       await openCourierTab(merchantPage);
       const populatedForm = await assignmentForm(merchantPage);
+      if (mobile) {
+        await expect(merchantPage.getByRole("tab", { name: /^À affecter/ })).toBeInViewport();
+        expect(await merchantPage.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
+        await merchantPage.screenshot({ path: testInfo.outputPath("marchand-a-affecter-mobile.png"), fullPage: true });
+      }
 
-      // Scénario 3 : commandes payées en attente/confirmed/preparing visibles mais désactivées, ready_for_handoff activable.
+      // Scénario 3 : toutes les commandes sont sélectionnables, mais seule ready_for_handoff est affectable.
       await expect(populatedForm.locator(`select[name="orderId"] option[value="${pendingOrder.id}"]`)).toContainText("à confirmer");
-      await expect(populatedForm.locator(`select[name="orderId"] option[value="${pendingOrder.id}"]`)).toHaveAttribute("disabled", "");
+      await expect(populatedForm.locator(`select[name="orderId"] option[value="${pendingOrder.id}"]`)).not.toHaveAttribute("disabled", "");
       await expect(populatedForm.locator(`select[name="orderId"] option[value="${confirmedOrder.id}"]`)).toBeAttached({ timeout: 15_000 });
       await expect(populatedForm.locator(`select[name="orderId"] option[value="${confirmedOrder.id}"]`)).toContainText("à préparer");
-      await expect(populatedForm.locator(`select[name="orderId"] option[value="${confirmedOrder.id}"]`)).toHaveAttribute("disabled", "");
+      await expect(populatedForm.locator(`select[name="orderId"] option[value="${confirmedOrder.id}"]`)).not.toHaveAttribute("disabled", "");
       await expect(populatedForm.locator(`select[name="orderId"] option[value="${preparingOrder.id}"]`)).toContainText("à préparer");
-      await expect(populatedForm.locator(`select[name="orderId"] option[value="${preparingOrder.id}"]`)).toHaveAttribute("disabled", "");
-      await expect(populatedForm.locator(`select[name="orderId"] option[value="${readyOrder.id}"]`)).toContainText("prête");
+      await expect(populatedForm.locator(`select[name="orderId"] option[value="${preparingOrder.id}"]`)).not.toHaveAttribute("disabled", "");
+      await expect(populatedForm.locator(`select[name="orderId"] option[value="${readyOrder.id}"]`)).toContainText("affectation requise");
       await expect(populatedForm.locator(`select[name="orderId"] option[value="${readyOrder.id}"]`)).not.toHaveAttribute("disabled", "");
+      await populatedForm.locator('select[name="orderId"]').selectOption(pendingOrder.id);
+      await expect(populatedForm.locator('select[name="orderId"]')).toHaveValue(pendingOrder.id);
+      await expect(populatedForm.getByRole("button", { name: "Affecter la mission" })).toBeDisabled();
+      await expect(populatedForm.getByText(pendingOrder.publicCode, { exact: true })).toBeVisible();
+      await activateButton(populatedForm.getByRole("button", { name: "Marquer prête" }));
+      await expect.poll(async () => (await admin.from("orders").select("status").eq("id", pendingOrder.id).single()).data?.status).toBe("ready_for_handoff");
+      const { data: preparationEvents } = await admin.from("order_events").select("to_status").eq("order_id", pendingOrder.id).order("created_at");
+      expect(preparationEvents?.map((event) => event.to_status)).toEqual(expect.arrayContaining(["confirmed", "preparing", "ready_for_handoff"]));
 
       // Scénario 4 : la commande de retrait boutique est absente du sélecteur.
       await expect(populatedForm.locator('select[name="orderId"]')).not.toContainText(pickupOrder.publicCode);
 
       // Scénario 2 : affectation immédiate à un livreur non activé.
       await populatedForm.locator('select[name="orderId"]').selectOption(readyOrder.id);
-      await populatedForm.locator('select[name="courierMembershipId"]').selectOption(membershipId);
-      await activateButton(populatedForm.getByRole("button", { name: "Affecter" }));
-      await expect(merchantPage.getByRole("status")).toContainText("Livraison affectée");
+      await populatedForm.locator('select[name="courierMembershipId"]').selectOption({ label: "Livreur M · activation en attente" });
+      await expect(populatedForm.locator('select[name="orderId"]')).toHaveValue(readyOrder.id);
+      const assignmentResponse = merchantPage.waitForResponse((response) => response.url().endsWith("/api/merchant/deliveries") && response.request().method() === "POST");
+      await activateButton(populatedForm.getByRole("button", { name: "Affecter la mission" }));
+      const assignedResponse = await assignmentResponse;
+      expect(assignedResponse.status()).toBe(201);
+      expect(assignedResponse.request().postDataJSON()).toMatchObject({ orderId: readyOrder.id, courierMembershipId: membershipId });
+      await expect(merchantPage.getByRole("status")).toContainText("Mission affectée");
       await expect.poll(async () => (await admin.from("deliveries").select("courier_membership_id").eq("order_id", readyOrder.id).single()).data?.courier_membership_id).toBe(membershipId);
+      await expect.poll(async () => (await admin.from("orders").select("status").eq("id", readyOrder.id).single()).data?.status).toBe("ready_for_handoff");
+      if (mobile) {
+        await expect(merchantPage.getByRole("tab", { name: /^Missions/ })).toBeInViewport();
+        await merchantPage.screenshot({ path: testInfo.outputPath("marchand-missions-mobile.png"), fullPage: true });
+      }
 
       // Scénario 5 : une fois assignée puis en trajet, la commande n’est plus proposée.
       const { data: delivery } = await admin.from("deliveries").select("id").eq("order_id", readyOrder.id).single();
@@ -225,7 +258,8 @@ test.describe.serial("affectation livreur : commandes visibles et enregistrement
       await expect(lockedForm.locator('select[name="orderId"]')).not.toContainText(readyOrder.publicCode);
 
       // Scénario 9 : ré-enregistrer le même email met à jour la fiche sans créer de doublon.
-      const card = merchantPage.locator("section.mvp-card").filter({ has: merchantPage.getByRole("heading", { name: "Enregistrer un livreur" }) });
+      await merchantPage.getByRole("tab", { name: /^Livreurs/ }).click();
+      const card = merchantPage.locator("section.mvp-card").filter({ has: merchantPage.getByRole("heading", { name: "Inviter un livreur" }) });
       await card.getByLabel("Nom complet").fill("Livreur M mis à jour");
       await card.getByLabel("Email").fill(emails.courier);
       await card.getByLabel("Téléphone").fill("+221770007777");
@@ -237,6 +271,15 @@ test.describe.serial("affectation livreur : commandes visibles et enregistrement
       const { data: membershipsForEmail } = await admin.from("courier_memberships").select("id, display_name").eq("merchant_id", merchant.id).eq("email", emails.courier);
       expect(membershipsForEmail).toHaveLength(1);
       expect(membershipsForEmail?.[0]?.display_name).toBe("Livreur M mis à jour");
+      const latestInvitationId = (await admin.from("workspace_invitations").select("id").eq("merchant_id", merchant.id).eq("email", emails.courier).eq("status", "pending").single()).data?.id;
+      const resendButton = merchantPage.getByRole("button", { name: "Renvoyer" });
+      await expect(resendButton).toBeEnabled({ timeout: 20_000 });
+      const [resendResponse] = await Promise.all([
+        merchantPage.waitForResponse((response) => response.url().includes(`/api/merchant/couriers/${membershipId}/invitation`) && response.request().method() === "POST", { timeout: 30_000 }),
+        resendButton.click(),
+      ]);
+      expect(resendResponse.status()).toBe(200);
+      expect((await admin.from("workspace_invitations").select("id").eq("merchant_id", merchant.id).eq("email", emails.courier).eq("status", "pending").single()).data?.id).toBe(latestInvitationId);
 
       // Scénario 7 : activation ultérieure fusionne sur la fiche existante sans dupliquer, et préserve le profil.
       const { data: invitation } = await admin.from("workspace_invitations").select("id").eq("merchant_id", merchant.id).eq("email", emails.courier).eq("kind", "courier").eq("status", "pending").order("created_at", { ascending: false }).limit(1).single();

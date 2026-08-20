@@ -117,6 +117,8 @@ type MerchantWorkspaceProps = {
     payment_method: string;
     payment_status: string;
     total_xof: number;
+    delivery_snapshot: { methodKind?: string | null };
+    deliveries: Array<{ id: string }>;
     created_at: string;
     direct_payment_declarations: Array<{
       id: string;
@@ -185,18 +187,15 @@ function ProductMediaUploader({ productId }: { productId: string }) {
   );
 }
 
-const nextMerchantOrderStatus: Record<string, string | undefined> = {
-  pending_seller_confirmation: "confirmed",
-  confirmed: "preparing",
-  preparing: "ready_for_handoff",
-  ready_for_handoff: "in_transit",
-  in_transit: "delivered",
-};
+function nextMerchantOrderStatus(order: MerchantWorkspaceProps["orders"][number]) {
+  if (order.delivery_snapshot?.methodKind === "pickup") {
+    if (order.status === "ready_for_handoff") return "in_transit";
+    if (order.status === "in_transit") return "delivered";
+  }
+  return undefined;
+}
 
 const nextMerchantOrderLabel: Record<string, string> = {
-  confirmed: "Confirmer",
-  preparing: "Préparer",
-  ready_for_handoff: "Prête",
   in_transit: "Remise au livreur",
   delivered: "Livrée",
 };
@@ -1088,14 +1087,28 @@ export function MerchantWorkspace(props: MerchantWorkspaceProps) {
                     {["paid", "refund_pending"].includes(order.payment_status) && (
                       <button className="mvp-button mvp-button--secondary" onClick={() => void declareRefund(order)}>Déclarer un remboursement</button>
                     )}
-                    {nextMerchantOrderStatus[order.status] && (order.payment_method === "cash_on_delivery" || order.payment_status === "paid") && (
+                    {["pending_seller_confirmation", "confirmed", "preparing"].includes(order.status) && (order.payment_method === "cash_on_delivery" || order.payment_status === "paid") && (
+                      <button
+                        className="mvp-button"
+                        onClick={() =>
+                          submitJson(
+                            `/api/orders/${order.id}/ready-for-handoff`,
+                            {},
+                            "Commande marquée prête.",
+                          )
+                        }
+                      >
+                        Marquer prête
+                      </button>
+                    )}
+                    {nextMerchantOrderStatus(order) && (order.payment_method === "cash_on_delivery" || order.payment_status === "paid") && (
                       <button
                         className="mvp-button"
                         onClick={() =>
                           submitJson(
                             `/api/orders/${order.id}/status`,
                             {
-                              status: nextMerchantOrderStatus[order.status],
+                              status: nextMerchantOrderStatus(order),
                               publicMessage: "Le vendeur a confirmé le stock.",
                             },
                             "Commande confirmée.",
@@ -1104,10 +1117,13 @@ export function MerchantWorkspace(props: MerchantWorkspaceProps) {
                       >
                         {
                           nextMerchantOrderLabel[
-                            nextMerchantOrderStatus[order.status]!
+                            nextMerchantOrderStatus(order)!
                           ]
                         }
                       </button>
+                    )}
+                    {order.delivery_snapshot?.methodKind === "merchant_delivery" && ["ready_for_handoff", "in_transit"].includes(order.status) && order.deliveries.length === 0 && (
+                      <button type="button" className="mvp-button" onClick={() => setTab("livreurs")}>Affecter un livreur</button>
                     )}
                   </div>
                 </div>

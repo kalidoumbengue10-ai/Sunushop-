@@ -3991,6 +3991,10 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      mark_order_ready_for_handoff: {
+        Args: { p_order_id: string }
+        Returns: Json
+      }
       confirm_direct_payment: {
         Args: { p_declaration_id: string }
         Returns: undefined

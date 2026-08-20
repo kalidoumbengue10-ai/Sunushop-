@@ -11,6 +11,22 @@ export async function GET(request: Request) {
   try {
     requireCron(request);
     const admin = requireAdminClient();
+    const staleBefore = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    const { data: stale } = await admin
+      .from("notification_outbox")
+      .select("id, template, created_at")
+      .eq("channel", "email")
+      .eq("status", "pending")
+      .eq("attempts", 0)
+      .lt("created_at", staleBefore)
+      .limit(25);
+    if (stale?.length) {
+      Sentry.captureMessage("Notifications en attente sans tentative", {
+        level: "warning",
+        tags: { cron: "notifications" },
+        extra: { notifications: stale },
+      });
+    }
     const { data: pending, error } = await admin
       .from("notification_outbox")
       .select("id, template, payload, attempts")

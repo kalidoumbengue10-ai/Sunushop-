@@ -358,3 +358,88 @@
 .senegal-phone-input input[type="tel"] { border: 0 !important; border-radius: 0 !important; box-shadow: none !important; }
 .payment-declaration-confirmation { max-width: 760px; margin: 0 auto; text-align: center; }
 .payment-declaration-confirmation .mvp-actions { justify-content: center; }
+
+/* Parcours livreur orienté tâches */
+.courier-task-tabs {
+  position: sticky;
+  top: 76px;
+  z-index: 12;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  padding: 7px;
+  border: 1px solid rgba(23, 63, 46, .14);
+  border-radius: 18px;
+  background: rgba(255, 253, 248, .96);
+  box-shadow: 0 10px 28px rgba(23, 39, 31, .08);
+  backdrop-filter: blur(16px);
+}
+.courier-task-tabs button {
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 9px 12px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: #63736b;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 850;
+  cursor: pointer;
+}
+.courier-task-tabs button.is-active { background: #173f2e; color: #fff; }
+.courier-task-tabs button b { min-width: 21px; height: 21px; display: grid; place-items: center; padding-inline: 5px; border-radius: 999px; background: #e8b84e; color: #173f2e; font-size: 11px; }
+.courier-tab-panel { display: grid; gap: 20px; min-width: 0; }
+.courier-history { margin-top: 6px; border-top: 1px solid rgba(23, 63, 46, .14); padding-top: 16px; }
+.courier-history summary { cursor: pointer; color: #173f2e; font-weight: 850; }
+.courier-history[open] summary { margin-bottom: 16px; }
+.courier-selection-summary { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 14px; border: 1px solid #d9957e; border-radius: 14px; background: #fff7f1; }
+.courier-selection-summary.is-ready { border-color: #8eb39f; background: #f1f8f3; }
+.courier-selection-summary div { display: grid; gap: 3px; }
+.courier-selection-summary small { color: #63736b; }
+.courier-invitation-status { grid-column: 2; justify-self: start; padding: 6px 10px; border-radius: 999px; background: #f2eee3; color: #5f6f67; font-size: 11px; font-weight: 850; }
+.courier-invitation-status[data-status="sent"], .courier-invitation-status[data-status="claimed"] { background: #e4f3e9; color: #24613e; }
+.courier-invitation-status[data-status="failed"], .courier-invitation-status[data-status="expired"] { background: #fff0e9; color: #9b3f27; }
+.courier-invitation-actions { grid-column: 2; display: flex; flex-wrap: wrap; gap: 7px; }
+.courier-invitation-actions .mvp-button { min-height: 38px; padding: 8px 11px; font-size: 10px; text-decoration: none; }
+.courier-invitation-actions svg { width: 15px; height: 15px; }
+.courier-profile > form { grid-column: 2; }
+.courier-steps { display: grid; gap: 12px; margin: 0; padding-left: 22px; color: #52655b; line-height: 1.5; }
+.courier-current-mission { max-width: 900px; margin-inline: auto; width: 100%; }
+.courier-mission--primary { border-color: rgba(23, 63, 46, .28); box-shadow: 0 18px 42px rgba(23, 39, 31, .09); }
+.courier-empty-state { text-align: center; padding-block: 42px; }
+.courier-filter-tabs { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 3px; }
+.courier-filter-tabs .mvp-button { flex: 0 0 auto; }
+
+@media (max-width: 700px) {
+  .courier-manager, .courier-workspace { gap: 14px; }
+  .courier-task-tabs { top: 62px; grid-template-columns: repeat(4, minmax(82px, 1fr)); overflow-x: auto; border-radius: 14px; }
+  .courier-task-tabs button { min-height: 45px; padding: 7px 8px; font-size: 10px; white-space: nowrap; }
+  .courier-task-tabs--workspace { grid-template-columns: repeat(4, minmax(105px, 1fr)); }
+  .courier-tab-panel .marketplace-section-heading h1, .courier-tab-panel .marketplace-section-heading h2 { margin-top: 2px; font-size: 24px; }
+  .courier-profile { grid-template-columns: 58px 1fr; }
+  .courier-profile img, .courier-profile__placeholder { width: 58px; height: 58px; }
+  .courier-profile > form, .courier-invitation-actions { grid-column: 1 / -1; }
+  .courier-invitation-status { grid-column: 2; }
+  .courier-selection-summary { align-items: stretch; flex-direction: column; }
+  .courier-selection-summary .mvp-button { width: 100%; }
+  .courier-workspace { padding-bottom: 90px; }
+  .courier-mission-actions--primary {
+    position: sticky;
+    bottom: calc(72px + env(safe-area-inset-bottom));
+    z-index: 18;
+    margin: 14px -10px -10px !important;
+    padding: 10px;
+    border: 1px solid rgba(23, 63, 46, .16);
+    border-radius: 15px;
+    background: rgba(255, 253, 248, .98);
+    box-shadow: 0 -10px 30px rgba(23, 39, 31, .13);
+    backdrop-filter: blur(16px);
+  }
+  .courier-mission-actions--primary > .mvp-button,
+  .courier-mission-actions--primary > .courier-code-form,
+  .courier-mission-actions--primary > .courier-pickup-code { width: 100%; flex: 1 0 100%; }
+}

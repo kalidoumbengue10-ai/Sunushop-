@@ -1,8 +1,8 @@
 import { requireAdminClient } from "@/lib/api/auth";
 import { ApiError } from "@/lib/api/errors";
+import { sendCourierInvitation } from "@/lib/api/courier-invitations";
 import { requireFulfillment as requireManager } from "@/lib/api/merchant-guards";
 import { apiFailure, apiSuccess } from "@/lib/api/response";
-import { createInvitationToken, invitationUrl } from "@/lib/domain/invitation-token";
 import { courierInvitationSchema, courierUpdateSchema } from "@/lib/domain/schemas";
 
 export async function GET(request: Request) {
@@ -22,7 +22,7 @@ export async function GET(request: Request) {
         .select("id, email, payload, status, expires_at, created_at")
         .eq("merchant_id", merchantId)
         .eq("kind", "courier")
-        .eq("status", "pending"),
+        .order("created_at", { ascending: false }),
       admin
         .from("deliveries")
         .select("courier_membership_id, status, delivered_at")
@@ -34,14 +34,43 @@ export async function GET(request: Request) {
     const monthStart = new Date();
     monthStart.setUTCDate(1);
     monthStart.setUTCHours(0, 0, 0, 0);
+    const invitationByEmail = new Map<string, (typeof invitations)[number]>();
+    for (const invitation of invitations ?? []) {
+      const key = invitation.email.toLowerCase();
+      if (!invitationByEmail.has(key)) invitationByEmail.set(key, invitation);
+    }
+    const invitationIds = [...invitationByEmail.values()].map((invitation) => invitation.id);
+    const { data: outboxRows, error: outboxError } = invitationIds.length
+      ? await admin.from("notification_outbox").select("dedupe_key, status, processed_at, last_error, payload").in("dedupe_key", invitationIds.map((id) => `courier-invitation:${id}`))
+      : { data: [], error: null };
+    if (outboxError) throw outboxError;
+    const outboxByKey = new Map((outboxRows ?? []).map((row) => [row.dedupe_key, row]));
+
     const items = await Promise.all((couriers ?? []).map(async (courier) => {
       const own = (deliveries ?? []).filter((delivery) => delivery.courier_membership_id === courier.id);
+      const invitation = courier.email ? invitationByEmail.get(courier.email.toLowerCase()) : null;
+      const notification = invitation ? outboxByKey.get(`courier-invitation:${invitation.id}`) : null;
+      const notificationPayload = notification?.payload as Record<string, unknown> | null;
+      const invitationStatus = courier.courier_user_id
+        ? "claimed"
+        : invitation?.status === "pending" && new Date(invitation.expires_at).getTime() <= Date.now()
+          ? "expired"
+          : invitation?.status ?? null;
       const photoUrl = courier.photo_storage_path
         ? (await admin.storage.from("courier-profiles").createSignedUrl(courier.photo_storage_path, 3600)).data?.signedUrl ?? null
         : null;
       return {
         ...courier,
         photoUrl,
+        invitation: invitation ? {
+          id: invitation.id,
+          status: invitationStatus,
+          emailStatus: notification?.status ?? "pending",
+          sentAt: notification?.processed_at ?? null,
+          expiresAt: invitation.expires_at,
+          invitationUrl: typeof notificationPayload?.url === "string" ? notificationPayload.url : null,
+          lastError: notification?.last_error ?? null,
+        } : null,
         stats: {
           active: own.filter((delivery) => !["delivered", "failed", "cancelled"].includes(delivery.status)).length,
           deliveredThisMonth: own.filter((delivery) => delivery.status === "delivered" && delivery.delivered_at && new Date(delivery.delivered_at) >= monthStart).length,
@@ -107,43 +136,20 @@ export async function POST(request: Request) {
       membershipId = data.id;
     }
 
-    await admin
-      .from("workspace_invitations")
-      .update({ status: "revoked" })
-      .eq("kind", "courier")
-      .eq("merchant_id", input.merchantId)
-      .eq("email", input.email)
-      .eq("status", "pending");
-
-    const { token, tokenHash } = createInvitationToken();
-    const expiresAt = new Date(Date.now() + 7 * 86_400_000).toISOString();
-    const { data, error } = await admin
-      .from("workspace_invitations")
-      .insert({
-        kind: "courier",
-        merchant_id: input.merchantId,
+    const invitation = await sendCourierInvitation({
+      admin,
+      request,
+      merchantId: input.merchantId,
+      membership: {
+        id: membershipId,
         email: input.email,
-        token_hash: tokenHash,
-        payload: {
-          displayName: input.displayName,
-          phone: input.phone,
-          vehicleType: input.vehicleType,
-          vehicleRegistration: input.vehicleRegistration,
-        },
-        expires_at: expiresAt,
-        invited_by: user.id,
-      })
-      .select("id")
-      .single();
-    if (error) throw error;
-    const url = invitationUrl(request, token, input.email);
-    const { error: outboxError } = await admin.from("notification_outbox").insert({
-      dedupe_key: `courier-invitation:${data.id}`,
-      channel: "email",
-      template: "courier_invitation",
-      payload: { to: input.email, displayName: input.displayName, url, expiresAt },
+        display_name: input.displayName,
+        phone: input.phone,
+        vehicle_type: input.vehicleType ?? null,
+        vehicle_registration: input.vehicleRegistration ?? null,
+      },
+      invitedBy: user.id,
     });
-    if (outboxError) throw outboxError;
     await admin.from("audit_events").insert({
       actor_id: user.id,
       merchant_id: input.merchantId,
@@ -153,7 +159,7 @@ export async function POST(request: Request) {
       request_id: requestId,
       metadata: { email: input.email },
     });
-    return apiSuccess({ id: data.id, membershipId, expiresAt }, { status: 201, requestId });
+    return apiSuccess({ ...invitation, membershipId }, { status: 201, requestId });
   } catch (error) {
     return apiFailure(error, requestId);
   }

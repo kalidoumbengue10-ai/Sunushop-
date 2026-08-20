@@ -102,6 +102,24 @@ export async function POST(request: Request) {
       }
       return apiSuccess(data, { requestId });
     }
+    if (order.status === "in_transit") {
+      const { error: repairError } = await admin
+        .from("orders")
+        .update({ status: "ready_for_handoff" })
+        .eq("id", order.id)
+        .eq("status", "in_transit");
+      if (repairError) throw repairError;
+      await admin.from("order_events").insert({
+        order_id: order.id,
+        merchant_id: order.merchant_id,
+        actor_id: user.id,
+        from_status: "in_transit",
+        to_status: "ready_for_handoff",
+        public_message: "Le statut a été corrigé avant l’affectation du livreur.",
+        metadata: { reason: "missing_delivery_assignment" },
+      });
+      order.status = "ready_for_handoff";
+    }
     if (order.status !== "ready_for_handoff") {
       throw new ApiError(409, "ORDER_TRANSITION_NOT_ALLOWED", "La commande doit être prête avant affectation.");
     }

@@ -1,7 +1,7 @@
 import { requireAdminClient } from "@/lib/api/auth";
 import { requireFulfillment } from "@/lib/api/merchant-guards";
 import { apiFailure, apiSuccess } from "@/lib/api/response";
-import { ASSIGNABLE_ORDER_STATUSES, assignableOrderLabel, assignableOrderReason, isVisibleInAssignmentQueue } from "@/lib/domain/courier-assignment";
+import { ASSIGNABLE_ORDER_STATUSES, assignableOrderLabel, assignableOrderReason, isReadyForAssignment, isVisibleInAssignmentQueue } from "@/lib/domain/courier-assignment";
 
 const one = <T,>(value: T | T[] | null) => (Array.isArray(value) ? (value[0] ?? null) : value);
 
@@ -52,7 +52,11 @@ export async function GET(request: Request) {
         publicCode: order.public_code,
         merchantSequence: order.merchant_sequence,
         status: order.status,
-        ready: order.status === "ready_for_handoff",
+        ready: isReadyForAssignment({
+          status: order.status,
+          deliverySnapshot: order.delivery_snapshot as { methodKind?: string | null; zoneId?: string | null } | null,
+          delivery: delivery ? { status: delivery.status } : null,
+        }),
         label: assignableOrderLabel(order.status, order.payment_status),
         reassignment: Boolean(delivery),
         recipientName: String(recipient?.name ?? ""),
