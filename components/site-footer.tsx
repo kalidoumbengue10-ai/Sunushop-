@@ -20,6 +20,7 @@ export function SiteFooter() {
           <strong>Vendre</strong>
           <Link href="/creer-ma-boutique">Créer ma boutique</Link>
           <Link href="/devenir-marchand">Devenir marchand</Link>
+          <Link href="/devenir-livreur">Devenir livreur</Link>
           <Link href="/partenaires">Partenaires</Link>
         </nav>
         <nav className="mvp-footer__col" aria-label="Aide">

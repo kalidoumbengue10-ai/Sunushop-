@@ -98,6 +98,25 @@ export const verificationDocumentFinalizeSchema = z.object({
   storagePath: z.string().trim().min(20).max(800),
 });
 
+const courierVerificationDocumentTypeSchema = z.enum([
+  "national_id_front",
+  "national_id_back",
+  "passport_identity",
+  "vehicle_registration_document",
+]);
+
+export const courierDocumentUploadRequestSchema = z.object({
+  documentType: courierVerificationDocumentTypeSchema,
+  fileName: z.string().trim().min(1).max(255),
+  fileSize: z.int().min(1).max(10 * 1024 * 1024),
+  mimeType: z.string().trim().max(120).optional(),
+});
+
+export const courierDocumentFinalizeSchema = z.object({
+  documentType: courierVerificationDocumentTypeSchema,
+  storagePath: z.string().trim().min(20).max(800),
+});
+
 export const intentLetterSubmissionSchema = z.object({
   signatoryName: z.string().trim().min(2).max(120),
   signatoryBirthDate: z.iso.date(),
@@ -515,6 +534,48 @@ export const merchantFastTrackSignupSchema = z.object({
   if (value.businessType === "formal" && !value.legalName) {
     context.addIssue({ code: "custom", path: ["legalName"], message: "La raison sociale est obligatoire pour une entreprise enregistrée." });
   }
+});
+
+export const courierFastTrackSignupSchema = z.object({
+  displayName: z.string().trim().min(2).max(120),
+  email: authEmail,
+  password: authPassword,
+  phone: z.string().trim().min(8).max(24),
+  vehicleType: z.enum(["walking", "bicycle", "motorbike", "car", "van", "other"]),
+  vehicleRegistration: z.string().trim().min(2).max(40).optional(),
+  consent: z.literal(true, {
+    error: "Votre accord est nécessaire pour créer votre compte livreur.",
+  }),
+  captchaToken: z.string().min(10).optional(),
+}).superRefine((value, context) => {
+  const motorised = value.vehicleType !== "walking" && value.vehicleType !== "bicycle";
+  if (motorised && !value.vehicleRegistration) {
+    context.addIssue({ code: "custom", path: ["vehicleRegistration"], message: "L’immatriculation est obligatoire pour un véhicule motorisé." });
+  }
+});
+
+export const courierProfileUpdateSchema = z.object({
+  displayName: z.string().trim().min(2).max(120),
+  phone: z.string().trim().min(8).max(24),
+  vehicleType: z.enum(["walking", "bicycle", "motorbike", "car", "van", "other"]).optional(),
+  vehicleRegistration: z.string().trim().min(2).max(40).optional(),
+});
+
+export const courierLookupSchema = z.object({
+  merchantId: z.uuid(),
+  phone: z.string().trim().min(8).max(24),
+});
+
+export const courierInviteExistingSchema = z.object({
+  merchantId: z.uuid(),
+  courierProfileId: z.uuid(),
+});
+
+export const courierVerificationDecisionSchema = z.object({
+  outcome: z.enum(["verified", "rejected", "suspended"]),
+  decisionCode: z.string().trim().max(80).optional(),
+  courierMessage: z.string().trim().max(1000).optional(),
+  internalNote: z.string().trim().max(2000).optional(),
 });
 
 export const merchantInvitationSchema = merchantApplicationSchema.safeExtend({

@@ -27,6 +27,12 @@ type OrderInfo = {
   recipient_snapshot: Record<string, unknown>;
   order_items: Array<{ product_snapshot: { title?: string }; sku_snapshot: string; quantity: number }>;
 };
+type CourierSearchResult = {
+  phone: string;
+  courier: { id: string; displayName: string; vehicleType: string | null; verified: boolean } | null;
+  reason?: "not_found" | "not_verified";
+  linkedStatus?: string | null;
+};
 type AssignableOrder = {
   id: string; publicCode: string; merchantSequence: number; status: string;
   ready: boolean; label: string; reassignment: boolean; recipientName: string; city: string;
@@ -83,6 +89,7 @@ export function CourierManager({ merchantId, canManagePayments = false, onOpenOr
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [search, setSearch] = useState<CourierSearchResult | null>(null);
 
   const load = useCallback(async () => {
     const responses = await Promise.all([
@@ -124,13 +131,36 @@ export function CourierManager({ merchantId, canManagePayments = false, onOpenOr
     } finally { setBusy(false); }
   };
 
-  const invite = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault(); const form = event.currentTarget; const values = new FormData(form);
-    const data = await submit("/api/merchant/couriers", "POST", JSON.stringify({ merchantId, email: values.get("email"), displayName: values.get("displayName"), phone: values.get("phone"), vehicleType: values.get("vehicleType") || undefined, vehicleRegistration: values.get("vehicleRegistration") || undefined }), "Livreur enregistré.");
-    if (data) {
-      setMessage(data.emailSent ? "Livreur enregistré et invitation envoyée par email." : "Livreur enregistré, mais l’email n’a pas pu être envoyé. Utilisez le bouton WhatsApp ou renvoyez l’invitation.");
-      form.reset();
-    }
+  const lookup = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const phone = String(new FormData(event.currentTarget).get("phone") ?? "");
+    setBusy(true); setError(""); setMessage(""); setSearch(null);
+    try {
+      const response = await fetch(`/api/merchant/couriers/lookup?merchantId=${merchantId}&phone=${encodeURIComponent(phone)}`, { cache: "no-store" });
+      const payload = await response.json();
+      if (!response.ok) { setError(payload.error?.message ?? "Recherche impossible."); return; }
+      setSearch({ ...payload.data, phone });
+    } catch {
+      setError("Connexion interrompue. Réessayez sans ressaisir les informations.");
+    } finally { setBusy(false); }
+  };
+
+  const inviteFound = async () => {
+    if (!search?.courier) return;
+    const data = await submit("/api/merchant/couriers/invite-existing", "POST", JSON.stringify({ merchantId, courierProfileId: search.courier.id }), "Invitation envoyée. Le livreur la retrouve dans son espace.");
+    if (data) setSearch(null);
+  };
+
+  const cancelInvitation = async (courier: Courier) => {
+    setBusy(true); setError(""); setMessage("");
+    try {
+      const response = await fetch(`/api/merchant/couriers/invite-existing/${courier.id}?merchantId=${merchantId}`, { method: "DELETE" });
+      const payload = await response.json();
+      if (!response.ok) { setError(payload.error?.message ?? "Annulation impossible."); return; }
+      setMessage("Invitation annulée."); await load();
+    } catch {
+      setError("Connexion interrompue. Réessayez sans ressaisir les informations.");
+    } finally { setBusy(false); }
   };
   const resendInvitation = async (courier: Courier) => {
     const data = await submit(`/api/merchant/couriers/${courier.id}/invitation`, "POST", JSON.stringify({ merchantId }), "Invitation traitée.");
@@ -240,8 +270,8 @@ export function CourierManager({ merchantId, canManagePayments = false, onOpenOr
     </section>}
 
     {tab === "couriers" && <section role="tabpanel" className="courier-tab-panel">
-      <div className="mvp-grid"><section className="mvp-card"><h2>Inviter un livreur</h2><form className="mvp-form" onSubmit={invite}><label className="mvp-field">Nom complet<input name="displayName" required /></label><label className="mvp-field">Email<input name="email" type="email" required /></label><label className="mvp-field">Téléphone<input name="phone" inputMode="tel" required /></label><label className="mvp-field">Véhicule<select name="vehicleType" defaultValue=""><option value="">Non renseigné</option>{Object.entries(vehicleLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label><label className="mvp-field">Immatriculation<input name="vehicleRegistration" /></label><button className="mvp-button" disabled={busy}>{busy ? "Envoi…" : "Enregistrer le livreur"}</button></form></section>
-      <section className="mvp-card"><h2>Comment ça marche ?</h2><ol className="courier-steps"><li>Le livreur reçoit un email immédiatement.</li><li>En cas d’échec, partagez le lien par WhatsApp.</li><li>Il crée son accès puis peut recevoir des missions.</li></ol></section></div>
+      <div className="mvp-grid"><section className="mvp-card"><h2>Inviter un livreur</h2><p>Cherchez un livreur déjà inscrit sur SunuShop avec son numéro de téléphone.</p><form className="mvp-form" onSubmit={lookup}><label className="mvp-field">Téléphone du livreur<input name="phone" inputMode="tel" placeholder="+221 77 000 00 00" required /></label><button className="mvp-button" disabled={busy}>{busy ? "Recherche…" : "Rechercher"}</button></form>{search?.courier && <div className="mvp-row"><span><strong>{search.courier.displayName}</strong><small>{search.courier.vehicleType ? vehicleLabels[search.courier.vehicleType] ?? search.courier.vehicleType : "Véhicule non renseigné"} · Profil vérifié</small></span>{search.linkedStatus ? <small>{search.linkedStatus === "pending_invitation" ? "Invitation déjà envoyée" : "Déjà dans votre équipe"}</small> : <button type="button" className="mvp-button" disabled={busy} onClick={() => void inviteFound()}>Inviter dans mon équipe</button>}</div>}{search && !search.courier && <p className="mvp-empty">{search.reason === "not_verified" ? "Ce livreur est inscrit mais sa vérification n’est pas encore terminée." : "Aucun livreur vérifié à ce numéro. Invitez-le à s’inscrire sur sunushop.fr/devenir-livreur, puis recherchez-le à nouveau."}</p>}</section>
+      <section className="mvp-card"><h2>Comment ça marche ?</h2><ol className="courier-steps"><li>Le livreur s’inscrit seul sur SunuShop et fait vérifier sa pièce d’identité.</li><li>Vous le retrouvez avec son numéro de téléphone.</li><li>Il accepte votre invitation depuis son espace et reçoit vos missions.</li></ol></section></div>
       <section>
         <div className="marketplace-section-heading"><div><h2>Équipe de livraison</h2><p>L’état affiché correspond à l’envoi réel de l’invitation.</p></div><span>{couriers.length}</span></div>
         <div className="courier-profile-grid">{couriers.map((courier) => {

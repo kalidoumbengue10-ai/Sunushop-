@@ -45,13 +45,35 @@ export function CourierWorkspace() {
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [routes, setRoutes] = useState<Record<string, DeliveryRoute | null>>({});
+  const [invitations, setInvitations] = useState<Array<{ id: string; shopName: string; location: string; invitedAt: string }>>([]);
 
   const load = useCallback(async () => {
-    const response = await fetch("/api/deliveries/mine", { cache: "no-store" });
+    const [response, invitationResponse] = await Promise.all([
+      fetch("/api/deliveries/mine", { cache: "no-store" }),
+      fetch("/api/courier/invitations", { cache: "no-store" }),
+    ]);
     const payload = await response.json();
     if (!response.ok) throw new Error(payload.error?.message);
     setItems(payload.data.items); setMemberships(payload.data.memberships); setShopStats(payload.data.shopStats); setPayouts(payload.data.payouts); setStats(payload.data.stats);
+    if (invitationResponse.ok) setInvitations((await invitationResponse.json()).data.items);
   }, []);
+
+  const respondToInvitation = async (invitationId: string, decision: "accept" | "decline") => {
+    setError(""); setMessage("");
+    try {
+      const response = await fetch(`/api/courier/invitations/${invitationId}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ decision }),
+      });
+      const payload = await response.json();
+      if (!response.ok) { setError(payload.error?.message ?? "Action impossible."); return; }
+      setMessage(decision === "accept" ? "Invitation acceptée. Vous pouvez recevoir les missions de cette boutique." : "Invitation refusée.");
+      await load();
+    } catch {
+      setError("Connexion interrompue. Réessayez.");
+    }
+  };
   useEffect(() => {
     let cancelled = false;
     queueMicrotask(() => { if (!cancelled) load().catch((caught: Error) => setError(caught.message)); });
@@ -167,6 +189,7 @@ export function CourierWorkspace() {
     {message && <p className="mvp-alert" role="status">{message}</p>}{error && <p className="mvp-alert mvp-alert--error" role="alert">{error}</p>}
 
     {tab === "mission" && <section role="tabpanel" className="courier-tab-panel courier-current-mission">
+      {invitations.length > 0 && <section className="mvp-card mvp-card--full"><h2>Invitations reçues</h2><p>Ces boutiques souhaitent vous confier leurs livraisons.</p><div className="mvp-list">{invitations.map((invitation) => <div className="mvp-row" key={invitation.id}><span><strong>{invitation.shopName}</strong><small>{invitation.location || "Localisation à préciser"}</small></span><div className="mvp-actions"><button type="button" className="mvp-button" onClick={() => void respondToInvitation(invitation.id, "accept")}>Accepter</button><button type="button" className="mvp-button mvp-button--secondary" onClick={() => void respondToInvitation(invitation.id, "decline")}>Refuser</button></div></div>)}</div></section>}
       <div className="marketplace-section-heading"><div><span className="mvp-eyebrow">À faire maintenant</span><h1>Ma mission actuelle</h1><p>Une seule action principale est affichée à chaque étape.</p></div><span>{activeItems.length}</span></div>
       {activeItems[0] ? deliveryCard(activeItems[0], true) : <div className="mvp-card mvp-card--full courier-empty-state"><h2>Aucune mission en attente</h2><p>Les nouvelles missions confiées par vos boutiques apparaîtront ici.</p></div>}
       {activeItems.length > 1 && <details className="courier-history"><summary>Missions suivantes ({activeItems.length - 1})</summary><div className="courier-mission-grid">{activeItems.slice(1).map((delivery) => deliveryCard(delivery))}</div></details>}

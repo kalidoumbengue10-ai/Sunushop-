@@ -144,38 +144,66 @@ async function openCourierTab(page: Page, innerTab: "Missions" | "À affecter" |
   await page.getByRole("tab", { name: new RegExp(`^${innerTab}`) }).click();
 }
 
-async function inviteCourier(page: Page, merchantId: string, email: string, suffix: string) {
-  await openCourierTab(page, "Livreurs");
-  const card = page.locator("section.mvp-card").filter({ has: page.getByRole("heading", { name: "Inviter un livreur" }) });
-  await card.getByLabel("Nom complet").fill(`Livreur ${suffix}`);
-  await card.getByLabel("Email").fill(email);
-  await card.getByLabel("Téléphone").fill("+221770003333");
-  await card.getByLabel("Véhicule").selectOption("motorbike");
-  await card.getByLabel("Immatriculation").fill(`DK-${suffix}-${runId.slice(-4)}`);
-  const invitationResponse = page.waitForResponse(
-    (response) => response.url().endsWith("/api/merchant/couriers") && response.request().method() === "POST",
-  );
-  const invitationButton = card.getByRole("button", { name: "Enregistrer le livreur" });
-  await invitationButton.focus();
-  await invitationButton.press("Enter");
-  expect((await invitationResponse).status()).toBe(201);
-  await expect(page.locator(".mvp-alert[role=\"status\"]")).toContainText("Livreur enregistré", { timeout: 15_000 });
-  await expect.poll(async () => (await admin.from("workspace_invitations").select("id").eq("merchant_id", merchantId).eq("email", email).eq("kind", "courier").order("created_at", { ascending: false }).limit(1).maybeSingle()).data?.id).toBeTruthy();
-  const { data: invitation } = await admin.from("workspace_invitations").select("id").eq("merchant_id", merchantId).eq("email", email).eq("kind", "courier").order("created_at", { ascending: false }).limit(1).single();
-  if (!invitation) throw new Error("Invitation livreur introuvable dans l’outbox.");
-  const { data: outbox, error: outboxError } = await admin.from("notification_outbox").select("payload").eq("dedupe_key", `courier-invitation:${invitation.id}`).single();
-  if (outboxError) throw outboxError;
-  const notification = outbox.payload as JsonObject;
-  return String(notification.url);
+// Le livreur est inscrit sur la plateforme (vivier) ; chaque boutique le
+// retrouve par son téléphone puis l'invite, et il accepte depuis son espace.
+async function ensureCourierProfile(userId: string, email: string, phone: string) {
+  const { data: existing } = await admin.from("courier_profiles").select("id").eq("user_id", userId).maybeSingle();
+  if (existing) return existing.id;
+  const { data, error } = await admin
+    .from("courier_profiles")
+    .insert({
+      user_id: userId,
+      display_name: `Livreur ${runId.slice(-4)}`,
+      email,
+      phone,
+      vehicle_type: "motorbike",
+      vehicle_registration: `DK-${runId.slice(-4)}`,
+      verification_status: "verified",
+      verified_at: new Date().toISOString(),
+    })
+    .select("id")
+    .single();
+  if (error) throw error;
+  return data.id;
 }
 
-async function claimInvitation(context: BrowserContext, invitationUrl: string) {
-  const url = new URL(invitationUrl);
-  const next = url.searchParams.get("next") ?? `${url.pathname}${url.search}`;
-  const page = await context.newPage();
-  await page.goto(next);
-  await expect(page.getByText("Votre accès livreur est actif.")).toBeVisible();
-  await page.close();
+async function inviteCourierFromPool(
+  page: Page,
+  merchantId: string,
+  courierProfileId: string,
+  phone: string,
+  courierContext: BrowserContext,
+) {
+  await openCourierTab(page, "Livreurs");
+  const card = page.locator("section.mvp-card").filter({ has: page.getByRole("heading", { name: "Inviter un livreur" }) });
+  await card.getByLabel("Téléphone du livreur").fill(phone);
+  await activateButton(card.getByRole("button", { name: "Rechercher" }));
+  await expect(card.getByRole("button", { name: "Inviter dans mon équipe" })).toBeVisible({ timeout: 15_000 });
+  const [inviteResponse] = await Promise.all([
+    page.waitForResponse(
+      (response) => response.url().endsWith("/api/merchant/couriers/invite-existing") && response.request().method() === "POST",
+      { timeout: 60_000 },
+    ),
+    activateButton(card.getByRole("button", { name: "Inviter dans mon équipe" })),
+  ]);
+  expect(inviteResponse.status(), await inviteResponse.text()).toBe(201);
+
+  await expect.poll(async () =>
+    (await admin.from("courier_memberships").select("id").eq("merchant_id", merchantId).eq("courier_profile_id", courierProfileId).maybeSingle()).data?.id,
+    { timeout: 20_000 },
+  ).toBeTruthy();
+  const { data: membership } = await admin
+    .from("courier_memberships")
+    .select("id")
+    .eq("merchant_id", merchantId)
+    .eq("courier_profile_id", courierProfileId)
+    .single();
+  await responseData(await courierContext.request.post(`/api/courier/invitations/${membership!.id}`, { data: { decision: "accept" } }));
+  await expect.poll(async () =>
+    (await admin.from("courier_memberships").select("status").eq("id", membership!.id).single()).data?.status,
+    { timeout: 20_000 },
+  ).toBe("active");
+  return membership!.id;
 }
 
 async function assignmentForm(page: Page) {
@@ -245,6 +273,7 @@ test.describe.serial("flux livreur complet", () => {
       client: `courier-client-${runId}@example.test`, courier: `courier-main-${runId}@example.test`, outsider: `courier-outsider-${runId}@example.test`,
       support: `courier-support-${runId}@example.test`,
     };
+    const courierPhone = `+2217702${String(Date.now()).slice(-5)}`;
     const [merchantAUser, merchantBUser, clientUser, courierUser, outsiderUser] = await Promise.all([
       createUser(emails.merchantA, "Marchand A"), createUser(emails.merchantB, "Marchand B"),
       createUser(emails.client, "Client livraison"), createUser(emails.courier, "Livreur principal"), createUser(emails.outsider, "Livreur extérieur"),
@@ -273,9 +302,9 @@ test.describe.serial("flux livreur complet", () => {
         prepareOrder(clientContext, merchantBContext, merchantB.id, catalogB.zoneId, catalogB.variantId, "B1"),
       ]);
 
-      const invitationA = await inviteCourier(merchantAPage, merchantA.id, emails.courier, "A");
-      await claimInvitation(courierContext, invitationA);
-      const { data: membershipA } = await admin.from("courier_memberships").select("id").eq("merchant_id", merchantA.id).eq("courier_user_id", courierUser).single();
+      const courierProfileId = await ensureCourierProfile(courierUser, emails.courier, courierPhone);
+      const membershipAId = await inviteCourierFromPool(merchantAPage, merchantA.id, courierProfileId, courierPhone, courierContext);
+      const membershipA = { id: membershipAId };
 
       await openCourierTab(merchantAPage);
       const blockedForm = await assignmentForm(merchantAPage);
@@ -327,10 +356,9 @@ test.describe.serial("flux livreur complet", () => {
       const { data: deliveryA3 } = await admin.from("deliveries").select("id").eq("order_id", orderA3.id).single();
       await completeMission({ courierPage, merchantPage: merchantAPage, clientContext, order: orderA3, deliveryId: deliveryA3!.id });
 
-      const invitationB = await inviteCourier(merchantBPage, merchantB.id, emails.courier, "B");
-      await claimInvitation(courierContext, invitationB);
+      const membershipBId = await inviteCourierFromPool(merchantBPage, merchantB.id, courierProfileId, courierPhone, courierContext);
       await responseData(await courierContext.request.patch("/api/courier/payment-profile", { data: { wavePaymentNumber: "+221770002223", orangeMoneyPaymentNumber: "+221770002224", preferredPaymentChannel: "orange_money" } }));
-      const { data: membershipB } = await admin.from("courier_memberships").select("id").eq("merchant_id", merchantB.id).eq("courier_user_id", courierUser).single();
+      const membershipB = { id: membershipBId };
       await assignViaUi(merchantBPage, orderB1.id, membershipB!.id);
       const { data: deliveryB1 } = await admin.from("deliveries").select("id").eq("order_id", orderB1.id).single();
       await completeMission({ courierPage, merchantPage: merchantBPage, clientContext, order: orderB1, deliveryId: deliveryB1!.id });
@@ -353,8 +381,17 @@ test.describe.serial("flux livreur complet", () => {
       await courierPage.goto("/marchand?mode=missions");
       await courierPage.getByRole("tab", { name: /^Paiements/ }).click();
       const orangePayout = courierPage.locator("article.courier-shop-profile").filter({ hasText: `OM-COURIER-${runId}` });
-      await activateButton(orangePayout.getByRole("button", { name: "Confirmer la réception" }));
-      await expect.poll(async () => (await admin.from("courier_payouts").select("status").eq("external_reference", `OM-COURIER-${runId}`).single()).data?.status).toBe("confirmed");
+      // La première compilation de la route de décision peut dépasser le délai
+      // du poll : on attend la réponse HTTP avant de sonder la base.
+      const [orangeDecision] = await Promise.all([
+        courierPage.waitForResponse(
+          (response) => /\/api\/courier\/payouts\/.+\/decision$/.test(new URL(response.url()).pathname) && response.request().method() === "POST",
+          { timeout: 60_000 },
+        ),
+        activateButton(orangePayout.getByRole("button", { name: "Confirmer la réception" })),
+      ]);
+      expect(orangeDecision.status(), await orangeDecision.text()).toBe(200);
+      await expect.poll(async () => (await admin.from("courier_payouts").select("status").eq("external_reference", `OM-COURIER-${runId}`).single()).data?.status, { timeout: 20_000 }).toBe("confirmed");
 
       await openCourierTab(merchantAPage);
       await merchantAPage.getByRole("tab", { name: /^Paiements/ }).click();

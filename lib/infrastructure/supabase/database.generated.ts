@@ -360,18 +360,21 @@ export type Database = {
       }
       courier_memberships: {
         Row: {
-          accepted_at: string
-          courier_user_id: string
+          accepted_at: string | null
+          courier_profile_id: string | null
+          courier_user_id: string | null
           created_at: string
           display_name: string
           email: string | null
           id: string
+          invited_at: string
           invited_by: string
           merchant_id: string
           orange_money_payment_number: string | null
           phone: string
           photo_storage_path: string | null
           preferred_payment_channel: string | null
+          responded_at: string | null
           status: Database["public"]["Enums"]["courier_membership_status"]
           updated_at: string
           vehicle_registration: string | null
@@ -379,18 +382,21 @@ export type Database = {
           wave_payment_number: string | null
         }
         Insert: {
-          accepted_at?: string
-          courier_user_id: string
+          accepted_at?: string | null
+          courier_profile_id?: string | null
+          courier_user_id?: string | null
           created_at?: string
           display_name: string
           email?: string | null
           id?: string
+          invited_at?: string
           invited_by: string
           merchant_id: string
           orange_money_payment_number?: string | null
           phone: string
           photo_storage_path?: string | null
           preferred_payment_channel?: string | null
+          responded_at?: string | null
           status?: Database["public"]["Enums"]["courier_membership_status"]
           updated_at?: string
           vehicle_registration?: string | null
@@ -398,18 +404,21 @@ export type Database = {
           wave_payment_number?: string | null
         }
         Update: {
-          accepted_at?: string
-          courier_user_id?: string
+          accepted_at?: string | null
+          courier_profile_id?: string | null
+          courier_user_id?: string | null
           created_at?: string
           display_name?: string
           email?: string | null
           id?: string
+          invited_at?: string
           invited_by?: string
           merchant_id?: string
           orange_money_payment_number?: string | null
           phone?: string
           photo_storage_path?: string | null
           preferred_payment_channel?: string | null
+          responded_at?: string | null
           status?: Database["public"]["Enums"]["courier_membership_status"]
           updated_at?: string
           vehicle_registration?: string | null
@@ -417,6 +426,13 @@ export type Database = {
           wave_payment_number?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "courier_memberships_courier_profile_id_fkey"
+            columns: ["courier_profile_id"]
+            isOneToOne: false
+            referencedRelation: "courier_profiles"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "courier_memberships_courier_user_id_fkey"
             columns: ["courier_user_id"]
@@ -568,6 +584,286 @@ export type Database = {
             columns: ["voided_by"]
             isOneToOne: false
             referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      courier_profiles: {
+        Row: {
+          created_at: string
+          display_name: string
+          email: string | null
+          id: string
+          orange_money_payment_number: string | null
+          phone: string
+          photo_storage_path: string | null
+          preferred_payment_channel: string | null
+          updated_at: string
+          user_id: string
+          vehicle_registration: string | null
+          vehicle_type:
+            | Database["public"]["Enums"]["courier_vehicle_type"]
+            | null
+          verification_status: Database["public"]["Enums"]["courier_verification_status"]
+          verified_at: string | null
+          wave_payment_number: string | null
+        }
+        Insert: {
+          created_at?: string
+          display_name: string
+          email?: string | null
+          id?: string
+          orange_money_payment_number?: string | null
+          phone: string
+          photo_storage_path?: string | null
+          preferred_payment_channel?: string | null
+          updated_at?: string
+          user_id: string
+          vehicle_registration?: string | null
+          vehicle_type?:
+            | Database["public"]["Enums"]["courier_vehicle_type"]
+            | null
+          verification_status?: Database["public"]["Enums"]["courier_verification_status"]
+          verified_at?: string | null
+          wave_payment_number?: string | null
+        }
+        Update: {
+          created_at?: string
+          display_name?: string
+          email?: string | null
+          id?: string
+          orange_money_payment_number?: string | null
+          phone?: string
+          photo_storage_path?: string | null
+          preferred_payment_channel?: string | null
+          updated_at?: string
+          user_id?: string
+          vehicle_registration?: string | null
+          vehicle_type?:
+            | Database["public"]["Enums"]["courier_vehicle_type"]
+            | null
+          verification_status?: Database["public"]["Enums"]["courier_verification_status"]
+          verified_at?: string | null
+          wave_payment_number?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "courier_profiles_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: true
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      courier_verification_cases: {
+        Row: {
+          assigned_reviewer_id: string | null
+          courier_id: string
+          courier_message: string | null
+          created_at: string
+          decided_at: string | null
+          decision_code: string | null
+          id: string
+          internal_note: string | null
+          review_started_at: string | null
+          status: Database["public"]["Enums"]["courier_verification_status"]
+          submission_version: number
+          submitted_at: string | null
+          updated_at: string
+        }
+        Insert: {
+          assigned_reviewer_id?: string | null
+          courier_id: string
+          courier_message?: string | null
+          created_at?: string
+          decided_at?: string | null
+          decision_code?: string | null
+          id?: string
+          internal_note?: string | null
+          review_started_at?: string | null
+          status?: Database["public"]["Enums"]["courier_verification_status"]
+          submission_version?: number
+          submitted_at?: string | null
+          updated_at?: string
+        }
+        Update: {
+          assigned_reviewer_id?: string | null
+          courier_id?: string
+          courier_message?: string | null
+          created_at?: string
+          decided_at?: string | null
+          decision_code?: string | null
+          id?: string
+          internal_note?: string | null
+          review_started_at?: string | null
+          status?: Database["public"]["Enums"]["courier_verification_status"]
+          submission_version?: number
+          submitted_at?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "courier_verification_cases_assigned_reviewer_id_fkey"
+            columns: ["assigned_reviewer_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "courier_verification_cases_courier_id_fkey"
+            columns: ["courier_id"]
+            isOneToOne: false
+            referencedRelation: "courier_profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      courier_verification_documents: {
+        Row: {
+          case_id: string
+          courier_id: string
+          document_type: Database["public"]["Enums"]["courier_verification_document_type"]
+          id: string
+          mime_type: string
+          purged_at: string | null
+          reviewed_at: string | null
+          sha256: string | null
+          size_bytes: number
+          status: Database["public"]["Enums"]["verification_document_status"]
+          storage_bucket: string
+          storage_path: string | null
+          uploaded_at: string
+          uploaded_by: string
+          version: number
+        }
+        Insert: {
+          case_id: string
+          courier_id: string
+          document_type: Database["public"]["Enums"]["courier_verification_document_type"]
+          id?: string
+          mime_type: string
+          purged_at?: string | null
+          reviewed_at?: string | null
+          sha256?: string | null
+          size_bytes: number
+          status?: Database["public"]["Enums"]["verification_document_status"]
+          storage_bucket?: string
+          storage_path?: string | null
+          uploaded_at?: string
+          uploaded_by: string
+          version: number
+        }
+        Update: {
+          case_id?: string
+          courier_id?: string
+          document_type?: Database["public"]["Enums"]["courier_verification_document_type"]
+          id?: string
+          mime_type?: string
+          purged_at?: string | null
+          reviewed_at?: string | null
+          sha256?: string | null
+          size_bytes?: number
+          status?: Database["public"]["Enums"]["verification_document_status"]
+          storage_bucket?: string
+          storage_path?: string | null
+          uploaded_at?: string
+          uploaded_by?: string
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "courier_verification_documents_case_id_fkey"
+            columns: ["case_id"]
+            isOneToOne: false
+            referencedRelation: "courier_verification_cases"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "courier_verification_documents_courier_id_fkey"
+            columns: ["courier_id"]
+            isOneToOne: false
+            referencedRelation: "courier_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "courier_verification_documents_uploaded_by_fkey"
+            columns: ["uploaded_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      courier_verification_events: {
+        Row: {
+          actor_id: string | null
+          case_id: string
+          courier_id: string
+          created_at: string
+          event_type: string
+          from_status:
+            | Database["public"]["Enums"]["courier_verification_status"]
+            | null
+          id: number
+          metadata: Json
+          public_message: string | null
+          to_status:
+            | Database["public"]["Enums"]["courier_verification_status"]
+            | null
+        }
+        Insert: {
+          actor_id?: string | null
+          case_id: string
+          courier_id: string
+          created_at?: string
+          event_type: string
+          from_status?:
+            | Database["public"]["Enums"]["courier_verification_status"]
+            | null
+          id?: never
+          metadata?: Json
+          public_message?: string | null
+          to_status?:
+            | Database["public"]["Enums"]["courier_verification_status"]
+            | null
+        }
+        Update: {
+          actor_id?: string | null
+          case_id?: string
+          courier_id?: string
+          created_at?: string
+          event_type?: string
+          from_status?:
+            | Database["public"]["Enums"]["courier_verification_status"]
+            | null
+          id?: never
+          metadata?: Json
+          public_message?: string | null
+          to_status?:
+            | Database["public"]["Enums"]["courier_verification_status"]
+            | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "courier_verification_events_actor_id_fkey"
+            columns: ["actor_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "courier_verification_events_case_id_fkey"
+            columns: ["case_id"]
+            isOneToOne: false
+            referencedRelation: "courier_verification_cases"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "courier_verification_events_courier_id_fkey"
+            columns: ["courier_id"]
+            isOneToOne: false
+            referencedRelation: "courier_profiles"
             referencedColumns: ["id"]
           },
         ]
@@ -1764,6 +2060,7 @@ export type Database = {
           city: string | null
           closed_at: string | null
           created_at: string
+          customer_since: string | null
           description: string | null
           email: string | null
           id: string
@@ -1795,6 +2092,7 @@ export type Database = {
           city?: string | null
           closed_at?: string | null
           created_at?: string
+          customer_since?: string | null
           description?: string | null
           email?: string | null
           id?: string
@@ -1826,6 +2124,7 @@ export type Database = {
           city?: string | null
           closed_at?: string | null
           created_at?: string
+          customer_since?: string | null
           description?: string | null
           email?: string | null
           id?: string
@@ -2621,6 +2920,7 @@ export type Database = {
           loyalty_processed_at: string | null
           merchant_id: string
           merchant_sequence: number
+          paid_at: string | null
           payment_instructions_snapshot: Json
           payment_method: Database["public"]["Enums"]["order_payment_method"]
           payment_status: string
@@ -2652,6 +2952,7 @@ export type Database = {
           loyalty_processed_at?: string | null
           merchant_id: string
           merchant_sequence: number
+          paid_at?: string | null
           payment_instructions_snapshot?: Json
           payment_method: Database["public"]["Enums"]["order_payment_method"]
           payment_status?: string
@@ -2683,6 +2984,7 @@ export type Database = {
           loyalty_processed_at?: string | null
           merchant_id?: string
           merchant_sequence?: number
+          paid_at?: string | null
           payment_instructions_snapshot?: Json
           payment_method?: Database["public"]["Enums"]["order_payment_method"]
           payment_status?: string
@@ -2892,6 +3194,7 @@ export type Database = {
           active: boolean
           channel: Database["public"]["Enums"]["payment_channel"]
           created_at: string
+          payment_link: string | null
           payment_number: string
           updated_at: string
           updated_by: string
@@ -2901,6 +3204,7 @@ export type Database = {
           active?: boolean
           channel: Database["public"]["Enums"]["payment_channel"]
           created_at?: string
+          payment_link?: string | null
           payment_number: string
           updated_at?: string
           updated_by: string
@@ -2910,6 +3214,7 @@ export type Database = {
           active?: boolean
           channel?: Database["public"]["Enums"]["payment_channel"]
           created_at?: string
+          payment_link?: string | null
           payment_number?: string
           updated_at?: string
           updated_by?: string
@@ -3453,6 +3758,57 @@ export type Database = {
         }
         Relationships: []
       }
+      subscription_value_ledger: {
+        Row: {
+          amount_xof: number
+          created_at: string
+          id: string
+          merchant_id: string
+          metadata: Json
+          origin: Database["public"]["Enums"]["subscription_value_origin"]
+          plan_id: string
+          recognized_at: string
+          source_id: string
+        }
+        Insert: {
+          amount_xof: number
+          created_at?: string
+          id?: string
+          merchant_id: string
+          metadata?: Json
+          origin: Database["public"]["Enums"]["subscription_value_origin"]
+          plan_id: string
+          recognized_at: string
+          source_id: string
+        }
+        Update: {
+          amount_xof?: number
+          created_at?: string
+          id?: string
+          merchant_id?: string
+          metadata?: Json
+          origin?: Database["public"]["Enums"]["subscription_value_origin"]
+          plan_id?: string
+          recognized_at?: string
+          source_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "subscription_value_ledger_merchant_id_fkey"
+            columns: ["merchant_id"]
+            isOneToOne: false
+            referencedRelation: "merchant_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "subscription_value_ledger_plan_id_fkey"
+            columns: ["plan_id"]
+            isOneToOne: false
+            referencedRelation: "subscription_plans"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       verification_cases: {
         Row: {
           assigned_reviewer_id: string | null
@@ -3913,8 +4269,15 @@ export type Database = {
         Returns: {
           approved_payments_count: number
           delivered_units: number
+          order_volume_xof: number
+          paid_orders_count: number
+          paid_units: number
           product_revenue_xof: number
+          refunds_xof: number
+          subscription_breakdown: Json
           subscription_revenue_xof: number
+          top_categories: Json
+          top_products: Json
           top_sellers: Json
         }[]
       }
@@ -3980,6 +4343,7 @@ export type Database = {
           platform_commission_xof: number
           recipient_code_attempts: number
           recipient_code_hash: string
+          route_snapshot: Json | null
           status: Database["public"]["Enums"]["delivery_status"]
           terminal_at: string | null
           updated_at: string
@@ -3990,10 +4354,6 @@ export type Database = {
           isOneToOne: true
           isSetofReturn: false
         }
-      }
-      mark_order_ready_for_handoff: {
-        Args: { p_order_id: string }
-        Returns: Json
       }
       confirm_direct_payment: {
         Args: { p_declaration_id: string }
@@ -4038,6 +4398,41 @@ export type Database = {
           p_window_seconds: number
         }
         Returns: boolean
+      }
+      courier_verification_case_is_complete: {
+        Args: { p_case_id: string }
+        Returns: boolean
+      }
+      create_courier_membership_invitation: {
+        Args: { p_courier_profile_id: string; p_merchant_id: string }
+        Returns: {
+          accepted_at: string | null
+          courier_profile_id: string | null
+          courier_user_id: string | null
+          created_at: string
+          display_name: string
+          email: string | null
+          id: string
+          invited_at: string
+          invited_by: string
+          merchant_id: string
+          orange_money_payment_number: string | null
+          phone: string
+          photo_storage_path: string | null
+          preferred_payment_channel: string | null
+          responded_at: string | null
+          status: Database["public"]["Enums"]["courier_membership_status"]
+          updated_at: string
+          vehicle_registration: string | null
+          vehicle_type: string | null
+          wave_payment_number: string | null
+        }
+        SetofOptions: {
+          from: "*"
+          to: "courier_memberships"
+          isOneToOne: true
+          isSetofReturn: false
+        }
       }
       create_delivery_zone: {
         Args: {
@@ -4091,21 +4486,6 @@ export type Database = {
       create_order_batch_without_loyalty: {
         Args: { p_groups: Json; p_idempotency_key: string; p_recipient: Json }
         Returns: Json
-      }
-      nearby_storefront_product_ids: {
-        Args: {
-          p_category_slug?: string | null
-          p_latitude: number
-          p_limit?: number
-          p_longitude: number
-          p_offset?: number
-          p_query?: string | null
-        }
-        Returns: {
-          distance_km: number | null
-          product_id: string
-          total_count: number
-        }[]
       }
       create_order_payment_intent: {
         Args: {
@@ -4233,6 +4613,13 @@ export type Database = {
         }
         Returns: boolean
       }
+      latest_courier_document_exists: {
+        Args: {
+          p_case_id: string
+          p_type: Database["public"]["Enums"]["courier_verification_document_type"]
+        }
+        Returns: boolean
+      }
       latest_verification_document_exists: {
         Args: {
           p_case_id: string
@@ -4266,6 +4653,10 @@ export type Database = {
           isOneToOne: true
           isSetofReturn: false
         }
+      }
+      mark_order_ready_for_handoff: {
+        Args: { p_order_id: string }
+        Returns: Json
       }
       mark_payout_failed: {
         Args: { p_error?: string; p_external_id: string }
@@ -4348,6 +4739,21 @@ export type Database = {
       mark_verification_document_purged: {
         Args: { p_document_id: string }
         Returns: undefined
+      }
+      nearby_storefront_product_ids: {
+        Args: {
+          p_category_slug?: string
+          p_latitude: number
+          p_limit?: number
+          p_longitude: number
+          p_offset?: number
+          p_query?: string
+        }
+        Returns: {
+          distance_km: number
+          product_id: string
+          total_count: number
+        }[]
       }
       open_delivery_dispute: {
         Args: { p_actor_id: string; p_order_id: string; p_reason: string }
@@ -4455,6 +4861,7 @@ export type Database = {
           loyalty_processed_at: string | null
           merchant_id: string
           merchant_sequence: number
+          paid_at: string | null
           payment_instructions_snapshot: Json
           payment_method: Database["public"]["Enums"]["order_payment_method"]
           payment_status: string
@@ -4559,6 +4966,37 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      respond_to_courier_invitation: {
+        Args: { p_accept: boolean; p_membership_id: string }
+        Returns: {
+          accepted_at: string | null
+          courier_profile_id: string | null
+          courier_user_id: string | null
+          created_at: string
+          display_name: string
+          email: string | null
+          id: string
+          invited_at: string
+          invited_by: string
+          merchant_id: string
+          orange_money_payment_number: string | null
+          phone: string
+          photo_storage_path: string | null
+          preferred_payment_channel: string | null
+          responded_at: string | null
+          status: Database["public"]["Enums"]["courier_membership_status"]
+          updated_at: string
+          vehicle_registration: string | null
+          vehicle_type: string | null
+          wave_payment_number: string | null
+        }
+        SetofOptions: {
+          from: "*"
+          to: "courier_memberships"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
       reverse_order_loyalty: {
         Args: { p_order_id: string }
         Returns: undefined
@@ -4591,6 +5029,36 @@ export type Database = {
         SetofOptions: {
           from: "*"
           to: "courier_payouts"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      review_courier_verification_case: {
+        Args: {
+          p_case_id: string
+          p_courier_message?: string
+          p_decision_code?: string
+          p_internal_note?: string
+          p_outcome: Database["public"]["Enums"]["courier_verification_status"]
+        }
+        Returns: {
+          assigned_reviewer_id: string | null
+          courier_id: string
+          courier_message: string | null
+          created_at: string
+          decided_at: string | null
+          decision_code: string | null
+          id: string
+          internal_note: string | null
+          review_started_at: string | null
+          status: Database["public"]["Enums"]["courier_verification_status"]
+          submission_version: number
+          submitted_at: string | null
+          updated_at: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "courier_verification_cases"
           isOneToOne: true
           isSetofReturn: false
         }
@@ -4761,6 +5229,7 @@ export type Database = {
           platform_commission_xof: number
           recipient_code_attempts: number
           recipient_code_hash: string
+          route_snapshot: Json | null
           status: Database["public"]["Enums"]["delivery_status"]
           terminal_at: string | null
           updated_at: string
@@ -4794,31 +5263,82 @@ export type Database = {
           isSetofReturn: false
         }
       }
-      set_platform_payment_setting: {
-        Args: {
-          p_account_holder: string
-          p_active: boolean
-          p_channel: Database["public"]["Enums"]["payment_channel"]
-          p_payment_number: string
-        }
+      set_platform_payment_setting:
+        | {
+            Args: {
+              p_account_holder: string
+              p_active: boolean
+              p_channel: Database["public"]["Enums"]["payment_channel"]
+              p_payment_number: string
+            }
+            Returns: {
+              account_holder: string | null
+              active: boolean
+              channel: Database["public"]["Enums"]["payment_channel"]
+              created_at: string
+              payment_link: string | null
+              payment_number: string
+              updated_at: string
+              updated_by: string
+            }
+            SetofOptions: {
+              from: "*"
+              to: "platform_payment_settings"
+              isOneToOne: true
+              isSetofReturn: false
+            }
+          }
+        | {
+            Args: {
+              p_account_holder: string
+              p_active: boolean
+              p_channel: Database["public"]["Enums"]["payment_channel"]
+              p_payment_link?: string
+              p_payment_number: string
+            }
+            Returns: {
+              account_holder: string | null
+              active: boolean
+              channel: Database["public"]["Enums"]["payment_channel"]
+              created_at: string
+              payment_link: string | null
+              payment_number: string
+              updated_at: string
+              updated_by: string
+            }
+            SetofOptions: {
+              from: "*"
+              to: "platform_payment_settings"
+              isOneToOne: true
+              isSetofReturn: false
+            }
+          }
+      show_limit: { Args: never; Returns: number }
+      show_trgm: { Args: { "": string }; Returns: string[] }
+      submit_courier_verification_case: {
+        Args: { p_case_id: string }
         Returns: {
-          account_holder: string | null
-          active: boolean
-          channel: Database["public"]["Enums"]["payment_channel"]
+          assigned_reviewer_id: string | null
+          courier_id: string
+          courier_message: string | null
           created_at: string
-          payment_number: string
+          decided_at: string | null
+          decision_code: string | null
+          id: string
+          internal_note: string | null
+          review_started_at: string | null
+          status: Database["public"]["Enums"]["courier_verification_status"]
+          submission_version: number
+          submitted_at: string | null
           updated_at: string
-          updated_by: string
         }
         SetofOptions: {
           from: "*"
-          to: "platform_payment_settings"
+          to: "courier_verification_cases"
           isOneToOne: true
           isSetofReturn: false
         }
       }
-      show_limit: { Args: never; Returns: number }
-      show_trgm: { Args: { "": string }; Returns: string[] }
       submit_subscription_payment: {
         Args: {
           p_amount_xof: number
@@ -4880,6 +5400,10 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      subscription_cycle_months: {
+        Args: { p_billing_cycle: string }
+        Returns: number
+      }
       transition_order_status: {
         Args: {
           p_internal_note?: string
@@ -4907,6 +5431,7 @@ export type Database = {
           loyalty_processed_at: string | null
           merchant_id: string
           merchant_sequence: number
+          paid_at: string | null
           payment_instructions_snapshot: Json
           payment_method: Database["public"]["Enums"]["order_payment_method"]
           payment_status: string
@@ -4944,6 +5469,7 @@ export type Database = {
           city: string | null
           closed_at: string | null
           created_at: string
+          customer_since: string | null
           description: string | null
           email: string | null
           id: string
@@ -5013,7 +5539,24 @@ export type Database = {
     Enums: {
       admin_role_kind: "reviewer" | "support" | "admin"
       conversation_kind: "buyer_merchant" | "buyer_support"
-      courier_membership_status: "active" | "inactive"
+      courier_membership_status: "pending_invitation" | "active" | "inactive"
+      courier_vehicle_type:
+        | "walking"
+        | "bicycle"
+        | "motorbike"
+        | "car"
+        | "van"
+        | "other"
+      courier_verification_document_type:
+        | "national_id_front"
+        | "national_id_back"
+        | "passport_identity"
+        | "vehicle_registration_document"
+      courier_verification_status:
+        | "pending_verification"
+        | "verified"
+        | "rejected"
+        | "suspended"
       crm_lead_priority: "low" | "normal" | "high"
       crm_lead_status:
         | "new"
@@ -5070,6 +5613,11 @@ export type Database = {
         | "grace"
         | "expired"
         | "cancelled"
+      subscription_value_origin:
+        | "payment"
+        | "manual_grant"
+        | "test_activation"
+        | "legacy"
       verification_document_status:
         | "uploaded"
         | "accepted"
@@ -5225,7 +5773,27 @@ export const Constants = {
     Enums: {
       admin_role_kind: ["reviewer", "support", "admin"],
       conversation_kind: ["buyer_merchant", "buyer_support"],
-      courier_membership_status: ["active", "inactive"],
+      courier_membership_status: ["pending_invitation", "active", "inactive"],
+      courier_vehicle_type: [
+        "walking",
+        "bicycle",
+        "motorbike",
+        "car",
+        "van",
+        "other",
+      ],
+      courier_verification_document_type: [
+        "national_id_front",
+        "national_id_back",
+        "passport_identity",
+        "vehicle_registration_document",
+      ],
+      courier_verification_status: [
+        "pending_verification",
+        "verified",
+        "rejected",
+        "suspended",
+      ],
       crm_lead_priority: ["low", "normal", "high"],
       crm_lead_status: [
         "new",
@@ -5287,6 +5855,12 @@ export const Constants = {
         "grace",
         "expired",
         "cancelled",
+      ],
+      subscription_value_origin: [
+        "payment",
+        "manual_grant",
+        "test_activation",
+        "legacy",
       ],
       verification_document_status: [
         "uploaded",

@@ -118,6 +118,42 @@ const databaseErrorMap: Record<string, { status: number; message: string }> = {
     status: 404,
     message: "Cette invitation est invalide ou expirée.",
   },
+  COURIER_VERIFICATION_CASE_NOT_FOUND: {
+    status: 404,
+    message: "Dossier livreur introuvable.",
+  },
+  COURIER_VERIFICATION_CASE_LOCKED: {
+    status: 409,
+    message: "Votre dossier est en cours de vérification et ne peut plus être modifié.",
+  },
+  COURIER_VERIFICATION_STATUS_INVALID: {
+    status: 409,
+    message: "Ce dossier ne peut pas être soumis dans son état actuel.",
+  },
+  COURIER_VERIFICATION_DOCUMENTS_INCOMPLETE: {
+    status: 422,
+    message: "Ajoutez votre pièce d’identité et, pour un véhicule motorisé, la carte grise.",
+  },
+  COURIER_VERIFICATION_OUTCOME_INVALID: {
+    status: 422,
+    message: "La décision de vérification est invalide.",
+  },
+  COURIER_NOT_VERIFIED: {
+    status: 409,
+    message: "Ce livreur n’a pas encore terminé sa vérification.",
+  },
+  COURIER_ALREADY_LINKED: {
+    status: 409,
+    message: "Ce livreur fait déjà partie de votre équipe.",
+  },
+  COURIER_INVITATION_NOT_FOUND: {
+    status: 404,
+    message: "Cette invitation est introuvable.",
+  },
+  COURIER_INVITATION_ALREADY_ANSWERED: {
+    status: 409,
+    message: "Vous avez déjà répondu à cette invitation.",
+  },
   INVITATION_EMAIL_MISMATCH: {
     status: 403,
     message: "Connectez-vous avec l’adresse email invitée.",

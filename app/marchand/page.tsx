@@ -39,12 +39,14 @@ export default async function MarchandPage({ searchParams }: { searchParams: Pro
     .limit(1)
     .maybeSingle();
 
-  const { data: courierMembership } = await supabase
-    .from("courier_memberships")
-    .select("id")
-    .eq("courier_user_id", user.id)
-    .limit(1)
-    .maybeSingle();
+  // Le profil livreur suffit à ouvrir l'espace missions : un livreur qui vient
+  // de s'inscrire n'a encore aucune boutique, mais doit pouvoir suivre son
+  // dossier et répondre aux invitations qu'il reçoit.
+  const [{ data: existingMembership }, { data: courierProfile }] = await Promise.all([
+    supabase.from("courier_memberships").select("id").eq("courier_user_id", user.id).limit(1).maybeSingle(),
+    supabase.from("courier_profiles").select("id").eq("user_id", user.id).maybeSingle(),
+  ]);
+  const courierMembership = existingMembership ?? courierProfile;
 
   if ((!membership && courierMembership) || (membership && courierMembership && mode === "missions")) {
     return (
@@ -109,10 +111,10 @@ export default async function MarchandPage({ searchParams }: { searchParams: Pro
         <main className="mvp-main">
           <div className="mvp-shell">
             <section className="mvp-card mvp-card--full access-required-card">
-              <span className="mvp-eyebrow">Accès sur invitation</span>
+              <span className="mvp-eyebrow">Commerçant ou livreur</span>
               <h1 className="mvp-title">Aucun commerce ni mission ne vous est encore associé.</h1>
-              <p className="mvp-lede">Créez votre boutique en une seule fois. Un accès livreur est créé par le commerçant qui vous confie ses livraisons.</p>
-              <div className="mvp-actions"><Link className="mvp-button" href="/creer-ma-boutique">Créer ma boutique</Link><Link className="mvp-button mvp-button--secondary" href="/">Retour à l’accueil</Link></div>
+              <p className="mvp-lede">Créez votre boutique, ou inscrivez-vous comme livreur : une fois votre profil vérifié, les commerçants pourront vous inviter dans leur équipe.</p>
+              <div className="mvp-actions"><Link className="mvp-button" href="/creer-ma-boutique">Créer ma boutique</Link><Link className="mvp-button" href="/devenir-livreur">Devenir livreur</Link><Link className="mvp-button mvp-button--secondary" href="/">Retour à l’accueil</Link></div>
             </section>
           </div>
         </main>

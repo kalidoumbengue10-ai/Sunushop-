@@ -59,6 +59,10 @@ describe("contrat statique des migrations", () => {
       "platform_payment_settings",
       "subscription_billing_periods",
       "subscription_value_ledger",
+      "courier_profiles",
+      "courier_verification_cases",
+      "courier_verification_documents",
+      "courier_verification_events",
     ].forEach((table) => {
       expect(sql).toContain(
         `alter table public.${table} enable row level security;`,
@@ -69,6 +73,10 @@ describe("contrat statique des migrations", () => {
   it("garde les fonctions atomiques et les buckets privés attendus", () => {
     expect(sql).toContain("create function public.create_order_batch");
     expect(sql).toContain("create function public.review_verification_case");
+    expect(sql).toContain("create function public.submit_courier_verification_case");
+    expect(sql).toContain("create function public.review_courier_verification_case");
+    expect(sql).toContain("create function public.create_courier_membership_invitation");
+    expect(sql).toContain("create function public.respond_to_courier_invitation");
     expect(sql).toContain("create function public.declare_direct_payment");
     expect(sql).toContain("create function public.complete_delivery_stage");
     expect(sql).toContain("subscription_expires_j7");

@@ -30,13 +30,22 @@ export function DirectDocumentUploader({
   latest,
   required,
   onSaved,
+  basePath = "/api/merchant/verifications",
+  bucket = "merchant-verification",
+  label,
 }: {
   caseId: string;
-  type: VerificationDocumentType;
+  type: VerificationDocumentType | string;
   latest?: VerificationDocumentRow;
   required: boolean;
   onSaved?: (documentId: string) => void;
+  /** Racine des routes d'envoi : le parcours livreur utilise /api/livreur/verifications. */
+  basePath?: string;
+  bucket?: string;
+  /** Libellé affiché quand le type n'appartient pas au référentiel marchand. */
+  label?: string;
 }) {
+  const documentLabel = label ?? documentLabels[type as VerificationDocumentType] ?? type;
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
@@ -51,7 +60,7 @@ export function DirectDocumentUploader({
     setError("");
     try {
       const response = await fetch(
-        `/api/merchant/verifications/${caseId}/documents/${latest.id}/download`,
+        `${basePath}/${caseId}/documents/${latest.id}/download`,
       );
       const payload = (await response.json()) as {
         data?: { url: string };
@@ -113,7 +122,7 @@ export function DirectDocumentUploader({
     setProgress(10);
     try {
       const authorizationResponse = await fetch(
-        `/api/merchant/verifications/${caseId}/documents/upload-url`,
+        `${basePath}/${caseId}/documents/upload-url`,
         {
           method: "POST",
           headers: { "content-type": "application/json" },
@@ -146,7 +155,7 @@ export function DirectDocumentUploader({
               lastModified: file.lastModified,
             });
       const { error: storageError } = await getBrowserSupabase().storage
-        .from("merchant-verification")
+        .from(bucket)
         .uploadToSignedUrl(
           authorization.data.storagePath,
           authorization.data.token,
@@ -159,7 +168,7 @@ export function DirectDocumentUploader({
 
       setProgress(85);
       const finalizeResponse = await fetch(
-        `/api/merchant/verifications/${caseId}/documents/finalize`,
+        `${basePath}/${caseId}/documents/finalize`,
         {
           method: "POST",
           headers: { "content-type": "application/json" },
@@ -182,7 +191,7 @@ export function DirectDocumentUploader({
       }
 
       setProgress(100);
-      setSuccess(`${documentLabels[type]} enregistré avec succès.`);
+      setSuccess(`${documentLabel} enregistré avec succès.`);
       inputRef.current && (inputRef.current.value = "");
       if (finalized.data?.id) onSaved?.(finalized.data.id);
       router.refresh();
@@ -200,7 +209,7 @@ export function DirectDocumentUploader({
   return (
     <div className="mvp-document">
       <div className="mvp-document__heading">
-        <strong>{documentLabels[type]}</strong>
+        <strong>{documentLabel}</strong>
         <span className={required ? "mvp-required-badge" : "mvp-optional-badge"}>
           {required ? "Obligatoire" : "Facultatif"}
         </span>
@@ -213,7 +222,7 @@ export function DirectDocumentUploader({
       <input
         ref={inputRef}
         className="mvp-document__input"
-        aria-label={`${latest ? "Remplacer" : "Ajouter"} ${documentLabels[type]}`}
+        aria-label={`${latest ? "Remplacer" : "Ajouter"} ${documentLabel}`}
         type="file"
         accept=".jpg,.jpeg,.png,.pdf,image/jpeg,image/png,application/pdf"
         onChange={(event) => upload(event.target.files?.[0])}
