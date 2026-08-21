@@ -11,6 +11,15 @@ export async function GET(request: Request) {
     const merchantId = new URL(request.url).searchParams.get("merchantId") ?? "";
     await requireFulfillment(merchantId);
     const admin = requireAdminClient();
+    const now = new Date().toISOString();
+    const { error: expiryError } = await (admin as any)
+      .from("delivery_offers")
+      .update({ status: "expired", responded_at: now })
+      .eq("merchant_id", merchantId)
+      .eq("status", "pending")
+      .lte("expires_at", now);
+    if (expiryError) throw expiryError;
+
     const { data, error } = await admin
       .from("orders")
       .select("id, public_code, merchant_sequence, status, payment_status, delivery_fee_xof, created_at, delivery_snapshot, recipient_snapshot, deliveries(id, status)")
@@ -19,11 +28,16 @@ export async function GET(request: Request) {
       .order("created_at", { ascending: false });
     if (error) throw error;
     const orderIds = (data ?? []).map((order) => order.id);
-    const { data: pendingOffers, error: offerError } = orderIds.length
-      ? await (admin as any).from("delivery_offers").select("order_id").in("order_id", orderIds).eq("status", "pending")
+    const { data: offers, error: offerError } = orderIds.length
+      ? await (admin as any).from("delivery_offers").select("order_id, status").in("order_id", orderIds)
       : { data: [], error: null };
     if (offerError) throw offerError;
-    const offeredOrderIds = new Set<string>((pendingOffers ?? []).map((offer: { order_id: string }) => offer.order_id));
+    const offeredOrderIds = new Set<string>((offers ?? [])
+      .filter((offer: { status: string }) => offer.status === "pending")
+      .map((offer: { order_id: string }) => offer.order_id));
+    const previouslyOfferedOrderIds = new Set<string>((offers ?? [])
+      .filter((offer: { status: string }) => offer.status !== "pending")
+      .map((offer: { order_id: string }) => offer.order_id));
 
     const items: Array<{
       id: string;
@@ -68,7 +82,7 @@ export async function GET(request: Request) {
           delivery: delivery ? { status: delivery.status } : null,
         }),
         label: assignableOrderLabel(order.status, order.payment_status),
-        reassignment: Boolean(delivery),
+        reassignment: Boolean(delivery) || previouslyOfferedOrderIds.has(order.id),
         recipientName: String(recipient?.name ?? ""),
         city: String(recipient?.city ?? ""),
         deliveryFeeXof: order.delivery_fee_xof,

@@ -69,6 +69,13 @@ test("offre privée, acceptation idempotente, codes renouvelés et paiement sép
     userIds.push(profile!.user_id);
     await data(await courier.request.patch("/api/courier/payment-profile", { data: { wavePaymentNumber: phone, orangeMoneyPaymentNumber: null, preferredPaymentChannel: "wave" } }));
 
+    const staleOffer = await data<{ id: string }>(await owner.request.post("/api/merchant/delivery-offers", { data: { orderId: order.id, courierMembershipId: invite.membershipId, courierFeeXof: 1650, idempotencyKey: `stale-offer-${order.id}` } }), 201);
+    await admin.from("delivery_offers").update({ expires_at: new Date(Date.now() - 60_000).toISOString() }).eq("id", staleOffer.id);
+    const reassignmentQueue = await data<{ items: Array<{ id: string; reassignment: boolean }> }>(await owner.request.get(`/api/merchant/assignable-orders?merchantId=${merchantId}`));
+    expect(reassignmentQueue.items.find((item) => item.id === order.id)).toMatchObject({ reassignment: true });
+    const { data: expiredOffer } = await admin.from("delivery_offers").select("status").eq("id", staleOffer.id).single();
+    expect(expiredOffer?.status).toBe("expired");
+
     const offer = await data<{ id: string; courier_fee_xof: number }>(await owner.request.post("/api/merchant/delivery-offers", { data: { orderId: order.id, courierMembershipId: invite.membershipId, courierFeeXof: 1650, idempotencyKey: `offer-${order.id}` } }), 201);
     expect(offer.courier_fee_xof).toBe(1650);
     const offers = await (await courier.request.get("/api/courier/delivery-offers")).json();
@@ -90,9 +97,10 @@ test("offre privée, acceptation idempotente, codes renouvelés et paiement sép
     expect(mission.courier_fee_xof).toBe(1650);
     await courierPage.reload();
     await expect(courierPage.getByText("Awa Diallo")).toBeVisible();
+    await expect(courierPage.getByText("Au retrait, montrez ce code au marchand")).toBeVisible();
+    await expect(courierPage.getByRole("button", { name: "Je suis arrivé au retrait" })).toHaveCount(0);
     await courierPage.screenshot({ path: resolve(captureDir, "mission-accepted-mobile-393.png"), fullPage: true });
 
-    await data(await courier.request.post(`/api/deliveries/${accepted.deliveryId}/status`, { data: { status: "at_pickup" } }));
     mine = (await (await courier.request.get("/api/deliveries/mine")).json()).data;
     const pickupCode = mine.items.find((item: { id: string }) => item.id === accepted.deliveryId).pickupCode;
     expect(pickupCode).toMatch(/^\d{6}$/);

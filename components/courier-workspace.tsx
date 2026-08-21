@@ -30,7 +30,7 @@ type DeliveryOffer = { id: string; publicCode: string; merchantSequence: number;
 type CourierTab = "mission" | "payments";
 
 const terminalStatuses = new Set(["delivered", "failed", "cancelled"]);
-const statusLabels: Record<string, string> = { assigned: "À accepter", accepted: "Acceptée", at_pickup: "Au commerce", picked_up: "Colis récupéré", in_transit: "En route", delivered: "Livrée", failed: "Échec", cancelled: "Annulée" };
+const statusLabels: Record<string, string> = { assigned: "À accepter", accepted: "Aller au retrait", at_pickup: "Aller au retrait", picked_up: "En route", in_transit: "En route", delivered: "Livrée", failed: "Échec", cancelled: "Annulée" };
 const paymentStatusLabels: Record<string, string> = { not_due: "Non due", review_required: "Compensation à fixer", due: "À payer", payment_declared: "Transfert déclaré", paid: "Payée", waived: "Sans compensation" };
 const formatDate = (value: string | null | undefined) => value ? new Intl.DateTimeFormat("fr-SN", { dateStyle: "medium", timeStyle: "short", timeZone: "Africa/Dakar" }).format(new Date(value)) : "—";
 
@@ -206,15 +206,12 @@ export function CourierWorkspace() {
     const destination = { latitude: Number(delivery.recipient?.latitude), longitude: Number(delivery.recipient?.longitude) };
     const hasRouteCoordinates = Number.isFinite(pickup.latitude) && Number.isFinite(pickup.longitude) && Number.isFinite(destination.latitude) && Number.isFinite(destination.longitude);
     const route = routes[delivery.id];
+    const active = !terminalStatuses.has(delivery.status);
     const navigationDestination: Coordinates | null = ["assigned", "accepted", "at_pickup"].includes(delivery.status)
       ? (Number.isFinite(pickup.latitude) && Number.isFinite(pickup.longitude) ? pickup : null)
       : (Number.isFinite(destination.latitude) && Number.isFinite(destination.longitude) ? destination : null);
-    return <article className={`courier-mission ${primary ? "courier-mission--primary" : ""}`} key={delivery.id}>
-      <header><div><small>Commande SunuShop</small><h3>{delivery.publicCode}</h3><small>N° interne boutique {delivery.merchantSequence}</small></div><span className="mvp-status" data-status={delivery.status}>{statusLabels[delivery.status] ?? delivery.status}</span></header>
-      <p><strong>{delivery.shop?.name ?? "Boutique"}</strong> · commandée le {formatDate(delivery.orderCreatedAt)}</p>
-      <div className="courier-route"><p><span>Retrait</span><strong>{String(delivery.pickup_snapshot?.name ?? delivery.shop?.name ?? "Boutique")}</strong><small>{String(delivery.pickup_snapshot?.phone ?? "")}<br />{String(delivery.pickup_snapshot?.addressHint ?? delivery.pickup_snapshot?.city ?? "")}{delivery.pickup_snapshot?.instructions ? <><br />Instructions : {String(delivery.pickup_snapshot.instructions)}</> : null}</small></p><i>→</i><p><span>Destination</span>{hasRecipientDetails ? <><strong>{String(delivery.recipient?.name ?? "Client")}</strong><small>{String(delivery.recipient?.phone ?? "")}<br />{String(delivery.recipient?.region ?? "")} {String(delivery.recipient?.city ?? "")}<br />{String(delivery.recipient?.addressHint ?? "")}</small></> : <><strong>Mission terminée</strong><small>Coordonnées personnelles masquées</small></>}</p></div>
-      {!terminalStatuses.has(delivery.status) && navigationDestination && <NavigationLinks destination={navigationDestination} label={["assigned", "accepted", "at_pickup"].includes(delivery.status) ? String(delivery.pickup_snapshot?.addressHint ?? "Boutique") : String(delivery.recipient?.addressHint ?? "Client")} />}
-      {!terminalStatuses.has(delivery.status) && hasRouteCoordinates && <div className="courier-route-map">
+    const secondaryDetails = <>
+      {active && hasRouteCoordinates && <div className="courier-route-map">
         {route === undefined && <button type="button" className="mvp-button mvp-button--secondary" onClick={() => void showRoute(delivery.id)}>Afficher l’itinéraire boutique → client</button>}
         {route !== undefined && <>
           <LocationMap point={pickup} destination={destination} route={route?.geometry ?? null} label={String(delivery.shop?.name ?? "Boutique")} />
@@ -225,15 +222,23 @@ export function CourierWorkspace() {
       <div className="mvp-list">{delivery.orderItems.map((item, index) => <div className="mvp-row" key={`${delivery.id}-${index}`}><span>{item.product_snapshot?.title ?? item.sku_snapshot}</span><strong>× {item.quantity}</strong></div>)}</div>
       <div className="courier-mission__timeline"><small>Affectation : {formatDate(delivery.assigned_at)}</small><small>Retrait : {formatDate(delivery.pickup_verified_at)}</small><small>Livraison : {formatDate(delivery.delivered_at)}</small></div>
       <p className="mvp-alert"><strong>Rémunération : {formatPrice(delivery.courier_payable_xof || delivery.courier_fee_xof || 0)}</strong><br />{paymentStatusLabels[delivery.courier_payment_status] ?? delivery.courier_payment_status}</p>
+    </>;
+    return <article className={`courier-mission ${primary ? "courier-mission--primary" : ""}`} key={delivery.id}>
+      <header><div><small>Commande SunuShop</small><h3>{delivery.publicCode}</h3><small>N° interne boutique {delivery.merchantSequence}</small></div><span className="mvp-status" data-status={delivery.status}>{statusLabels[delivery.status] ?? delivery.status}</span></header>
+      <p><strong>{delivery.shop?.name ?? "Boutique"}</strong> · commandée le {formatDate(delivery.orderCreatedAt)}</p>
+      <div className="courier-route"><p><span>Retrait</span><strong>{String(delivery.pickup_snapshot?.name ?? delivery.shop?.name ?? "Boutique")}</strong><small>{String(delivery.pickup_snapshot?.phone ?? "")}<br />{String(delivery.pickup_snapshot?.addressHint ?? delivery.pickup_snapshot?.city ?? "")}{delivery.pickup_snapshot?.instructions ? <><br />Instructions : {String(delivery.pickup_snapshot.instructions)}</> : null}</small></p><i>→</i><p><span>Destination</span>{hasRecipientDetails ? <><strong>{String(delivery.recipient?.name ?? "Client")}</strong><small>{String(delivery.recipient?.phone ?? "")}<br />{String(delivery.recipient?.region ?? "")} {String(delivery.recipient?.city ?? "")}<br />{String(delivery.recipient?.addressHint ?? "")}</small></> : <><strong>Mission terminée</strong><small>Coordonnées personnelles masquées</small></>}</p></div>
+      {active && navigationDestination && <NavigationLinks destination={navigationDestination} label={["assigned", "accepted", "at_pickup"].includes(delivery.status) ? String(delivery.pickup_snapshot?.addressHint ?? "Boutique") : String(delivery.recipient?.addressHint ?? "Client")} />}
       {delivery.failure_reason && <p className="mvp-alert mvp-alert--warning">Échec : {delivery.failure_reason}</p>}
       {delivery.dispute && <p className="mvp-alert mvp-alert--warning"><strong>Litige actif</strong><br />Les coordonnées nécessaires sont temporairement visibles pour votre défense. {delivery.dispute.reason}</p>}
       <div className={`mvp-actions courier-mission-actions ${primary ? "courier-mission-actions--primary" : ""}`}>
         {delivery.status === "assigned" && <button className="mvp-button" onClick={() => void transition(delivery.id, "accepted")}>Accepter la mission</button>}
-        {delivery.status === "accepted" && <button className="mvp-button" onClick={() => void transition(delivery.id, "at_pickup")}>Je suis arrivé au retrait</button>}
-        {delivery.status === "at_pickup" && delivery.pickupCode && <div className="courier-pickup-code"><small>Présentez ce code au commerçant</small><strong>{delivery.pickupCode}</strong><span>Il disparaît dès sa validation.</span></div>}
+        {["accepted", "at_pickup"].includes(delivery.status) && delivery.pickupCode && <div className="courier-pickup-code"><small>Au retrait, montrez ce code au marchand</small><strong>{delivery.pickupCode}</strong><span>Le marchand le valide et votre trajet client démarre automatiquement.</span></div>}
         {["picked_up", "in_transit"].includes(delivery.status) && <form className="courier-code-form" onSubmit={(event) => void verifyRecipient(event, delivery.id)}><label>Code de remise donné par le client<input name="code" inputMode="numeric" pattern="[0-9]{6}" placeholder="000000" autoComplete="one-time-code" required /></label><button className="mvp-button">Confirmer la remise</button></form>}
         {["picked_up", "in_transit"].includes(delivery.status) && <button className="mvp-button mvp-button--danger" onClick={() => setFailureDeliveryId(delivery.id)}>Signaler un échec</button>}
       </div>
+      {primary && active
+        ? <details className="courier-mission-details"><summary>Voir les détails de la mission</summary>{secondaryDetails}</details>
+        : secondaryDetails}
     </article>;
   };
 

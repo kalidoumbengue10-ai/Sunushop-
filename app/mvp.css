@@ -410,6 +410,8 @@
 .courier-steps { display: grid; gap: 12px; margin: 0; padding-left: 22px; color: #52655b; line-height: 1.5; }
 .courier-current-mission { width: 100%; }
 .courier-mission--primary { border-color: rgba(23, 63, 46, .28); box-shadow: 0 18px 42px rgba(23, 39, 31, .09); }
+.courier-mission-details { margin-top: 16px; padding-top: 14px; border-top: 1px solid rgba(23, 63, 46, .12); }
+.courier-mission-details > summary { cursor: pointer; color: #52655b; font-size: 12px; font-weight: 850; }
 .courier-empty-state { text-align: center; padding-block: 42px; }
 .courier-filter-tabs { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 3px; }
 .courier-filter-tabs .mvp-button { flex: 0 0 auto; }
@@ -428,16 +430,7 @@
   .courier-selection-summary .mvp-button { width: 100%; }
   .courier-workspace { padding-bottom: 90px; }
   .courier-mission-actions--primary {
-    position: sticky;
-    bottom: calc(72px + env(safe-area-inset-bottom));
-    z-index: 18;
-    margin: 14px -10px -10px !important;
-    padding: 10px;
-    border: 1px solid rgba(23, 63, 46, .16);
-    border-radius: 15px;
-    background: rgba(255, 253, 248, .98);
-    box-shadow: 0 -10px 30px rgba(23, 39, 31, .13);
-    backdrop-filter: blur(16px);
+    margin: 14px 0 0 !important;
   }
   .courier-mission-actions--primary > .mvp-button,
   .courier-mission-actions--primary > .courier-code-form,

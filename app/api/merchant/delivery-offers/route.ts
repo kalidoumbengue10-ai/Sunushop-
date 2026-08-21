@@ -56,6 +56,15 @@ export async function POST(request: Request) {
     if (courierError) throw courierError;
     if (!courier) throw new ApiError(404, "COURIER_NOT_FOUND", "Livreur introuvable.");
 
+    const now = new Date().toISOString();
+    const { error: expiryError } = await (admin as any)
+      .from("delivery_offers")
+      .update({ status: "expired", responded_at: now })
+      .eq("order_id", order.id)
+      .eq("status", "pending")
+      .lte("expires_at", now);
+    if (expiryError) throw expiryError;
+
     const { data: existingDelivery } = await admin.from("deliveries").select("id, status").eq("order_id", order.id).in("status", ["assigned", "accepted", "at_pickup", "picked_up", "in_transit"]).maybeSingle();
     if (existingDelivery && !["assigned", "accepted", "at_pickup"].includes(existingDelivery.status)) {
       throw new ApiError(409, "DELIVERY_TRANSITION_NOT_ALLOWED", "Cette livraison a déjà commencé.");
