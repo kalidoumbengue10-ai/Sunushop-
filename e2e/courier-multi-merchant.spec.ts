@@ -62,7 +62,7 @@ test("un profil unique ouvre les missions de deux boutiques par lien et les e-ma
     expect(firstData.emailSent, JSON.stringify({ firstData, firstCaptured })).toBe(true);
     const firstToken = invitationToken(firstData.invitationUrl);
     const preview = await courier.request.get(`/api/courier/access/invitation?token=${firstToken}`);
-    expect((await preview.json()).data.shopName).toBe("Boutique A");
+    expect((await preview.json()).data.shopName).toBe(shopA.public_name);
     const activation = await courier.request.post("/api/courier/access/activate", { data: { token: firstToken } });
     expect(activation.status(), await activation.text()).toBe(200);
     expect((await courier.request.get(`/api/courier/access/invitation?token=${firstToken}`)).status()).toBe(410);
@@ -72,7 +72,7 @@ test("un profil unique ouvre les missions de deux boutiques par lien et les e-ma
     const secondData = (await second.json()).data as { membershipId: string; invitationUrl: string };
     const secondToken = invitationToken(secondData.invitationUrl);
     const secondPreview = await courier.request.get(`/api/courier/access/invitation?token=${secondToken}`);
-    expect((await secondPreview.json()).data.shopName).toBe("Boutique B");
+    expect((await secondPreview.json()).data.shopName).toBe(shopB.public_name);
     const resent = await ownerB.request.post(`/api/merchant/couriers/${secondData.membershipId}/invitation`, { data: { merchantId: shopB.id } });
     expect(resent.status(), await resent.text()).toBe(200);
     const resentToken = invitationToken(((await resent.json()).data as { invitationUrl: string }).invitationUrl);
