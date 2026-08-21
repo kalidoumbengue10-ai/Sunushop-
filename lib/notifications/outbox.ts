@@ -19,22 +19,33 @@ export async function enqueueEmail(admin: SupabaseClient, input: { dedupeKey: st
   if (error || !data) return false;
 
   if (input.sendImmediately) {
-    await admin.from("notification_outbox").update({ status: "processing" }).eq("id", data.id);
+    const { error: processingError } = await admin
+      .from("notification_outbox")
+      .update({ status: "processing", processing_started_at: new Date().toISOString() })
+      .eq("id", data.id);
+    if (processingError) throw processingError;
     try {
-      await sendNotificationEmail(input.template, payload);
-      await admin.from("notification_outbox").update({
+      const sent = await sendNotificationEmail(input.template, payload, { idempotencyKey: `outbox/${data.id}` });
+      const { error: sentError } = await (admin as any).from("notification_outbox").update({
         status: "sent",
+        delivery_state: "accepted",
+        provider_message_id: sent.providerMessageId,
         attempts: 1,
         processed_at: new Date().toISOString(),
+        processing_started_at: null,
         last_error: null,
       }).eq("id", data.id);
+      if (sentError) throw sentError;
     } catch (sendError) {
-      await admin.from("notification_outbox").update({
+      const { error: failedError } = await (admin as any).from("notification_outbox").update({
         status: "failed",
+        delivery_state: "failed",
         attempts: 1,
         available_at: new Date(Date.now() + 120_000).toISOString(),
+        processing_started_at: null,
         last_error: sendError instanceof Error ? sendError.message.slice(0, 500) : "SEND_FAILED",
       }).eq("id", data.id);
+      if (failedError) throw failedError;
     }
   }
 

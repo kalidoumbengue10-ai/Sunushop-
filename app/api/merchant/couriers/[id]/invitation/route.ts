@@ -5,7 +5,7 @@ import { requireFulfillment } from "@/lib/api/merchant-guards";
 import { apiFailure, apiSuccess } from "@/lib/api/response";
 import { z } from "zod";
 
-const resendSchema = z.object({ merchantId: z.uuid() });
+const resendSchema = z.object({ merchantId: z.uuid() }).strict();
 
 export async function POST(
   request: Request,
@@ -19,16 +19,12 @@ export async function POST(
     const admin = requireAdminClient();
     const { data: membership, error } = await admin
       .from("courier_memberships")
-      .select("id, email, display_name, phone, vehicle_type, vehicle_registration, courier_user_id")
+      .select("id, email, display_name, phone, vehicle_type, vehicle_registration, courier_user_id, status")
       .eq("id", id)
       .eq("merchant_id", input.merchantId)
       .maybeSingle();
     if (error) throw error;
     if (!membership) throw new ApiError(404, "COURIER_NOT_FOUND", "Livreur introuvable.");
-    if (membership.courier_user_id) {
-      throw new ApiError(409, "COURIER_ALREADY_ACTIVATED", "Ce livreur a déjà activé son accès.");
-    }
-
     const invitation = await sendCourierInvitation({
       admin,
       request,
@@ -50,4 +46,3 @@ export async function POST(
     return apiFailure(error, requestId);
   }
 }
-

@@ -6,6 +6,11 @@ Le MVP utilise un seul projet Supabase Cloud, `sunushop-production`. Le
 développement et la validation des migrations se font sur la pile Supabase
 locale, qui constitue un environnement jetable et reproductible.
 
+Les parcours Playwright mutationnels se lancent uniquement avec
+`npm run test:e2e`. Ce runner récupère directement les clés de la pile locale,
+refuse toute URL distante, reconstruit la base et la supprime après les tests ;
+il ne modifie jamais `.env.local`.
+
 Cette organisation évite de payer et d’administrer un second projet Cloud sans
 mélanger les données de test avec les pièces KYC réelles :
 

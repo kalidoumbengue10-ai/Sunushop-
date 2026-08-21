@@ -59,7 +59,7 @@ export default async function BoutiquePage({
             {shop.description || "Catalogue marchand SunuShop."}
           </p>
           <div className="mvp-actions">
-            <ShopFollowButton merchantId={shop.id} />
+            <ShopFollowButton merchantId={shop.id} merchantSlug={shop.slug} />
             <StartConversationButton merchantId={shop.id} subject={`Question sur ${shop.name}`} />
           </div>
           <div className="mvp-list">

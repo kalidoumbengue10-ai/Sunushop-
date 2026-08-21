@@ -18,9 +18,7 @@ insert into public.subscription_plans (
   position
 )
 values
-  ('essential', 'Essentiel', 4900, 100, 1, 10),
-  ('pro', 'Pro', 9900, 1000, 5, 20),
-  ('network', 'Réseau', 24900, null, 20, 30)
+  ('essential', 'Essentiel', 4900, 100, 1, 10)
 on conflict (id) do update
 set name = excluded.name,
     monthly_price_xof = excluded.monthly_price_xof,
@@ -28,3 +26,7 @@ set name = excluded.name,
     team_member_limit = excluded.team_member_limit,
     position = excluded.position,
     active = true;
+
+update public.subscription_plans
+set active = false
+where id <> 'essential';

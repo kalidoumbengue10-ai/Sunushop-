@@ -1,4 +1,4 @@
-import Link from "next/link";
+/* eslint-disable @next/next/no-html-link-for-pages -- Le pied de page doit rester navigable avant l'initialisation de l'App Router. */
 import { siteConfig } from "@/app/site-config";
 
 export function SiteFooter() {
@@ -11,21 +11,21 @@ export function SiteFooter() {
         </div>
         <nav className="mvp-footer__col" aria-label="Acheter">
           <strong>Acheter</strong>
-          <Link href="/marche">Tous les produits</Link>
-          <Link href="/categories">Catégories</Link>
-          <Link href="/recherche">Rechercher</Link>
-          <Link href="/connexion">Suivre mes commandes</Link>
+          <a href="/marche">Tous les produits</a>
+          <a href="/categories">Catégories</a>
+          <a href="/recherche">Rechercher</a>
+          <a href="/connexion">Suivre mes commandes</a>
         </nav>
         <nav className="mvp-footer__col" aria-label="Vendre">
           <strong>Vendre</strong>
-          <Link href="/creer-ma-boutique">Créer ma boutique</Link>
-          <Link href="/devenir-marchand">Devenir marchand</Link>
-          <Link href="/devenir-livreur">Devenir livreur</Link>
-          <Link href="/partenaires">Partenaires</Link>
+          <a href="/creer-ma-boutique">Créer ma boutique</a>
+          <a href="/devenir-marchand">Devenir marchand</a>
+          <a href="/livreur/connexion">Espace livreur</a>
+          <a href="/partenaires">Partenaires</a>
         </nav>
         <nav className="mvp-footer__col" aria-label="Aide">
           <strong>Aide</strong>
-          <Link href="/aide">Centre d’aide</Link>
+          <a href="/aide">Centre d’aide</a>
           <a href={`mailto:${siteConfig.supportEmail}`}>{siteConfig.supportEmail}</a>
         </nav>
       </div>

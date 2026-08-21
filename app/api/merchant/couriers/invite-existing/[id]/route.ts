@@ -3,8 +3,8 @@ import { ApiError } from "@/lib/api/errors";
 import { requireFulfillment as requireManager } from "@/lib/api/merchant-guards";
 import { apiFailure, apiSuccess } from "@/lib/api/response";
 
-// Annulation d'une invitation encore en attente : la ligne est retirée plutôt
-// que désactivée, pour ne pas laisser de rattachement fantôme dans l'équipe.
+// Révocation conservée dans l'historique : les offres encore ouvertes sont
+// annulées et le rattachement devient inactif sans supprimer son audit.
 export async function DELETE(request: Request, context: { params: Promise<{ id: string }> }) {
   const requestId = crypto.randomUUID();
   try {
@@ -25,15 +25,16 @@ export async function DELETE(request: Request, context: { params: Promise<{ id: 
       throw new ApiError(409, "COURIER_INVITATION_ALREADY_ANSWERED", "Ce livreur a déjà répondu à votre invitation.");
     }
 
-    const { error: deleteError } = await admin
-      .from("courier_memberships")
-      .delete()
-      .eq("id", id)
-      .eq("merchant_id", merchantId)
-      .eq("status", "pending_invitation");
-    if (deleteError) throw deleteError;
+    const [{ error: invitationError }, { error: offerError }, { error: membershipError }] = await Promise.all([
+      (admin as any).from("workspace_invitations").update({ status: "revoked" }).eq("courier_membership_id", id).eq("status", "pending"),
+      (admin as any).from("delivery_offers").update({ status: "cancelled", cancelled_at: new Date().toISOString() }).eq("courier_membership_id", id).eq("status", "pending"),
+      admin.from("courier_memberships").update({ status: "inactive", responded_at: new Date().toISOString() }).eq("id", id).eq("status", "pending_invitation"),
+    ]);
+    if (invitationError) throw invitationError;
+    if (offerError) throw offerError;
+    if (membershipError) throw membershipError;
 
-    return apiSuccess({ id }, { requestId });
+    return apiSuccess({ id, status: "inactive" }, { requestId });
   } catch (error) {
     return apiFailure(error, requestId);
   }

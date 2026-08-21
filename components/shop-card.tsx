@@ -25,7 +25,7 @@ export function ShopCard({ shop }: { shop: ShopCardData }) {
           <span>{shop.name.slice(0, 1)}</span>
         </div>
       )}
-      <ShopFollowButton merchantId={shop.id} variant="icon" />
+      <ShopFollowButton merchantId={shop.id} merchantSlug={shop.slug} variant="icon" />
       <div className="shop-directory-body">
         {shop.logoUrl && <img className="mvp-shop-directory-logo" src={shop.logoUrl} alt={`Logo ${shop.name}`} />}
         <span className="shop-category-line">{shop.categories.join(" · ") || "Boutique SunuShop"}</span>

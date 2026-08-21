@@ -11,6 +11,18 @@ const slug = z
   .max(80)
   .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/);
 
+// Toute valeur qui finit dans un filtre PostgREST construit à la main
+// (`.or(...)`) doit exclure les métacaractères de filtre (`,()`.` ) en plus
+// d'une borne de longueur : une borne seule ne bloque pas l'injection de
+// clauses supplémentaires dans l'expression.
+const postgrestSafeText = (max: number) =>
+  z
+    .string()
+    .trim()
+    .min(1)
+    .max(max)
+    .regex(/^[^,()."]*$/, "Caractères non autorisés");
+
 const authEmail = z.email().max(254).transform((value) => value.toLowerCase());
 const authPassword = z
   .string()
@@ -373,10 +385,10 @@ export const productDetailsSchema = z.object({
   });
 });
 
-export const productPublicationSchema = z.object({
-  productId: uuid,
-  publish: z.boolean(),
-});
+export const productPublicationSchema = z.union([
+  z.object({ productId: uuid, publish: z.boolean() }),
+  z.object({ productId: uuid, action: z.enum(["archive", "restore"]) }),
+]);
 
 export const deliveryZoneInputSchema = z.object({
   merchantId: uuid,
@@ -398,12 +410,15 @@ export const deliveryRegionInputSchema = z.object({
   enabled: z.boolean().default(true),
   feeXof: z.int().min(0),
   courierFeeXof: z.int().min(0).nullable(),
-  minDelayDays: z.literal(0).default(0),
-  maxDelayDays: z.literal(0).default(0),
+  minDelayDays: z.int().min(0).max(30).default(0),
+  maxDelayDays: z.int().min(0).max(30).default(0),
   categoryRates: z.array(z.object({
     categoryId: uuid,
     feeXof: z.int().min(0),
   })).max(100).default([]),
+}).refine((value) => value.maxDelayDays >= value.minDelayDays, {
+  path: ["maxDelayDays"],
+  message: "Le délai maximum doit être supérieur ou égal au délai minimum.",
 });
 
 export const merchantAnalyticsQuerySchema = z.object({
@@ -414,6 +429,37 @@ export const merchantAnalyticsQuerySchema = z.object({
 }).refine((value) => new Date(value.to).getTime() > new Date(value.from).getTime(), {
   path: ["to"],
   message: "La fin de période doit suivre le début.",
+}).refine((value) => new Date(value.to).getTime() - new Date(value.from).getTime() <= 400 * 86_400_000, {
+  // La route agrège les commandes (+ leurs order_items) en JavaScript sur la
+  // fenêtre demandée : sans borne, une plage arbitrairement large force le
+  // chargement de dizaines de milliers de lignes à chaque appel.
+  path: ["to"],
+  message: "La période ne peut pas dépasser 400 jours.",
+});
+
+export const merchantOrdersQuerySchema = z.object({
+  merchantId: uuid,
+  page: z.coerce.number().int().min(1).max(10_000).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(15),
+  query: z.string().trim().max(80).regex(/^[\p{L}\p{N}\s-]*$/u, "Caractères de recherche non autorisés").optional().transform((value) => value || undefined),
+  status: z.enum([
+    "all",
+    "pending_seller_confirmation",
+    "confirmed",
+    "preparing",
+    "ready_for_handoff",
+    "in_transit",
+    "delivered",
+    "cancelled",
+    "disputed",
+    "awaiting_payment",
+    "cash_due",
+    "pending_confirmation",
+    "paid",
+    "payment_refused",
+    "refund_pending",
+    "refunded",
+  ]).default("all"),
 });
 
 export const adminAnalyticsQuerySchema = z.object({
@@ -585,7 +631,7 @@ export const merchantInvitationSchema = merchantApplicationSchema.safeExtend({
 
 export const courierInvitationSchema = z.object({
   merchantId: uuid,
-  email: authEmail,
+  email: z.union([authEmail, z.literal("")]).optional().transform((value) => value || undefined),
   displayName: z.string().trim().min(2).max(120),
   phone: z.string().trim().min(8).max(24),
   vehicleType: z.enum(["walking", "bicycle", "motorbike", "car", "van", "other"]).optional(),
@@ -609,6 +655,22 @@ export const loyaltySettingSchema = z.object({
 
 export const invitationClaimSchema = z.object({
   token: z.string().min(32).max(200),
+});
+
+const courierPin = z.string().regex(/^\d{6}$/, "Le PIN doit contenir exactement six chiffres.");
+
+export const courierAccessActivateSchema = z.object({
+  token: z.string().min(32).max(200),
+  pin: courierPin,
+  pinConfirmation: courierPin.optional(),
+}).refine((value) => value.pinConfirmation === undefined || value.pin === value.pinConfirmation, {
+  message: "Les deux PIN ne correspondent pas.",
+  path: ["pinConfirmation"],
+});
+
+export const courierPinSignInSchema = z.object({
+  phone: z.string().trim().min(8).max(24),
+  pin: courierPin,
 });
 
 export const addressInputSchema = z.object({
@@ -662,9 +724,21 @@ export const deliveryAssignmentSchema = z.object({
   courierMembershipId: uuid,
 });
 
+export const deliveryOfferSchema = z.object({
+  orderId: uuid,
+  courierMembershipId: uuid,
+  courierFeeXof: z.int().positive().max(1_000_000),
+  idempotencyKey: z.string().trim().min(8).max(160),
+});
+
+export const deliveryOfferDecisionSchema = z.object({
+  decision: z.enum(["accept", "decline"]),
+});
+
 export const deliveryStatusSchema = z.object({
   status: z.enum(["accepted", "at_pickup", "in_transit", "failed", "cancelled"]),
   note: z.string().trim().min(2).max(500).optional(),
+  failureReason: z.enum(["client_absent", "client_unreachable", "wrong_address", "parcel_refused", "other"]).optional(),
 });
 
 export const deliveryCodeSchema = z.object({
@@ -814,4 +888,25 @@ export const categoryInputSchema = z.object({
   description: z.string().trim().max(500).optional(),
   position: z.int().min(0).max(10_000).default(100),
   active: z.boolean().default(true),
+});
+
+export const storefrontQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).max(10_000).catch(1),
+  limit: z.coerce.number().int().min(1).max(60).catch(24),
+  query: postgrestSafeText(120).optional(),
+  category: slug.optional(),
+  merchantSlug: slug.optional(),
+  region: postgrestSafeText(60).optional(),
+  city: postgrestSafeText(60).optional(),
+  lat: z.coerce.number().min(-90).max(90).optional(),
+  lng: z.coerce.number().min(-180).max(180).optional(),
+});
+
+export const searchQuerySchema = z.object({
+  query: postgrestSafeText(120).optional(),
+  category: slug.optional(),
+  region: postgrestSafeText(60).optional(),
+  city: postgrestSafeText(60).optional(),
+  page: z.coerce.number().int().min(1).max(10_000).catch(1),
+  limit: z.coerce.number().int().min(1).max(60).catch(24),
 });

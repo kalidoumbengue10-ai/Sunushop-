@@ -1,4 +1,4 @@
-export type Json =
+﻿export type Json =
   | string
   | number
   | boolean
@@ -594,9 +594,12 @@ export type Database = {
           display_name: string
           email: string | null
           id: string
+          last_access_at: string | null
           orange_money_payment_number: string | null
           phone: string
           photo_storage_path: string | null
+          pin_configured_at: string | null
+          pin_reset_at: string | null
           preferred_payment_channel: string | null
           updated_at: string
           user_id: string
@@ -613,9 +616,12 @@ export type Database = {
           display_name: string
           email?: string | null
           id?: string
+          last_access_at?: string | null
           orange_money_payment_number?: string | null
           phone: string
           photo_storage_path?: string | null
+          pin_configured_at?: string | null
+          pin_reset_at?: string | null
           preferred_payment_channel?: string | null
           updated_at?: string
           user_id: string
@@ -632,9 +638,12 @@ export type Database = {
           display_name?: string
           email?: string | null
           id?: string
+          last_access_at?: string | null
           orange_money_payment_number?: string | null
           phone?: string
           photo_storage_path?: string | null
+          pin_configured_at?: string | null
+          pin_reset_at?: string | null
           preferred_payment_channel?: string | null
           updated_at?: string
           user_id?: string
@@ -1113,6 +1122,7 @@ export type Database = {
           courier_payout_id: string | null
           created_at: string
           delivered_at: string | null
+          delivery_offer_id: string | null
           failure_reason: string | null
           gross_delivery_fee_xof: number
           id: string
@@ -1126,6 +1136,9 @@ export type Database = {
           platform_commission_xof: number
           recipient_code_attempts: number
           recipient_code_hash: string
+          recipient_code_version: number
+          route_distance_meters: number | null
+          route_duration_seconds: number | null
           route_snapshot: Json | null
           status: Database["public"]["Enums"]["delivery_status"]
           terminal_at: string | null
@@ -1143,6 +1156,7 @@ export type Database = {
           courier_payout_id?: string | null
           created_at?: string
           delivered_at?: string | null
+          delivery_offer_id?: string | null
           failure_reason?: string | null
           gross_delivery_fee_xof?: number
           id?: string
@@ -1156,6 +1170,9 @@ export type Database = {
           platform_commission_xof?: number
           recipient_code_attempts?: number
           recipient_code_hash: string
+          recipient_code_version?: number
+          route_distance_meters?: number | null
+          route_duration_seconds?: number | null
           route_snapshot?: Json | null
           status?: Database["public"]["Enums"]["delivery_status"]
           terminal_at?: string | null
@@ -1173,6 +1190,7 @@ export type Database = {
           courier_payout_id?: string | null
           created_at?: string
           delivered_at?: string | null
+          delivery_offer_id?: string | null
           failure_reason?: string | null
           gross_delivery_fee_xof?: number
           id?: string
@@ -1186,6 +1204,9 @@ export type Database = {
           platform_commission_xof?: number
           recipient_code_attempts?: number
           recipient_code_hash?: string
+          recipient_code_version?: number
+          route_distance_meters?: number | null
+          route_duration_seconds?: number | null
           route_snapshot?: Json | null
           status?: Database["public"]["Enums"]["delivery_status"]
           terminal_at?: string | null
@@ -1214,6 +1235,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "deliveries_delivery_offer_id_fkey"
+            columns: ["delivery_offer_id"]
+            isOneToOne: true
+            referencedRelation: "delivery_offers"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "deliveries_merchant_id_fkey"
             columns: ["merchant_id"]
             isOneToOne: false
@@ -1223,7 +1251,7 @@ export type Database = {
           {
             foreignKeyName: "deliveries_order_id_fkey"
             columns: ["order_id"]
-            isOneToOne: true
+            isOneToOne: false
             referencedRelation: "orders"
             referencedColumns: ["id"]
           },
@@ -1512,6 +1540,95 @@ export type Database = {
             columns: ["merchant_id"]
             isOneToOne: false
             referencedRelation: "merchant_accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      delivery_offers: {
+        Row: {
+          cancelled_at: string | null
+          client_delivery_fee_xof: number
+          courier_fee_xof: number
+          courier_membership_id: string
+          created_at: string
+          created_by: string
+          distance_meters: number
+          duration_seconds: number
+          expires_at: string
+          id: string
+          idempotency_key: string | null
+          merchant_id: string
+          order_id: string
+          responded_at: string | null
+          route_snapshot: Json | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          cancelled_at?: string | null
+          client_delivery_fee_xof: number
+          courier_fee_xof: number
+          courier_membership_id: string
+          created_at?: string
+          created_by: string
+          distance_meters: number
+          duration_seconds: number
+          expires_at?: string
+          id?: string
+          idempotency_key?: string | null
+          merchant_id: string
+          order_id: string
+          responded_at?: string | null
+          route_snapshot?: Json | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          cancelled_at?: string | null
+          client_delivery_fee_xof?: number
+          courier_fee_xof?: number
+          courier_membership_id?: string
+          created_at?: string
+          created_by?: string
+          distance_meters?: number
+          duration_seconds?: number
+          expires_at?: string
+          id?: string
+          idempotency_key?: string | null
+          merchant_id?: string
+          order_id?: string
+          responded_at?: string | null
+          route_snapshot?: Json | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "delivery_offers_courier_membership_id_fkey"
+            columns: ["courier_membership_id"]
+            isOneToOne: false
+            referencedRelation: "courier_memberships"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "delivery_offers_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "delivery_offers_merchant_id_fkey"
+            columns: ["merchant_id"]
+            isOneToOne: false
+            referencedRelation: "merchant_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "delivery_offers_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
             referencedColumns: ["id"]
           },
         ]
@@ -2506,43 +2623,64 @@ export type Database = {
         Row: {
           attempts: number
           available_at: string
+          bounced_at: string | null
           channel: string
           created_at: string
           dedupe_key: string | null
+          delivered_at: string | null
+          delivery_state: string
           id: string
           last_error: string | null
           payload: Json
+          processing_started_at: string | null
           processed_at: string | null
+          provider_message_id: string | null
           recipient_user_id: string | null
           status: Database["public"]["Enums"]["notification_status"]
+          suppressed_at: string | null
+          suppression_reason: string | null
           template: string
         }
         Insert: {
           attempts?: number
           available_at?: string
+          bounced_at?: string | null
           channel: string
           created_at?: string
           dedupe_key?: string | null
+          delivered_at?: string | null
+          delivery_state?: string
           id?: string
           last_error?: string | null
           payload: Json
+          processing_started_at?: string | null
           processed_at?: string | null
+          provider_message_id?: string | null
           recipient_user_id?: string | null
           status?: Database["public"]["Enums"]["notification_status"]
+          suppressed_at?: string | null
+          suppression_reason?: string | null
           template: string
         }
         Update: {
           attempts?: number
           available_at?: string
+          bounced_at?: string | null
           channel?: string
           created_at?: string
           dedupe_key?: string | null
+          delivered_at?: string | null
+          delivery_state?: string
           id?: string
           last_error?: string | null
           payload?: Json
+          processing_started_at?: string | null
           processed_at?: string | null
+          provider_message_id?: string | null
           recipient_user_id?: string | null
           status?: Database["public"]["Enums"]["notification_status"]
+          suppressed_at?: string | null
+          suppression_reason?: string | null
           template?: string
         }
         Relationships: [
@@ -4104,8 +4242,9 @@ export type Database = {
         Row: {
           claimed_at: string | null
           claimed_by: string | null
+          courier_membership_id: string | null
           created_at: string
-          email: string
+          email: string | null
           expires_at: string
           id: string
           invited_by: string | null
@@ -4120,8 +4259,9 @@ export type Database = {
         Insert: {
           claimed_at?: string | null
           claimed_by?: string | null
+          courier_membership_id?: string | null
           created_at?: string
-          email: string
+          email?: string | null
           expires_at: string
           id?: string
           invited_by?: string | null
@@ -4136,8 +4276,9 @@ export type Database = {
         Update: {
           claimed_at?: string | null
           claimed_by?: string | null
+          courier_membership_id?: string | null
           created_at?: string
-          email?: string
+          email?: string | null
           expires_at?: string
           id?: string
           invited_by?: string | null
@@ -4155,6 +4296,13 @@ export type Database = {
             columns: ["claimed_by"]
             isOneToOne: false
             referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "workspace_invitations_courier_membership_id_fkey"
+            columns: ["courier_membership_id"]
+            isOneToOne: false
+            referencedRelation: "courier_memberships"
             referencedColumns: ["id"]
           },
           {
@@ -4185,6 +4333,23 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      accept_delivery_offer: {
+        Args: {
+          p_delivery_id: string
+          p_offer_id: string
+          p_pickup_code_hash: string
+          p_recipient_code_hash: string
+        }
+        Returns: string
+      }
+      cancel_delivery_offer: {
+        Args: { p_actor_id: string; p_offer_id: string }
+        Returns: Database["public"]["Tables"]["delivery_offers"]["Row"]
+      }
+      courier_delivery_dashboard_stats: {
+        Args: never
+        Returns: Json
+      }
       activate_subscription_from_payment: {
         Args: {
           p_amount_xof: number
@@ -4316,6 +4481,15 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      claim_notification_outbox:
+        | {
+            Args: { p_limit?: number }
+            Returns: Database["public"]["Tables"]["notification_outbox"]["Row"][]
+          }
+        | {
+            Args: { p_dedupe_prefix: string; p_limit: number }
+            Returns: Database["public"]["Tables"]["notification_outbox"]["Row"][]
+          }
       complete_delivery_stage: {
         Args: { p_actor_id: string; p_delivery_id: string; p_stage: string }
         Returns: {
@@ -4330,6 +4504,7 @@ export type Database = {
           courier_payout_id: string | null
           created_at: string
           delivered_at: string | null
+          delivery_offer_id: string | null
           failure_reason: string | null
           gross_delivery_fee_xof: number
           id: string
@@ -4343,6 +4518,9 @@ export type Database = {
           platform_commission_xof: number
           recipient_code_attempts: number
           recipient_code_hash: string
+          recipient_code_version: number
+          route_distance_meters: number | null
+          route_duration_seconds: number | null
           route_snapshot: Json | null
           status: Database["public"]["Enums"]["delivery_status"]
           terminal_at: string | null
@@ -4573,12 +4751,16 @@ export type Database = {
         }
       }
       document_retention_candidates: {
-        Args: { p_closed_days?: number; p_rejected_days?: number }
+        Args: { p_closed_days?: number; p_limit?: number; p_rejected_days?: number }
         Returns: {
           document_id: string
           storage_bucket: string
           storage_path: string
         }[]
+      }
+      enqueue_due_subscription_notifications: {
+        Args: { p_dashboard_url: string; p_limit?: number }
+        Returns: number
       }
       ensure_loyalty_account: {
         Args: { p_buyer_id: string; p_merchant_id: string }
@@ -4606,6 +4788,10 @@ export type Database = {
         Args: { p_roles?: Database["public"]["Enums"]["admin_role_kind"][] }
         Returns: boolean
       }
+      invalidate_courier_sessions: {
+        Args: { p_user_id: string }
+        Returns: undefined
+      }
       is_merchant_member: {
         Args: {
           p_merchant_id: string
@@ -4627,6 +4813,15 @@ export type Database = {
         }
         Returns: boolean
       }
+      mark_abandoned_carts:
+        | {
+            Args: { p_inactivity_hours?: number; p_limit?: number }
+            Returns: number
+          }
+        | {
+            Args: { p_cart_ids: string[]; p_inactivity_hours: number; p_limit: number }
+            Returns: number
+          }
       mark_escrow_refunded: {
         Args: { p_order_id: string }
         Returns: {
@@ -4803,6 +4998,23 @@ export type Database = {
         }
       }
       prepare_loyalty_credit_payouts: { Args: never; Returns: number }
+      purge_expired_rate_limit_buckets: {
+        Args: { p_limit?: number; p_retention_hours?: number }
+        Returns: number
+      }
+      purge_processed_webhook_events: {
+        Args: { p_limit?: number; p_retention_days?: number }
+        Returns: number
+      }
+      report_delivery_failure: {
+        Args: {
+          p_actor_id: string
+          p_delivery_id: string
+          p_details: string
+          p_reason: string
+        }
+        Returns: Database["public"]["Tables"]["deliveries"]["Row"]
+      }
       record_courier_payout: {
         Args: {
           p_actor_id: string
@@ -5216,6 +5428,7 @@ export type Database = {
           courier_payout_id: string | null
           created_at: string
           delivered_at: string | null
+          delivery_offer_id: string | null
           failure_reason: string | null
           gross_delivery_fee_xof: number
           id: string
@@ -5229,6 +5442,9 @@ export type Database = {
           platform_commission_xof: number
           recipient_code_attempts: number
           recipient_code_hash: string
+          recipient_code_version: number
+          route_distance_meters: number | null
+          route_duration_seconds: number | null
           route_snapshot: Json | null
           status: Database["public"]["Enums"]["delivery_status"]
           terminal_at: string | null
@@ -5315,6 +5531,30 @@ export type Database = {
           }
       show_limit: { Args: never; Returns: number }
       show_trgm: { Args: { "": string }; Returns: string[] }
+      storefront_catalog_page_product_ids: {
+        Args: {
+          p_category_slug?: string
+          p_city?: string
+          p_limit?: number
+          p_merchant_slug?: string
+          p_offset?: number
+          p_query?: string
+          p_region?: string
+        }
+        Returns: {
+          product_id: string
+          total_count: number
+        }[]
+      }
+      verify_delivery_code_atomic: {
+        Args: {
+          p_actor_id: string
+          p_code: string
+          p_delivery_id: string
+          p_stage: string
+        }
+        Returns: Json
+      }
       submit_courier_verification_case: {
         Args: { p_case_id: string }
         Returns: {

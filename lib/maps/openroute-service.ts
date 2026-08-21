@@ -4,7 +4,7 @@ import { ApiError } from "@/lib/api/errors";
 import type { Coordinates, GeoPlace } from "@/lib/domain/geo";
 import { normalizePeliasFeature, type PeliasFeature } from "@/lib/maps/normalize";
 
-const API_BASE_URL = "https://api.openrouteservice.org";
+const API_BASE_URL = process.env.OPENROUTESERVICE_API_URL?.trim() || "https://api.openrouteservice.org";
 const REQUEST_TIMEOUT_MS = 8_000;
 
 type PeliasResponse = { features?: PeliasFeature[] };

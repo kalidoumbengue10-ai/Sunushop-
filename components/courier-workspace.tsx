@@ -1,7 +1,8 @@
 "use client";
 
 import Image from "next/image";
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { getBrowserSupabase } from "@/lib/infrastructure/supabase/browser";
 import { formatPrice } from "@/lib/marketplace";
 import { LocationMap, NavigationLinks } from "@/components/location-map";
@@ -27,6 +28,7 @@ type ShopStat = { membershipId: string; shopName: string; active: number; delive
 type CourierStats = { upcoming: number; active: number; deliveredThisMonth: number; deliveredTotal: number; failedTotal: number; dueXof: number; paidThisMonthXof: number };
 type CourierPayout = { id: string; amount_xof: number; payment_method: string; destination_number: string; external_reference: string | null; paid_at: string; status: string; reviewed_at: string | null; contest_reason: string | null; voided_at: string | null; courier_payout_deliveries: Array<{ delivery_id: string }> };
 type DeliveryRoute = { geometry: { type: "LineString"; coordinates: number[][] }; distanceMeters: number; durationSeconds: number };
+type DeliveryOffer = { id: string; publicCode: string; merchantSequence: number; shopName: string; zone: string; distanceMeters: number; durationSeconds: number; courierFeeXof: number; createdAt: string; expiresAt: string };
 type CourierTab = "mission" | "history" | "payments" | "profile";
 
 const terminalStatuses = new Set(["delivered", "failed", "cancelled"]);
@@ -35,28 +37,56 @@ const paymentStatusLabels: Record<string, string> = { not_due: "Non due", review
 const formatDate = (value: string | null | undefined) => value ? new Intl.DateTimeFormat("fr-SN", { dateStyle: "medium", timeStyle: "short", timeZone: "Africa/Dakar" }).format(new Date(value)) : "—";
 
 export function CourierWorkspace() {
+  const searchParams = useSearchParams();
   const [items, setItems] = useState<Delivery[]>([]);
   const [memberships, setMemberships] = useState<Membership[]>([]);
   const [shopStats, setShopStats] = useState<ShopStat[]>([]);
   const [payouts, setPayouts] = useState<CourierPayout[]>([]);
   const [stats, setStats] = useState<CourierStats>({ upcoming: 0, active: 0, deliveredThisMonth: 0, deliveredTotal: 0, failedTotal: 0, dueXof: 0, paidThisMonthXof: 0 });
-  const [tab, setTab] = useState<CourierTab>("mission");
+  const [tab, setTab] = useState<CourierTab>(() => searchParams.get("tab") === "paiements" ? "payments" : "mission");
+  const [pagination, setPagination] = useState({ page: 1, totalPages: 1 });
   const [historyFilter, setHistoryFilter] = useState<"all" | "delivered" | "failed" | "cancelled">("all");
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [routes, setRoutes] = useState<Record<string, DeliveryRoute | null>>({});
   const [invitations, setInvitations] = useState<Array<{ id: string; shopName: string; location: string; invitedAt: string }>>([]);
+  const [offers, setOffers] = useState<DeliveryOffer[]>([]);
+  const [failureDeliveryId, setFailureDeliveryId] = useState<string | null>(null);
+  const [contestedPayout, setContestedPayout] = useState<CourierPayout | null>(null);
+  const [payoutBusy, setPayoutBusy] = useState(false);
+  const [payoutDialogError, setPayoutDialogError] = useState("");
+  const contestReasonRef = useRef<HTMLTextAreaElement>(null);
 
-  const load = useCallback(async () => {
-    const [response, invitationResponse] = await Promise.all([
-      fetch("/api/deliveries/mine", { cache: "no-store" }),
+  useEffect(() => {
+    if (!contestedPayout) return;
+    contestReasonRef.current?.focus();
+  }, [contestedPayout]);
+
+  const load = useCallback(async (nextPage = 1, append = false) => {
+    const [response, invitationResponse, offerResponse] = await Promise.all([
+      fetch(`/api/deliveries/mine?page=${nextPage}&limit=100`, { cache: "no-store" }),
       fetch("/api/courier/invitations", { cache: "no-store" }),
+      fetch("/api/courier/delivery-offers", { cache: "no-store" }),
     ]);
     const payload = await response.json();
-    if (!response.ok) throw new Error(payload.error?.message);
-    setItems(payload.data.items); setMemberships(payload.data.memberships); setShopStats(payload.data.shopStats); setPayouts(payload.data.payouts); setStats(payload.data.stats);
     if (invitationResponse.ok) setInvitations((await invitationResponse.json()).data.items);
+    if (offerResponse.ok) setOffers((await offerResponse.json()).data.items);
+    if (!response.ok) throw new Error(payload.error?.message);
+    setItems((current) => append
+      ? [...current, ...payload.data.items.filter((item: Delivery) => !current.some((existing) => existing.id === item.id))]
+      : payload.data.items);
+    setPagination({ page: payload.data.pagination?.page ?? nextPage, totalPages: payload.data.pagination?.totalPages ?? 1 });
+    setMemberships(payload.data.memberships); setShopStats(payload.data.shopStats); setPayouts(payload.data.payouts); setStats(payload.data.stats);
   }, []);
+
+  const respondToOffer = async (offerId: string, decision: "accept" | "decline") => {
+    setError(""); setMessage("");
+    const response = await fetch(`/api/courier/delivery-offers/${offerId}/decision`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ decision }) });
+    const payload = await response.json();
+    if (!response.ok) return setError(payload.error?.message ?? "Cette proposition ne peut plus être traitée.");
+    setMessage(decision === "accept" ? "Mission acceptée. Les coordonnées du client sont maintenant disponibles." : "Mission refusée. Le marchand peut l’affecter à un autre livreur.");
+    await load();
+  };
 
   const respondToInvitation = async (invitationId: string, decision: "accept" | "decline") => {
     setError(""); setMessage("");
@@ -77,8 +107,14 @@ export function CourierWorkspace() {
   useEffect(() => {
     let cancelled = false;
     queueMicrotask(() => { if (!cancelled) load().catch((caught: Error) => setError(caught.message)); });
+    // Une première requête peut partir pendant l'hydratation de la session.
+    // Cette relance courte évite de laisser un livreur sur un écran vide alors
+    // qu'une offre l'attend déjà.
+    const initialRetry = window.setTimeout(() => {
+      if (!cancelled && document.visibilityState === "visible") void load().catch((caught: Error) => setError(caught.message));
+    }, 2_500);
     const interval = window.setInterval(() => { if (document.visibilityState === "visible") void load(); }, 30_000);
-    return () => { cancelled = true; window.clearInterval(interval); };
+    return () => { cancelled = true; window.clearTimeout(initialRetry); window.clearInterval(interval); };
   }, [load]);
   const membershipKey = memberships.map((membership) => membership.id).sort().join(",");
   useEffect(() => {
@@ -86,23 +122,37 @@ export function CourierWorkspace() {
     const supabase = getBrowserSupabase();
     const channel = supabase.channel(`courier-deliveries-${membershipKey}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "deliveries", filter: `courier_membership_id=in.(${membershipKey})` }, () => void load())
-      .on("postgres_changes", { event: "*", schema: "public", table: "delivery_disputes" }, () => void load())
-      .on("postgres_changes", { event: "*", schema: "public", table: "courier_payouts" }, () => void load())
+      .on("postgres_changes", { event: "*", schema: "public", table: "delivery_offers", filter: `courier_membership_id=in.(${membershipKey})` }, () => void load())
+      // Ces deux tables portent aussi courier_membership_id : sans filtre,
+      // chaque livreur connecté recevait (et l'évaluation RLS de Realtime
+      // facturait) les événements de TOUTE la plateforme, pas seulement les
+      // siens — un litige ou un versement ailleurs rechargeait cet espace.
+      .on("postgres_changes", { event: "*", schema: "public", table: "delivery_disputes", filter: `courier_membership_id=in.(${membershipKey})` }, () => void load())
+      .on("postgres_changes", { event: "*", schema: "public", table: "courier_payouts", filter: `courier_membership_id=in.(${membershipKey})` }, () => void load())
       .subscribe();
     return () => { void supabase.removeChannel(channel); };
   }, [load, membershipKey]);
 
-  const activeItems = useMemo(() => items.filter((item) => !terminalStatuses.has(item.status)), [items]);
+  const activeItems = useMemo(() => items.filter((item) => !terminalStatuses.has(item.status)).sort((a, b) => new Date(a.assigned_at).getTime() - new Date(b.assigned_at).getTime()), [items]);
   const historyItems = useMemo(() => items.filter((item) => terminalStatuses.has(item.status) && (historyFilter === "all" || item.status === historyFilter)), [historyFilter, items]);
 
-  const transition = async (id: string, status: string) => {
-    const note = status === "failed" ? window.prompt("Décrivez la raison de l’échec") : undefined;
-    if (status === "failed" && !note) return;
+  const transition = async (id: string, status: string, options?: { note?: string; failureReason?: string }) => {
+    const note = options?.note;
     setError("");
-    const response = await fetch(`/api/deliveries/${id}/status`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ status, note }) });
+    const response = await fetch(`/api/deliveries/${id}/status`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ status, note, failureReason: options?.failureReason }) });
     const payload = await response.json();
     if (!response.ok) return setError(payload.error?.message ?? "Action impossible.");
     setMessage("Livraison mise à jour."); await load();
+  };
+  const submitFailure = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!failureDeliveryId) return;
+    const values = new FormData(event.currentTarget);
+    const reason = String(values.get("reason") ?? "other");
+    const details = String(values.get("details") ?? "").trim();
+    const labels: Record<string, string> = { client_absent: "Client absent", client_unreachable: "Client injoignable", wrong_address: "Adresse incorrecte", parcel_refused: "Colis refusé", other: "Autre problème" };
+    await transition(failureDeliveryId, "failed", { failureReason: reason, note: details || labels[reason] });
+    setFailureDeliveryId(null);
   };
   const verifyRecipient = async (event: FormEvent<HTMLFormElement>, id: string) => {
     event.preventDefault(); setError(""); const form = new FormData(event.currentTarget);
@@ -119,14 +169,33 @@ export function CourierWorkspace() {
     if (!response.ok) return setError(payload.error?.message ?? "Coordonnées impossibles à enregistrer.");
     setMessage("Coordonnées de paiement enregistrées."); await load();
   };
-  const reviewPayout = async (payout: CourierPayout, decision: "confirmed" | "contested") => {
-    const reason = decision === "contested" ? window.prompt("Pourquoi contestez-vous ce règlement ?") : undefined;
-    if (decision === "contested" && !reason) return;
+  const reviewPayout = async (payout: CourierPayout, decision: "confirmed" | "contested", reason?: string) => {
+    if (decision === "contested" && (!reason || reason.length < 4 || reason.length > 500)) {
+      setPayoutDialogError("Le motif doit contenir entre 4 et 500 caractères.");
+      return;
+    }
     setError(""); setMessage("");
-    const response = await fetch(`/api/courier/payouts/${payout.id}/decision`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ decision, contestReason: reason }) });
-    const payload = await response.json();
-    if (!response.ok) return setError(payload.error?.message ?? "Décision impossible.");
-    setMessage(decision === "confirmed" ? "Réception du règlement confirmée." : "Règlement contesté : les missions redeviennent dues."); await load();
+    setPayoutBusy(true);
+    try {
+      const response = await fetch(`/api/courier/payouts/${payout.id}/decision`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ decision, contestReason: reason }) });
+      const payload = await response.json();
+      if (!response.ok) {
+        const actionError = payload.error?.message ?? "Décision impossible.";
+        if (decision === "contested") setPayoutDialogError(actionError); else setError(actionError);
+        return;
+      }
+      setContestedPayout(null); setPayoutDialogError("");
+      setMessage(decision === "confirmed" ? "Réception du règlement confirmée." : "Règlement contesté : les missions redeviennent dues."); await load();
+    } catch {
+      const actionError = "Connexion interrompue. Réessayez sans fermer cette fenêtre.";
+      if (decision === "contested") setPayoutDialogError(actionError); else setError(actionError);
+    } finally { setPayoutBusy(false); }
+  };
+  const submitPayoutContest = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!contestedPayout) return;
+    const reason = String(new FormData(event.currentTarget).get("contestReason") ?? "").trim();
+    await reviewPayout(contestedPayout, "contested", reason);
   };
 
   const showRoute = async (deliveryId: string) => {
@@ -172,14 +241,14 @@ export function CourierWorkspace() {
         {delivery.status === "accepted" && <button className="mvp-button" onClick={() => void transition(delivery.id, "at_pickup")}>Je suis arrivé au retrait</button>}
         {delivery.status === "at_pickup" && delivery.pickupCode && <div className="courier-pickup-code"><small>Présentez ce code au commerçant</small><strong>{delivery.pickupCode}</strong><span>Il disparaît dès sa validation.</span></div>}
         {["picked_up", "in_transit"].includes(delivery.status) && <form className="courier-code-form" onSubmit={(event) => void verifyRecipient(event, delivery.id)}><label>Code donné par le client<input name="code" inputMode="numeric" pattern="[0-9]{6}" placeholder="000000" autoComplete="one-time-code" required /></label><button className="mvp-button">Confirmer la remise</button></form>}
-        {["picked_up", "in_transit"].includes(delivery.status) && <button className="mvp-button mvp-button--danger" onClick={() => void transition(delivery.id, "failed")}>Signaler un échec</button>}
+        {["picked_up", "in_transit"].includes(delivery.status) && <button className="mvp-button mvp-button--danger" onClick={() => setFailureDeliveryId(delivery.id)}>Signaler un échec</button>}
       </div>
     </article>;
   };
 
   const tabs: Array<{ id: CourierTab; label: string; count?: number }> = [
-    { id: "mission", label: "Mission actuelle", count: activeItems.length },
-    { id: "history", label: "Historique" },
+    { id: "mission", label: "Missions", count: activeItems.length + offers.length },
+    { id: "history", label: "File" },
     { id: "payments", label: "Paiements", count: payouts.filter((payout) => payout.status === "pending_confirmation").length },
     { id: "profile", label: "Profil" },
   ];
@@ -189,6 +258,7 @@ export function CourierWorkspace() {
     {message && <p className="mvp-alert" role="status">{message}</p>}{error && <p className="mvp-alert mvp-alert--error" role="alert">{error}</p>}
 
     {tab === "mission" && <section role="tabpanel" className="courier-tab-panel courier-current-mission">
+      {offers.length > 0 && <section className="courier-offers"><div className="marketplace-section-heading"><div><span className="mvp-eyebrow">Nouvelles propositions</span><h2>À accepter</h2><p>La distance et votre gain sont affichés avant les coordonnées du client.</p></div><span>{offers.length}</span></div><div className="courier-offer-grid">{offers.map((offer) => <article className="courier-offer-card" key={offer.id}><header><div><small>{offer.shopName}</small><h3>{offer.publicCode}</h3></div><strong>{formatPrice(offer.courierFeeXof)}</strong></header><div className="courier-offer-metrics"><span><b>{(offer.distanceMeters / 1000).toFixed(1)} km</b><small>distance</small></span><span><b>{Math.max(1, Math.round(offer.durationSeconds / 60))} min</b><small>estimées</small></span><span><b>{offer.zone || "Zone à préciser"}</b><small>destination</small></span></div><p>Les coordonnées exactes du client apparaîtront après votre acceptation. Offre valable jusqu’à {formatDate(offer.expiresAt)}.</p><div className="mvp-actions"><button className="mvp-button" onClick={() => void respondToOffer(offer.id, "accept")}>Accepter la mission</button><button className="mvp-button mvp-button--secondary" onClick={() => void respondToOffer(offer.id, "decline")}>Refuser</button></div></article>)}</div></section>}
       {invitations.length > 0 && <section className="mvp-card mvp-card--full"><h2>Invitations reçues</h2><p>Ces boutiques souhaitent vous confier leurs livraisons.</p><div className="mvp-list">{invitations.map((invitation) => <div className="mvp-row" key={invitation.id}><span><strong>{invitation.shopName}</strong><small>{invitation.location || "Localisation à préciser"}</small></span><div className="mvp-actions"><button type="button" className="mvp-button" onClick={() => void respondToInvitation(invitation.id, "accept")}>Accepter</button><button type="button" className="mvp-button mvp-button--secondary" onClick={() => void respondToInvitation(invitation.id, "decline")}>Refuser</button></div></div>)}</div></section>}
       <div className="marketplace-section-heading"><div><span className="mvp-eyebrow">À faire maintenant</span><h1>Ma mission actuelle</h1><p>Une seule action principale est affichée à chaque étape.</p></div><span>{activeItems.length}</span></div>
       {activeItems[0] ? deliveryCard(activeItems[0], true) : <div className="mvp-card mvp-card--full courier-empty-state"><h2>Aucune mission en attente</h2><p>Les nouvelles missions confiées par vos boutiques apparaîtront ici.</p></div>}
@@ -196,16 +266,20 @@ export function CourierWorkspace() {
     </section>}
 
     {tab === "history" && <section role="tabpanel" className="courier-tab-panel">
-      <div className="marketplace-section-heading"><div><h1>Historique</h1><p>Consultez vos missions terminées, échouées ou annulées.</p></div><span>{historyItems.length}</span></div>
+      <div className="marketplace-section-heading"><div><h1>Ma file</h1><p>Vos prochaines missions, puis l’historique de celles qui sont terminées.</p></div><span>{Math.max(0, activeItems.length - 1)}</span></div>
+      {activeItems.length > 1 && <div className="courier-mission-grid">{activeItems.slice(1).map((delivery) => deliveryCard(delivery))}</div>}
+      {activeItems.length <= 1 && <p className="mvp-empty">Aucune autre mission en file d’attente.</p>}
+      <div className="mvp-divider" /><h2>Historique</h2>
       <div className="courier-filter-tabs">{(["all", "delivered", "failed", "cancelled"] as const).map((value) => <button type="button" key={value} className={`mvp-button ${historyFilter === value ? "" : "mvp-button--secondary"}`} onClick={() => setHistoryFilter(value)}>{value === "all" ? "Toutes" : statusLabels[value]}</button>)}</div>
       <div className="courier-mission-grid courier-mission-grid--history">{historyItems.map((delivery) => deliveryCard(delivery))}</div>
       {!historyItems.length && <p className="mvp-empty">Aucune mission dans cette catégorie.</p>}
+      {pagination.page < pagination.totalPages && <button type="button" className="mvp-button mvp-button--secondary" onClick={() => void load(pagination.page + 1, true)}>Charger plus de missions</button>}
     </section>}
 
     {tab === "payments" && <section role="tabpanel" className="courier-tab-panel">
       <section className="merchant-kpi-grid"><article><span>Montant dû</span><strong>{formatPrice(stats.dueXof)}</strong></article><article><span>Payé ce mois</span><strong>{formatPrice(stats.paidThisMonthXof)}</strong></article><article><span>Livrées ce mois</span><strong>{stats.deliveredThisMonth}</strong></article></section>
       <section className="mvp-card mvp-card--full"><h2>Mes coordonnées de paiement</h2><p>Ces numéros sont transmis uniquement aux boutiques qui vous rémunèrent.</p><form className="mvp-form" key={`${memberships[0]?.wave_payment_number}-${memberships[0]?.orange_money_payment_number}-${memberships[0]?.preferred_payment_channel}`} onSubmit={savePaymentProfile}><div className="mvp-form__grid"><label className="mvp-field">Numéro Wave<input name="waveNumber" inputMode="tel" defaultValue={memberships[0]?.wave_payment_number ?? ""} /></label><label className="mvp-field">Numéro Orange Money<input name="orangeMoneyNumber" inputMode="tel" defaultValue={memberships[0]?.orange_money_payment_number ?? ""} /></label><label className="mvp-field">Canal préféré<select name="preferredChannel" defaultValue={memberships[0]?.preferred_payment_channel ?? ""}><option value="">Aucun</option><option value="wave">Wave</option><option value="orange_money">Orange Money</option></select></label></div><button className="mvp-button">Enregistrer mes numéros</button></form></section>
-      <section className="courier-shops"><h2>Mes règlements</h2><div>{payouts.map((payout) => <article className="courier-shop-profile" key={payout.id}><div><b>{formatPrice(payout.amount_xof)} · {payout.payment_method.replaceAll("_", " ")}</b><small>{formatDate(payout.paid_at)} · vers {payout.destination_number} · {payout.courier_payout_deliveries.length} mission(s){payout.external_reference ? ` · réf. ${payout.external_reference}` : ""}</small><small>{payout.status === "pending_confirmation" ? "Réception à confirmer" : payout.status === "confirmed" ? `Réception confirmée le ${formatDate(payout.reviewed_at)}` : payout.status === "contested" ? `Contesté : ${payout.contest_reason}` : `Règlement annulé le ${formatDate(payout.voided_at)}`}</small></div>{payout.status === "pending_confirmation" && <div className="mvp-actions"><button className="mvp-button" onClick={() => void reviewPayout(payout, "confirmed")}>Confirmer la réception</button><button className="mvp-button mvp-button--danger" onClick={() => void reviewPayout(payout, "contested")}>Contester</button></div>}</article>)}</div>{!payouts.length && <p className="mvp-empty">Aucun règlement enregistré.</p>}</section>
+      <section className="courier-shops"><h2>Mes règlements</h2><div>{payouts.map((payout) => <article className="courier-shop-profile" key={payout.id}><div><b>{formatPrice(payout.amount_xof)} · {payout.payment_method.replaceAll("_", " ")}</b><small>{formatDate(payout.paid_at)} · vers {payout.destination_number} · {payout.courier_payout_deliveries.length} mission(s){payout.external_reference ? ` · réf. ${payout.external_reference}` : ""}</small><small>{payout.status === "pending_confirmation" ? "Réception à confirmer" : payout.status === "confirmed" ? `Réception confirmée le ${formatDate(payout.reviewed_at)}` : payout.status === "contested" ? `Contesté : ${payout.contest_reason}` : `Règlement annulé le ${formatDate(payout.voided_at)}`}</small></div>{payout.status === "pending_confirmation" && <div className="mvp-actions"><button className="mvp-button" disabled={payoutBusy} onClick={() => void reviewPayout(payout, "confirmed")}>{payoutBusy ? "Traitement…" : "Confirmer la réception"}</button><button className="mvp-button mvp-button--danger" disabled={payoutBusy} onClick={() => { setPayoutDialogError(""); setContestedPayout(payout); }}>Contester</button></div>}</article>)}</div>{!payouts.length && <p className="mvp-empty">Aucun règlement enregistré.</p>}</section>
     </section>}
 
     {tab === "profile" && <section role="tabpanel" className="courier-tab-panel">
@@ -214,5 +288,7 @@ export function CourierWorkspace() {
       <section className="courier-shops"><h2>Activité par boutique</h2><div>{shopStats.map((shop) => <article className="courier-shop-profile" key={shop.membershipId}><div><b>{shop.shopName}</b><small>{shop.active} active(s) · {shop.delivered} livrée(s) · {shop.failed} échec(s)</small><small>{formatPrice(shop.dueXof)} dû · {formatPrice(shop.paidXof)} payé</small></div></article>)}</div></section>
       <section className="courier-shops"><h2>Mes profils boutique</h2><div>{memberships.map((membership) => { const shop = Array.isArray(membership.merchant_accounts) ? membership.merchant_accounts[0] : membership.merchant_accounts; return <article className="courier-shop-profile" key={membership.id}>{membership.photoUrl ? <Image unoptimized width={72} height={72} src={membership.photoUrl} alt="" /> : <div className="courier-profile__placeholder">{membership.display_name.slice(0, 1)}</div>}<div><b>{shop?.public_name ?? "Boutique"}</b><small>{membership.display_name} · {membership.phone}</small><small>{membership.vehicle_type ? `${membership.vehicle_type}${membership.vehicle_registration ? ` · ${membership.vehicle_registration}` : ""}` : "Véhicule non renseigné"}</small><small>{membership.status === "active" ? "Accès actif" : "Historique uniquement"}</small></div></article>; })}</div></section>
     </section>}
+    {failureDeliveryId && <div className="courier-sheet-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setFailureDeliveryId(null); }}><section className="courier-sheet" role="dialog" aria-modal="true" aria-labelledby="courier-failure-title"><div className="courier-sheet__handle" /><h2 id="courier-failure-title">Pourquoi la livraison n’a pas abouti ?</h2><p>Choisissez le motif le plus simple. Le marchand sera averti.</p><form className="mvp-form" onSubmit={submitFailure}><div className="courier-failure-options">{[["client_absent", "Client absent"], ["client_unreachable", "Client injoignable"], ["wrong_address", "Adresse incorrecte"], ["parcel_refused", "Colis refusé"], ["other", "Autre problème"]].map(([value, label], index) => <label key={value}><input type="radio" name="reason" value={value} defaultChecked={index === 0} /><span>{label}</span></label>)}</div><label className="mvp-field">Précision facultative<textarea name="details" rows={3} maxLength={500} placeholder="Ajoutez seulement ce qui aidera le marchand." /></label><div className="mvp-actions"><button className="mvp-button mvp-button--danger">Confirmer l’échec</button><button type="button" className="mvp-button mvp-button--secondary" onClick={() => setFailureDeliveryId(null)}>Retour</button></div></form></section></div>}
+    {contestedPayout && <div className="courier-sheet-backdrop" role="presentation" onMouseDown={(event) => { if (!payoutBusy && event.target === event.currentTarget) setContestedPayout(null); }}><section className="courier-sheet" role="dialog" aria-modal="true" aria-labelledby="courier-payout-contest-title" aria-describedby={payoutDialogError ? "courier-payout-contest-error" : "courier-payout-contest-help"} onKeyDown={(event) => { if (!payoutBusy && event.key === "Escape") setContestedPayout(null); }}><div className="courier-sheet__handle" /><form className="mvp-form" onSubmit={submitPayoutContest}><h2 id="courier-payout-contest-title">Contester ce règlement ?</h2><p id="courier-payout-contest-help">Expliquez précisément ce qui manque ou ne correspond pas. Les missions concernées redeviendront dues.</p>{payoutDialogError && <p id="courier-payout-contest-error" className="mvp-alert mvp-alert--error" role="alert">{payoutDialogError}</p>}<label className="mvp-field">Motif de la contestation<textarea ref={contestReasonRef} name="contestReason" rows={4} minLength={4} maxLength={500} required /></label><div className="mvp-actions"><button className="mvp-button mvp-button--danger" disabled={payoutBusy}>{payoutBusy ? "Envoi…" : "Confirmer la contestation"}</button><button type="button" className="mvp-button mvp-button--secondary" disabled={payoutBusy} onClick={() => setContestedPayout(null)}>Retour</button></div></form></section></div>}
   </div>;
 }

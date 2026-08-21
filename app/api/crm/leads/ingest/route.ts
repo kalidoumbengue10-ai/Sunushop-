@@ -1,14 +1,8 @@
-import { timingSafeEqual } from "node:crypto";
 import { requireAdminClient } from "@/lib/api/auth";
+import { constantTimeEqual } from "@/lib/api/constant-time";
 import { ApiError } from "@/lib/api/errors";
 import { apiFailure, apiSuccess } from "@/lib/api/response";
 import { prelaunchLeadIngestSchema } from "@/lib/domain/schemas";
-
-function secretsMatch(received: string, expected: string) {
-  const receivedBuffer = Buffer.from(received);
-  const expectedBuffer = Buffer.from(expected);
-  return receivedBuffer.length === expectedBuffer.length && timingSafeEqual(receivedBuffer, expectedBuffer);
-}
 
 export async function POST(request: Request) {
   const requestId = crypto.randomUUID();
@@ -22,7 +16,7 @@ export async function POST(request: Request) {
     if (!expectedSecret) {
       throw new ApiError(503, "INGEST_NOT_CONFIGURED", "La réception des candidatures est momentanément indisponible.");
     }
-    if (!receivedSecret || !secretsMatch(receivedSecret, expectedSecret)) {
+    if (!receivedSecret || !constantTimeEqual(Buffer.from(receivedSecret), Buffer.from(expectedSecret))) {
       throw new ApiError(401, "INVALID_INGEST_SECRET", "Requête non autorisée.");
     }
 

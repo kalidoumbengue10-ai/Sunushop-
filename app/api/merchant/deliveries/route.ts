@@ -76,7 +76,7 @@ export async function POST(request: Request) {
       throw new ApiError(409, "COURIER_FEE_NOT_CONFIGURED", "Fixez d’abord la rémunération du livreur pour cette zone.");
     }
 
-    const { data: existing } = await admin.from("deliveries").select("id, status, courier_membership_id").eq("order_id", order.id).maybeSingle();
+    const { data: existing } = await admin.from("deliveries").select("id, status, courier_membership_id").eq("order_id", order.id).in("status", ["assigned", "accepted", "at_pickup", "picked_up", "in_transit"]).maybeSingle();
     if (existing) {
       if (!["assigned", "accepted", "at_pickup"].includes(existing.status)) {
         throw new ApiError(409, "DELIVERY_TRANSITION_NOT_ALLOWED", "Réaffectation impossible après retrait.");

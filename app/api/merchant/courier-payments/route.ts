@@ -2,6 +2,7 @@ import { requireAdminClient } from "@/lib/api/auth";
 import { requireActiveMerchantAccess } from "@/lib/api/merchant-access";
 import { apiFailure, apiSuccess } from "@/lib/api/response";
 import { courierPayoutSchema } from "@/lib/domain/schemas";
+import { enqueueEmail } from "@/lib/notifications/outbox";
 
 export async function GET(request: Request) {
   const requestId = crypto.randomUUID();
@@ -59,7 +60,8 @@ export async function POST(request: Request) {
   try {
     const input = courierPayoutSchema.parse(await request.json());
     const { user } = await requireActiveMerchantAccess(input.merchantId, ["owner", "manager"]);
-    const { data, error } = await requireAdminClient().rpc("record_courier_payout", {
+    const admin = requireAdminClient();
+    const { data, error } = await admin.rpc("record_courier_payout", {
       p_merchant_id: input.merchantId,
       p_courier_membership_id: input.courierMembershipId,
       p_delivery_ids: input.deliveryIds,
@@ -69,6 +71,21 @@ export async function POST(request: Request) {
       p_actor_id: user.id,
     });
     if (error) throw error;
+    const payout = Array.isArray(data) ? data[0] : data;
+    const [{ data: membership }, { data: merchant }] = await Promise.all([
+      admin.from("courier_memberships").select("courier_user_id, email").eq("id", input.courierMembershipId).maybeSingle(),
+      admin.from("merchant_accounts").select("public_name").eq("id", input.merchantId).maybeSingle(),
+    ]);
+    if (membership && payout) {
+      await enqueueEmail(admin, {
+        dedupeKey: `courier-payout-declared:${payout.id}`,
+        template: "courier_payout_declared",
+        to: membership.email,
+        recipientUserId: membership.courier_user_id,
+        payload: { shopName: merchant?.public_name, amountXof: payout.amount_xof, paymentMethod: input.paymentMethod, externalReference: input.externalReference, url: new URL("/marchand?mode=missions&tab=paiements", request.url).toString() },
+        sendImmediately: true,
+      }).catch(() => false);
+    }
     return apiSuccess(data, { status: 201, requestId });
   } catch (error) {
     return apiFailure(error, requestId);

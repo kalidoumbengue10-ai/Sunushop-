@@ -114,7 +114,7 @@ export default async function MarchandPage({ searchParams }: { searchParams: Pro
               <span className="mvp-eyebrow">Commerçant ou livreur</span>
               <h1 className="mvp-title">Aucun commerce ni mission ne vous est encore associé.</h1>
               <p className="mvp-lede">Créez votre boutique, ou inscrivez-vous comme livreur : une fois votre profil vérifié, les commerçants pourront vous inviter dans leur équipe.</p>
-              <div className="mvp-actions"><Link className="mvp-button" href="/creer-ma-boutique">Créer ma boutique</Link><Link className="mvp-button" href="/devenir-livreur">Devenir livreur</Link><Link className="mvp-button mvp-button--secondary" href="/">Retour à l’accueil</Link></div>
+              <div className="mvp-actions"><Link className="mvp-button" href="/creer-ma-boutique">Créer ma boutique</Link><Link className="mvp-button" href="/livreur/connexion">Espace livreur</Link><Link className="mvp-button mvp-button--secondary" href="/">Retour à l’accueil</Link></div>
             </section>
           </div>
         </main>
@@ -131,7 +131,7 @@ export default async function MarchandPage({ searchParams }: { searchParams: Pro
     { data: zones },
     { data: subscription },
     { data: payments },
-    { data: orders },
+    { data: orders, count: ordersCount },
     { data: notifications },
     { data: platformPaymentSettings },
   ] = await Promise.all([
@@ -182,10 +182,11 @@ export default async function MarchandPage({ searchParams }: { searchParams: Pro
       .from("orders")
       .select(
         "id, public_code, merchant_sequence, status, payment_method, payment_status, total_xof, delivery_snapshot, created_at, deliveries(id), direct_payment_declarations(id, external_reference, status, rejection_reason, confirmed_by_merchant_at)",
+        { count: "exact" },
       )
       .eq("merchant_id", merchant.id)
       .order("created_at", { ascending: false })
-      .limit(100),
+      .range(0, 14),
     supabase
       .from("notification_outbox")
       .select("id, template, payload, created_at")
@@ -220,6 +221,7 @@ export default async function MarchandPage({ searchParams }: { searchParams: Pro
             subscription={subscription}
             payments={payments ?? []}
             orders={orders ?? []}
+            ordersTotal={ordersCount ?? 0}
             notifications={notifications ?? []}
             subscriptionPaymentNumbers={{
               wave: platformPaymentSettings?.find((item: { channel: string }) => item.channel === "wave")?.payment_number ?? null,

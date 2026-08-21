@@ -1,5 +1,5 @@
-import { timingSafeEqual } from "node:crypto";
 import { ApiError } from "./errors";
+import { constantTimeEqual } from "./constant-time";
 
 export function requireCron(request: Request) {
   const secret = process.env.CRON_SECRET;
@@ -8,12 +8,7 @@ export function requireCron(request: Request) {
     throw new ApiError(401, "CRON_UNAUTHORIZED", "Accès refusé.");
   }
   const received = authorization.slice("Bearer ".length);
-  const expectedBuffer = Buffer.from(secret);
-  const receivedBuffer = Buffer.from(received);
-  if (
-    expectedBuffer.length !== receivedBuffer.length ||
-    !timingSafeEqual(expectedBuffer, receivedBuffer)
-  ) {
+  if (!constantTimeEqual(Buffer.from(secret), Buffer.from(received))) {
     throw new ApiError(401, "CRON_UNAUTHORIZED", "Accès refusé.");
   }
 }

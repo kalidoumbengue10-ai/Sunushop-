@@ -102,6 +102,14 @@ const databaseErrorMap: Record<string, { status: number; message: string }> = {
     status: 404,
     message: "Produit introuvable.",
   },
+  PRODUCT_LIMIT_REACHED: {
+    status: 409,
+    message: "La limite de produits de votre abonnement est atteinte.",
+  },
+  PRODUCT_SUSPENDED: {
+    status: 409,
+    message: "Ce produit est suspendu et ne peut pas être modifié.",
+  },
   CASE_ASSIGNED_TO_ANOTHER_REVIEWER: {
     status: 409,
     message: "Ce dossier est déjà attribué à un autre reviewer.",

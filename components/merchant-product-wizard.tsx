@@ -61,8 +61,8 @@ export function MerchantProductWizard({ merchantId, categories, products, delive
   products: MerchantProductEditor[];
   deliveryReady: boolean;
   subscriptionReady: boolean;
-  onOpenSubscription: () => void;
-  onOpenDelivery: () => void;
+  onOpenSubscription?: () => void;
+  onOpenDelivery?: () => void;
 }) {
   const router = useRouter();
   const photoInputRef = useRef<HTMLInputElement>(null);
@@ -81,10 +81,11 @@ export function MerchantProductWizard({ merchantId, categories, products, delive
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [confirmNoVariants, setConfirmNoVariants] = useState(false);
+  const [quotaReached, setQuotaReached] = useState(false);
 
   const categorySlugById = useMemo(() => new Map(categories.map((category) => [category.id, category.slug])), [categories]);
 
-  const sellableStock = useMemo(() => variants.reduce((sum, variant) => sum + Math.max(0, variant.stock - variant.reserved), 0), [variants]);
+  const sellableStock = useMemo(() => variants.reduce((sum, variant) => variant.active ? sum + Math.max(0, variant.stock - variant.reserved) : sum, 0), [variants]);
 
   const revokeBlobUrls = () => {
     for (const url of blobUrlsRef.current) URL.revokeObjectURL(url);
@@ -115,26 +116,26 @@ export function MerchantProductWizard({ merchantId, categories, products, delive
       altText: media.alt_text ?? product.title,
       position: media.position,
     })));
-    const activeVariants = product.product_variants.filter((variant) => variant.active);
-    setVariants(activeVariants.map((variant) => {
+    const editableVariants = product.product_variants;
+    setVariants(editableVariants.map((variant) => {
       const inventory = variant.inventory_items?.[0];
       return {
         id: variant.id, title: variant.title ?? (Object.values(variant.attributes ?? {}).join(" · ") || "Standard"),
         attributes: variant.attributes ?? {}, sku: variant.sku.startsWith("AUTO-") ? "" : variant.sku,
         priceXof: variant.price_xof, compareAtPriceXof: variant.compare_at_price_xof ?? undefined,
         stock: inventory?.available_quantity ?? 0, reserved: inventory?.reserved_quantity ?? 0,
-        lowStockThreshold: inventory?.low_stock_threshold ?? 5, active: true,
+        lowStockThreshold: inventory?.low_stock_threshold ?? 5, active: variant.active,
       };
     }));
     // Reconstruit les axes (noms + valeurs) depuis product.option_names et les
     // attributs des variantes, pour éviter d'avoir à les ressaisir en édition.
     const storedNames = product.option_names?.filter(Boolean) ?? [];
-    const namesFromAttributes = [...new Set(activeVariants.flatMap((variant) => Object.keys(variant.attributes ?? {})))];
+    const namesFromAttributes = [...new Set(editableVariants.flatMap((variant) => Object.keys(variant.attributes ?? {})))];
     const names = storedNames.length ? storedNames : namesFromAttributes;
     if (names.length) {
       setAxes(names.slice(0, MAX_AXES).map((name) => ({
         name,
-        values: [...new Set(activeVariants.map((variant) => variant.attributes?.[name]).filter((value): value is string => Boolean(value)))].join(", "),
+        values: [...new Set(editableVariants.map((variant) => variant.attributes?.[name]).filter((value): value is string => Boolean(value)))].join(", "),
       })));
     } else {
       setAxes(emptyAxes(categorySlugById.get(product.category_id)));
@@ -147,7 +148,11 @@ export function MerchantProductWizard({ merchantId, categories, products, delive
     event.preventDefault(); setBusy(true); setError("");
     const response = await fetch("/api/merchant/products", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ merchantId, categoryId, title, description, draftOnly: true }) });
     const payload = await response.json(); setBusy(false);
-    if (!response.ok) return setError(payload.error?.message ?? "Le brouillon n’a pas pu être créé.");
+    if (!response.ok) {
+      setQuotaReached(payload.error?.code === "PRODUCT_LIMIT_REACHED");
+      return setError(payload.error?.message ?? "Le brouillon n’a pas pu être créé.");
+    }
+    setQuotaReached(false);
     setProductId(payload.data.productId); setVariants([{ ...emptyVariant(), id: payload.data.variantId }]); setStep(2); setMessage("Brouillon enregistré automatiquement.");
   };
 
@@ -330,6 +335,24 @@ export function MerchantProductWizard({ merchantId, categories, products, delive
     router.refresh();
   };
 
+  const changeProductLifecycle = async (
+    selectedProductId: string,
+    change: { publish: boolean } | { action: "archive" | "restore" },
+  ) => {
+    setBusy(true); setError(""); setMessage("");
+    const response = await fetch("/api/merchant/products", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ productId: selectedProductId, ...change }),
+    });
+    const payload = await response.json(); setBusy(false);
+    if (!response.ok) return setError(payload.error?.message ?? "Le produit n’a pas pu être modifié.");
+    setMessage("publish" in change
+      ? (change.publish ? "Le produit est maintenant visible sur le marché." : "Le produit a été dépublié et remis en brouillon.")
+      : (change.action === "archive" ? "Le produit a été archivé." : "Le produit a été restauré en brouillon."));
+    router.refresh();
+  };
+
   const readyDrafts = products.filter((product) => {
     const hasSellableVariant = product.product_variants.some((variant) => {
       const inventory = variant.inventory_items?.[0];
@@ -341,19 +364,20 @@ export function MerchantProductWizard({ merchantId, categories, products, delive
   if (step === 0) return (
     <div className="merchant-catalog-space">
       <div className="merchant-section-heading"><div><span className="mvp-eyebrow">Catalogue</span><h2>Vos produits</h2><p>Photos, variantes et stocks réunis dans un même parcours.</p></div><button className="mvp-button" onClick={() => setStep(1)}>Ajouter un produit</button></div>
+      {quotaReached && <div className="merchant-publication-blocker"><div><strong>Limite de produits atteinte</strong><p>Archivez un produit inutilisé ou adaptez votre abonnement avant d’en ajouter un nouveau.</p></div>{onOpenSubscription && <button type="button" className="mvp-button" onClick={onOpenSubscription}>Voir l’abonnement</button>}</div>}
       {readyDrafts.length > 0 && !deliveryReady && (
         <div className="merchant-publication-blocker">
           <div>
             <strong>{readyDrafts.length} produit{readyDrafts.length > 1 ? "s sont prêts" : " est prêt"}, mais invisible sur le marché</strong>
             <p>Configurez au moins une région de livraison ou le retrait en boutique, puis publiez immédiatement.</p>
           </div>
-          <button type="button" className="mvp-button" onClick={onOpenDelivery}>Configurer la livraison</button>
+          {onOpenDelivery && <button type="button" className="mvp-button" onClick={onOpenDelivery}>Configurer la livraison</button>}
         </div>
       )}
       {readyDrafts.length > 0 && deliveryReady && !subscriptionReady && (
         <div className="merchant-publication-blocker">
           <div><strong>Publication bloquée par l’abonnement</strong><p>Les produits sont enregistrés, mais un abonnement actif est nécessaire pour les rendre visibles.</p></div>
-          <button type="button" className="mvp-button" onClick={onOpenSubscription}>Voir l’abonnement</button>
+          {onOpenSubscription && <button type="button" className="mvp-button" onClick={onOpenSubscription}>Voir l’abonnement</button>}
         </div>
       )}
       {readyDrafts.length > 0 && deliveryReady && subscriptionReady && (
@@ -372,7 +396,19 @@ export function MerchantProductWizard({ merchantId, categories, products, delive
       {error && <p className="mvp-alert mvp-alert--error">{error}</p>}
       <div className="merchant-product-list">
         {products.map((product) => { const variant = product.product_variants.find((item) => item.active); const inventory = variant?.inventory_items?.[0]; return (
-          <article className="merchant-product-row" key={product.id}><div><span className="mvp-status" data-status={product.status}>{merchantStatusLabel(product.status)}</span><h3>{product.title}</h3><small>{product.product_variants.filter((item) => item.active).length} variante(s) · {product.product_media.length} photo(s) · {formatPrice(variant?.price_xof ?? 0)} · {Math.max(0, (inventory?.available_quantity ?? 0) - (inventory?.reserved_quantity ?? 0))} vendable(s)</small></div><div className="mvp-actions"><button className="mvp-button mvp-button--secondary" onClick={() => editProduct(product, 1)}>Infos</button><button className="mvp-button mvp-button--secondary" onClick={() => editProduct(product, 2)}>Variantes et stock</button><button className="mvp-button mvp-button--secondary" onClick={() => editProduct(product, 3)}>Photos</button></div></article>
+          <article className="merchant-product-row" key={product.id}>
+            <div><span className="mvp-status" data-status={product.status}>{merchantStatusLabel(product.status)}</span><h3>{product.title}</h3><small>{product.product_variants.filter((item) => item.active).length} variante(s) · {product.product_media.length} photo(s) · {formatPrice(variant?.price_xof ?? 0)} · {Math.max(0, (inventory?.available_quantity ?? 0) - (inventory?.reserved_quantity ?? 0))} vendable(s)</small></div>
+            <div className="mvp-actions">
+              {product.status !== "archived" && <>
+                <button className="mvp-button mvp-button--secondary" onClick={() => editProduct(product, 1)}>Infos</button>
+                <button className="mvp-button mvp-button--secondary" onClick={() => editProduct(product, 2)}>Variantes et stock</button>
+                <button className="mvp-button mvp-button--secondary" onClick={() => editProduct(product, 3)}>Photos</button>
+              </>}
+              {product.status === "published" && <button className="mvp-button mvp-button--secondary" disabled={busy} onClick={() => void changeProductLifecycle(product.id, { publish: false })}>Dépublier</button>}
+              {product.status !== "archived" && product.status !== "suspended" && <button className="mvp-button mvp-button--danger" disabled={busy} onClick={() => void changeProductLifecycle(product.id, { action: "archive" })}>Archiver</button>}
+              {product.status === "archived" && <button className="mvp-button mvp-button--secondary" disabled={busy} onClick={() => void changeProductLifecycle(product.id, { action: "restore" })}>Restaurer en brouillon</button>}
+            </div>
+          </article>
         ); })}
         {!products.length && <p className="mvp-empty">Aucun produit. L’assistant vous guide jusqu’à la publication.</p>}
       </div>
@@ -385,7 +421,22 @@ export function MerchantProductWizard({ merchantId, categories, products, delive
       <div className="merchant-wizard-steps">{["Informations", "Variantes et stock", "Photos", "Vérification"].map((label, index) => <span className={step === index + 1 ? "is-active" : step > index + 1 ? "is-complete" : ""} key={label}><b>{index + 1}</b>{label}</span>)}</div>
       {message && <p className="mvp-alert">{message}</p>}{error && <p className="mvp-alert mvp-alert--error">{error}</p>}
       {step === 1 && <form className="mvp-form" onSubmit={productId ? (event) => { event.preventDefault(); setStep(2); } : createDraft}><div className="mvp-form__grid"><label className="mvp-field">Nom du produit<input value={title} onChange={(event) => setTitle(event.target.value)} required /></label><label className="mvp-field">Catégorie<select value={categoryId} onChange={(event) => selectCategory(event.target.value)} required>{categories.map((category) => <option value={category.id} key={category.id}>{category.name}</option>)}</select></label></div><label className="mvp-field">Description<textarea rows={5} value={description} onChange={(event) => setDescription(event.target.value)} minLength={10} required /></label><button className="mvp-button" disabled={busy}>{busy ? "Enregistrement…" : "Continuer vers les variantes"}</button></form>}
-      {step === 2 && <div className="mvp-form"><div className="variant-builder"><h3>Générer les combinaisons</h3><p>Définissez jusqu’à quatre axes d’attributs (ex. Taille, Couleur, Poids, Volume) — pré-remplis selon la catégorie choisie, à ajuster librement. Laissez les valeurs vides pour un produit sans option.</p>{axes.map((axis, index) => (<div className="mvp-form__grid variant-axis-row" key={index}><label className="mvp-field">{`Axe ${index + 1} (ex. Taille)`}<input value={axis.name} onChange={(event) => updateAxis(index, { name: event.target.value })} /></label><label className="mvp-field">Valeurs, séparées par virgule, point-virgule ou ligne<input value={axis.values} onChange={(event) => updateAxis(index, { values: event.target.value })} placeholder="S, M, L" /></label>{axes.length > 1 && <button type="button" className="mvp-button mvp-button--secondary" onClick={() => removeAxis(index)} aria-label={`Retirer l’axe ${index + 1}`}>Retirer</button>}</div>))}<div className="mvp-actions">{axes.length < MAX_AXES && <button type="button" className="mvp-button mvp-button--secondary" onClick={addAxis}>Ajouter un axe</button>}<button type="button" className="mvp-button mvp-button--secondary" onClick={generateMatrix}>Générer la matrice</button></div></div><div className="variant-table-wrap"><table className="mvp-table variant-table"><thead><tr><th>Variante</th><th>Prix</th><th>Stock physique</th><th>Réservé</th><th>Seuil d’alerte</th><th>SKU facultatif</th></tr></thead><tbody>{variants.map((variant, index) => <tr key={`${variant.title}-${index}`}><td data-label="Variante"><strong>{variant.title}</strong></td><td data-label="Prix"><input aria-label={`Prix ${variant.title}`} type="number" min="0" value={variant.priceXof} onChange={(event) => updateVariant(index, { priceXof: Number(event.target.value) })} /></td><td data-label="Stock physique"><input aria-label={`Stock ${variant.title}`} type="number" min={variant.reserved} value={variant.stock} onChange={(event) => updateVariant(index, { stock: Number(event.target.value) })} /></td><td data-label="Réservé">{variant.reserved}</td><td data-label="Seuil d’alerte"><input aria-label={`Seuil ${variant.title}`} type="number" min="0" value={variant.lowStockThreshold} onChange={(event) => updateVariant(index, { lowStockThreshold: Number(event.target.value) })} /></td><td data-label="SKU facultatif"><input aria-label={`SKU ${variant.title}`} value={variant.sku} placeholder="Généré automatiquement" onChange={(event) => updateVariant(index, { sku: event.target.value })} /></td></tr>)}</tbody></table></div><p><strong>{sellableStock}</strong> unité(s) disponibles à la vente, après réservations.</p><button type="button" className="mvp-button" disabled={busy} onClick={saveVariants}>{busy ? "Enregistrement…" : confirmNoVariants ? "Confirmer sans taille/couleur" : "Enregistrer et ajouter les photos"}</button></div>}
+      {step === 2 && <div className="mvp-form">
+        <div className="variant-builder"><h3>Générer les combinaisons</h3><p>Définissez jusqu’à quatre axes d’attributs (ex. Taille, Couleur, Poids, Volume) — pré-remplis selon la catégorie choisie, à ajuster librement. Laissez les valeurs vides pour un produit sans option.</p>{axes.map((axis, index) => (<div className="mvp-form__grid variant-axis-row" key={index}><label className="mvp-field">{`Axe ${index + 1} (ex. Taille)`}<input value={axis.name} onChange={(event) => updateAxis(index, { name: event.target.value })} /></label><label className="mvp-field">Valeurs, séparées par virgule, point-virgule ou ligne<input value={axis.values} onChange={(event) => updateAxis(index, { values: event.target.value })} placeholder="S, M, L" /></label>{axes.length > 1 && <button type="button" className="mvp-button mvp-button--secondary" onClick={() => removeAxis(index)} aria-label={`Retirer l’axe ${index + 1}`}>Retirer</button>}</div>))}<div className="mvp-actions">{axes.length < MAX_AXES && <button type="button" className="mvp-button mvp-button--secondary" onClick={addAxis}>Ajouter un axe</button>}<button type="button" className="mvp-button mvp-button--secondary" onClick={generateMatrix}>Générer la matrice</button></div></div>
+        <div className="variant-table-wrap"><table className="mvp-table variant-table"><thead><tr><th>Variante</th><th>Active</th><th>Prix</th><th>Prix barré</th><th>Stock physique</th><th>Réservé</th><th>Seuil d’alerte</th><th>SKU facultatif</th></tr></thead><tbody>{variants.map((variant, index) => <tr key={`${variant.title}-${index}`}>
+          <td data-label="Variante"><strong>{variant.title}</strong></td>
+          <td data-label="Active"><input aria-label={`Variante ${variant.title} active`} type="checkbox" checked={variant.active} onChange={(event) => updateVariant(index, { active: event.target.checked })} /></td>
+          <td data-label="Prix"><input aria-label={`Prix ${variant.title}`} type="number" min="0" value={variant.priceXof} onChange={(event) => updateVariant(index, { priceXof: Number(event.target.value) })} /></td>
+          <td data-label="Prix barré"><input aria-label={`Prix barré ${variant.title}`} type="number" min={variant.priceXof} value={variant.compareAtPriceXof ?? ""} placeholder="Facultatif" onChange={(event) => updateVariant(index, { compareAtPriceXof: event.target.value === "" ? undefined : Number(event.target.value) })} /></td>
+          <td data-label="Stock physique"><input aria-label={`Stock ${variant.title}`} type="number" min={variant.reserved} value={variant.stock} onChange={(event) => updateVariant(index, { stock: Number(event.target.value) })} /></td>
+          <td data-label="Réservé">{variant.reserved}</td>
+          <td data-label="Seuil d’alerte"><input aria-label={`Seuil ${variant.title}`} type="number" min="0" value={variant.lowStockThreshold} onChange={(event) => updateVariant(index, { lowStockThreshold: Number(event.target.value) })} /></td>
+          <td data-label="SKU facultatif"><input aria-label={`SKU ${variant.title}`} value={variant.sku} placeholder="Généré automatiquement" onChange={(event) => updateVariant(index, { sku: event.target.value })} /></td>
+        </tr>)}</tbody></table></div>
+        <p><strong>{sellableStock}</strong> unité(s) disponibles à la vente, après réservations.</p>
+        <button type="button" className="mvp-button" disabled={busy || !variants.some((variant) => variant.active)} onClick={saveVariants}>{busy ? "Enregistrement…" : confirmNoVariants ? "Confirmer sans taille/couleur" : "Enregistrer et ajouter les photos"}</button>
+        {!variants.some((variant) => variant.active) && <p className="mvp-alert mvp-alert--warning">Conservez au moins une variante active.</p>}
+      </div>}
       {step === 3 && <div className="merchant-photo-step">
         <div className="merchant-photo-intro"><span><Images /></span><div><h3>Ajoutez les photos du produit</h3><p>La première photo devient l’image principale visible dans la boutique. Ajoutez jusqu’à 8 photos.</p></div><strong>{photos.length}/8</strong></div>
         <button
@@ -416,7 +467,7 @@ export function MerchantProductWizard({ merchantId, categories, products, delive
         {!photos.length && <p className="merchant-photo-help">Ajoutez au moins une photo nette pour pouvoir publier ce produit.</p>}
         <div className="merchant-wizard-actions"><button type="button" className="mvp-button mvp-button--secondary" onClick={() => setStep(2)}>Retour aux variantes</button><button type="button" className="mvp-button" disabled={!photos.length || busy} onClick={() => setStep(4)}>Vérifier le produit</button></div>
       </div>}
-      {step === 4 && <div className="merchant-readiness"><h3>Prêt à publier ?</h3><ul><li className={variants.length ? "is-ready" : ""}>Au moins une variante active</li><li className={photos.length ? "is-ready" : ""}>Au moins une photo</li><li className={deliveryReady ? "is-ready" : ""}>Une région de livraison ou un retrait configuré</li><li className={subscriptionReady ? "is-ready" : ""}>Abonnement marchand actif</li></ul>{!subscriptionReady && <div className="merchant-paywall-inline"><strong>Publication verrouillée</strong><p>Vous pouvez terminer ce brouillon, mais un abonnement actif est obligatoire pour le mettre en vente.</p><button className="mvp-button mvp-button--secondary" onClick={onOpenSubscription}>Voir les abonnements</button></div>}<button className="mvp-button" disabled={!variants.length || !photos.length || !deliveryReady || !subscriptionReady || busy} onClick={publish}>{busy ? "Publication…" : "Publier le produit"}</button></div>}
+      {step === 4 && <div className="merchant-readiness"><h3>Prêt à publier ?</h3><ul><li className={variants.some((variant) => variant.active) ? "is-ready" : ""}>Au moins une variante active</li><li className={photos.length ? "is-ready" : ""}>Au moins une photo</li><li className={deliveryReady ? "is-ready" : ""}>Une région de livraison ou un retrait configuré</li><li className={subscriptionReady ? "is-ready" : ""}>Abonnement marchand actif</li></ul>{!subscriptionReady && <div className="merchant-paywall-inline"><strong>Publication verrouillée</strong><p>Vous pouvez terminer ce brouillon, mais un abonnement actif est obligatoire pour le mettre en vente.</p>{onOpenSubscription && <button className="mvp-button mvp-button--secondary" onClick={onOpenSubscription}>Voir les abonnements</button>}</div>}<button className="mvp-button" disabled={!variants.some((variant) => variant.active) || !photos.length || !deliveryReady || !subscriptionReady || busy} onClick={publish}>{busy ? "Publication…" : "Publier le produit"}</button></div>}
     </div>
   );
 }

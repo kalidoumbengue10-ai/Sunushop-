@@ -1,9 +1,12 @@
+import { randomBytes } from "node:crypto";
 import { requireAdminClient } from "@/lib/api/auth";
 import { ApiError } from "@/lib/api/errors";
 import { sendCourierInvitation } from "@/lib/api/courier-invitations";
 import { requireFulfillment as requireManager } from "@/lib/api/merchant-guards";
 import { apiFailure, apiSuccess } from "@/lib/api/response";
 import { courierInvitationSchema, courierUpdateSchema } from "@/lib/domain/schemas";
+import { normalizeMerchantPhone } from "@/lib/api/merchant-onboarding";
+import { courierTechnicalEmail } from "@/lib/domain/courier-access";
 
 export async function GET(request: Request) {
   const requestId = crypto.randomUUID();
@@ -19,7 +22,7 @@ export async function GET(request: Request) {
         .order("created_at", { ascending: false }),
       admin
         .from("workspace_invitations")
-        .select("id, email, payload, status, expires_at, created_at")
+        .select("id, courier_membership_id, email, payload, status, expires_at, created_at")
         .eq("merchant_id", merchantId)
         .eq("kind", "courier")
         .order("created_at", { ascending: false }),
@@ -34,24 +37,34 @@ export async function GET(request: Request) {
     const monthStart = new Date();
     monthStart.setUTCDate(1);
     monthStart.setUTCHours(0, 0, 0, 0);
-    const invitationByEmail = new Map<string, (typeof invitations)[number]>();
+    const invitationByMembership = new Map<string, (typeof invitations)[number]>();
     for (const invitation of invitations ?? []) {
-      const key = invitation.email.toLowerCase();
-      if (!invitationByEmail.has(key)) invitationByEmail.set(key, invitation);
+      if (invitation.courier_membership_id && !invitationByMembership.has(invitation.courier_membership_id)) {
+        invitationByMembership.set(invitation.courier_membership_id, invitation);
+      }
     }
-    const invitationIds = [...invitationByEmail.values()].map((invitation) => invitation.id);
+    const invitationIds = [...invitationByMembership.values()].map((invitation) => invitation.id);
     const { data: outboxRows, error: outboxError } = invitationIds.length
-      ? await admin.from("notification_outbox").select("dedupe_key, status, processed_at, last_error, payload").in("dedupe_key", invitationIds.map((id) => `courier-invitation:${id}`))
+      ? await (admin as any).from("notification_outbox").select("dedupe_key, status, delivery_state, processed_at, last_error, payload").in("dedupe_key", invitationIds.map((id) => `courier-invitation:${id}`))
       : { data: [], error: null };
     if (outboxError) throw outboxError;
-    const outboxByKey = new Map((outboxRows ?? []).map((row) => [row.dedupe_key, row]));
+    const outboxByKey = new Map<string, any>((outboxRows ?? []).map((row: any) => [row.dedupe_key, row]));
+    const courierUserIds = (couriers ?? []).map((courier) => courier.courier_user_id).filter((value): value is string => Boolean(value));
+    const { data: globalActiveRows } = courierUserIds.length
+      ? await (admin as any).from("deliveries").select("id, status, courier_memberships!inner(courier_user_id)").in("courier_memberships.courier_user_id", courierUserIds).not("status", "in", "(delivered,failed,cancelled)")
+      : { data: [] };
+    const globalActiveByUser = new Map<string, number>();
+    for (const row of globalActiveRows ?? []) {
+      const linked = Array.isArray(row.courier_memberships) ? row.courier_memberships[0] : row.courier_memberships;
+      if (linked?.courier_user_id) globalActiveByUser.set(linked.courier_user_id, (globalActiveByUser.get(linked.courier_user_id) ?? 0) + 1);
+    }
 
     const items = await Promise.all((couriers ?? []).map(async (courier) => {
       const own = (deliveries ?? []).filter((delivery) => delivery.courier_membership_id === courier.id);
-      const invitation = courier.email ? invitationByEmail.get(courier.email.toLowerCase()) : null;
+      const invitation = invitationByMembership.get(courier.id) ?? null;
       const notification = invitation ? outboxByKey.get(`courier-invitation:${invitation.id}`) : null;
       const notificationPayload = notification?.payload as Record<string, unknown> | null;
-      const invitationStatus = courier.courier_user_id
+      const invitationStatus = courier.status === "active"
         ? "claimed"
         : invitation?.status === "pending" && new Date(invitation.expires_at).getTime() <= Date.now()
           ? "expired"
@@ -65,7 +78,7 @@ export async function GET(request: Request) {
         invitation: invitation ? {
           id: invitation.id,
           status: invitationStatus,
-          emailStatus: notification?.status ?? "pending",
+          emailStatus: notification?.delivery_state ?? notification?.status ?? "pending",
           sentAt: notification?.processed_at ?? null,
           expiresAt: invitation.expires_at,
           invitationUrl: typeof notificationPayload?.url === "string" ? notificationPayload.url : null,
@@ -76,7 +89,9 @@ export async function GET(request: Request) {
           deliveredThisMonth: own.filter((delivery) => delivery.status === "delivered" && delivery.delivered_at && new Date(delivery.delivered_at) >= monthStart).length,
           deliveredTotal: own.filter((delivery) => delivery.status === "delivered").length,
           failedTotal: own.filter((delivery) => delivery.status === "failed").length,
+          globalActive: courier.courier_user_id ? globalActiveByUser.get(courier.courier_user_id) ?? 0 : 0,
         },
+        availability: courier.courier_user_id && (globalActiveByUser.get(courier.courier_user_id) ?? 0) > 0 ? "busy" : "available",
       };
     }));
     return apiSuccess({ items, invitations: invitations ?? [] }, { requestId });
@@ -92,11 +107,74 @@ export async function POST(request: Request) {
     const user = await requireManager(input.merchantId);
     const admin = requireAdminClient();
 
+    const phone = normalizeMerchantPhone(input.phone);
+    const email = input.email?.toLowerCase() ?? null;
+    const { data: profiles, error: profileLookupError } = await admin
+      .from("courier_profiles")
+      .select("id, user_id, email, display_name, vehicle_type, vehicle_registration")
+      .eq("phone", phone)
+      .order("created_at")
+      .limit(1);
+    if (profileLookupError) throw profileLookupError;
+
+    let courierProfile = profiles?.[0] ?? null;
+    let courierUserId = courierProfile?.user_id ?? null;
+    if (!courierUserId) {
+      const { data: publicProfiles, error: publicProfileError } = await admin
+        .from("profiles")
+        .select("id")
+        .eq("phone", phone)
+        .limit(1);
+      if (publicProfileError) throw publicProfileError;
+      courierUserId = publicProfiles?.[0]?.id ?? null;
+    }
+    if (!courierUserId) {
+      const { data: createdUser, error: createUserError } = await admin.auth.admin.createUser({
+        email: courierTechnicalEmail(phone),
+        email_confirm: true,
+        password: `SunuShop-${randomBytes(32).toString("base64url")}!`,
+        user_metadata: { profile: "courier", display_name: input.displayName },
+      });
+      if (createUserError || !createdUser.user) throw createUserError ?? new Error("COURIER_USER_CREATE_FAILED");
+      courierUserId = createdUser.user.id;
+    }
+
+    if (!courierProfile) {
+      const { data, error: createProfileError } = await admin
+        .from("courier_profiles")
+        .insert({
+          user_id: courierUserId,
+          display_name: input.displayName,
+          phone,
+          email,
+          vehicle_type: input.vehicleType ?? null,
+          vehicle_registration: input.vehicleRegistration ?? null,
+          verification_status: "verified",
+          verified_at: new Date().toISOString(),
+        })
+        .select("id, user_id, email, display_name, vehicle_type, vehicle_registration")
+        .single();
+      if (createProfileError) throw createProfileError;
+      courierProfile = data;
+    } else {
+      const { error: updateProfileError } = await admin
+        .from("courier_profiles")
+        .update({
+          email: courierProfile.email ?? email,
+          vehicle_type: courierProfile.vehicle_type ?? input.vehicleType ?? null,
+          vehicle_registration: courierProfile.vehicle_registration ?? input.vehicleRegistration ?? null,
+          verification_status: "verified",
+          verified_at: new Date().toISOString(),
+        })
+        .eq("id", courierProfile.id);
+      if (updateProfileError) throw updateProfileError;
+    }
+
     const { data: existingMembership, error: existingError } = await admin
       .from("courier_memberships")
-      .select("id, courier_user_id")
+      .select("id, status, phone")
       .eq("merchant_id", input.merchantId)
-      .eq("email", input.email)
+      .eq("courier_profile_id", courierProfile.id)
       .maybeSingle();
     if (existingError) throw existingError;
 
@@ -106,10 +184,12 @@ export async function POST(request: Request) {
         .from("courier_memberships")
         .update({
           display_name: input.displayName,
-          phone: input.phone,
+          email,
+          phone,
           vehicle_type: input.vehicleType ?? null,
           vehicle_registration: input.vehicleRegistration ?? null,
-          status: "active",
+          status: existingMembership.status === "active" ? "active" : "pending_invitation",
+          invited_at: new Date().toISOString(),
         })
         .eq("id", existingMembership.id)
         .select("id")
@@ -121,14 +201,16 @@ export async function POST(request: Request) {
         .from("courier_memberships")
         .insert({
           merchant_id: input.merchantId,
-          courier_user_id: null,
-          email: input.email,
+          courier_user_id: courierUserId,
+          courier_profile_id: courierProfile.id,
+          email,
           display_name: input.displayName,
-          phone: input.phone,
+          phone,
           vehicle_type: input.vehicleType ?? null,
           vehicle_registration: input.vehicleRegistration ?? null,
-          status: "active",
+          status: "pending_invitation",
           invited_by: user.id,
+          accepted_at: null,
         })
         .select("id")
         .single();
@@ -142,9 +224,9 @@ export async function POST(request: Request) {
       merchantId: input.merchantId,
       membership: {
         id: membershipId,
-        email: input.email,
+        email,
         display_name: input.displayName,
-        phone: input.phone,
+        phone,
         vehicle_type: input.vehicleType ?? null,
         vehicle_registration: input.vehicleRegistration ?? null,
       },
@@ -157,7 +239,7 @@ export async function POST(request: Request) {
       entity_type: "courier_membership",
       entity_id: membershipId,
       request_id: requestId,
-      metadata: { email: input.email },
+      metadata: { email, phone, courierProfileId: courierProfile.id },
     });
     return apiSuccess({ ...invitation, membershipId }, { status: 201, requestId });
   } catch (error) {
@@ -173,17 +255,23 @@ export async function PATCH(request: Request) {
     const admin = requireAdminClient();
     const { data: current, error: currentError } = await admin
       .from("courier_memberships")
-      .select("id, status")
+      .select("id, status, phone")
       .eq("id", input.membershipId)
       .eq("merchant_id", input.merchantId)
       .maybeSingle();
     if (currentError) throw currentError;
     if (!current) throw new ApiError(404, "COURIER_NOT_FOUND", "Livreur introuvable.");
+    if (normalizeMerchantPhone(input.phone) !== current.phone) {
+      throw new ApiError(
+        409,
+        "COURIER_PHONE_IMMUTABLE",
+        "Le téléphone identifie l’accès global du livreur et ne peut pas être modifié par une boutique.",
+      );
+    }
     const { data, error } = await admin
       .from("courier_memberships")
       .update({
         display_name: input.displayName,
-        phone: input.phone,
         vehicle_type: input.vehicleType ?? null,
         vehicle_registration: input.vehicleRegistration ?? null,
         status: input.status,

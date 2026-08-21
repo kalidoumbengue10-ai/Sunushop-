@@ -25,7 +25,7 @@ type CartContextValue = {
   add: (product: CatalogItem, quantity?: number) => void;
   setQuantity: (variantId: string, quantity: number) => void;
   remove: (variantId: string) => void;
-  clear: () => void;
+  clear: () => Promise<void>;
   merge: () => Promise<void>;
 };
 
@@ -82,13 +82,14 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     if (ready) localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(lines));
   }, [lines, ready]);
 
-  const sync = useCallback((variantId: string, quantity: number) => {
+  const sync = useCallback(async (variantId: string, quantity: number) => {
     if (!serverCartAvailable) return;
-    void fetch("/api/client/cart", {
+    const response = await fetch("/api/client/cart", {
       method: "PUT",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ variantId, quantity }),
     });
+    if (!response.ok) throw new Error("Le panier n’a pas pu être synchronisé.");
   }, [serverCartAvailable]);
 
   const value = useMemo<CartContextValue>(() => ({
@@ -103,7 +104,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       setLines((current) => {
         const updated = addCartLine(current, product, quantity);
         const line = updated.find((entry) => entry.product.variant.id === product.variant.id);
-        if (line) sync(product.variant.id, line.quantity);
+        if (line) void sync(product.variant.id, line.quantity).catch(() => undefined);
         return updated;
       });
       posthog.capture("product_added_to_cart", {
@@ -116,16 +117,16 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     },
     setQuantity(variantId, quantity) {
       setLines((current) => setCartLineQuantity(current, variantId, quantity));
-      sync(variantId, Math.max(0, quantity));
+      void sync(variantId, Math.max(0, quantity)).catch(() => undefined);
     },
     remove(variantId) {
       setLines((current) => current.filter((line) => line.product.variant.id !== variantId));
-      sync(variantId, 0);
+      void sync(variantId, 0).catch(() => undefined);
     },
-    clear() {
+    async clear() {
       const ids = lines.map((line) => line.product.variant.id);
       setLines([]);
-      ids.forEach((id) => sync(id, 0));
+      await Promise.all(ids.map((id) => sync(id, 0)));
     },
     async merge() {
       await fetchAndMergeWithServer(lines);

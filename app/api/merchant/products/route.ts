@@ -69,7 +69,41 @@ export async function PATCH(request: Request) {
       .maybeSingle();
     if (productError) throw productError;
     if (!product) throw new Error("PRODUCT_NOT_FOUND");
-    await requireActiveMerchantAccess(product.merchant_id, ["owner", "manager", "catalog"]);
+    const { admin, user } = await requireActiveMerchantAccess(product.merchant_id, ["owner", "manager", "catalog"]);
+    if ("action" in input) {
+      if (input.action === "restore") {
+        const [{ count }, { data: subscription }] = await Promise.all([
+          admin.from("products").select("id", { count: "exact", head: true }).eq("merchant_id", product.merchant_id).neq("status", "archived"),
+          admin.from("merchant_subscriptions").select("plan_id").eq("merchant_id", product.merchant_id).in("status", ["active", "grace"]).order("created_at", { ascending: false }).limit(1).maybeSingle(),
+        ]);
+        const { data: plan } = subscription
+          ? await admin.from("subscription_plans").select("product_limit").eq("id", subscription.plan_id).maybeSingle()
+          : { data: null };
+        const productLimit = plan?.product_limit ?? 20;
+        if ((count ?? 0) >= productLimit) {
+          throw new ApiError(409, "PRODUCT_LIMIT_REACHED", "La limite de produits de votre abonnement est atteinte.");
+        }
+      }
+      const nextStatus = input.action === "archive" ? "archived" : "draft";
+      const { data, error } = await admin
+        .from("products")
+        .update({ status: nextStatus, published_at: null })
+        .eq("id", input.productId)
+        .neq("status", "suspended")
+        .select("id, status")
+        .maybeSingle();
+      if (error) throw error;
+      if (!data) throw new ApiError(409, "PRODUCT_SUSPENDED", "Ce produit est suspendu et ne peut pas être modifié.");
+      await admin.from("audit_events").insert({
+        actor_id: user.id,
+        merchant_id: product.merchant_id,
+        action: input.action === "archive" ? "product.archive" : "product.restore",
+        entity_type: "product",
+        entity_id: input.productId,
+        request_id: requestId,
+      });
+      return apiSuccess(data, { requestId });
+    }
     if (input.publish) {
       const { data: merchantState } = await supabase.from("merchant_accounts").select("subscription_status").eq("id", product.merchant_id).maybeSingle();
       if (!merchantState || !["active", "grace"].includes(merchantState.subscription_status)) {

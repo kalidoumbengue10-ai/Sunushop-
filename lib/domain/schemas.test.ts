@@ -5,12 +5,17 @@ import {
   crmLeadUpdateSchema,
   deliveryRegionInputSchema,
   intentLetterSubmissionSchema,
+  merchantAnalyticsQuerySchema,
   merchantApplicationSchema,
+  merchantOrdersQuerySchema,
   orderBatchSchema,
   productDetailsSchema,
   productMediaOrderSchema,
+  productPublicationSchema,
   prelaunchLeadIngestSchema,
+  searchQuerySchema,
   signUpWithPasswordSchema,
+  storefrontQuerySchema,
   subscriptionPaymentSchema,
 } from "./schemas";
 
@@ -38,6 +43,12 @@ describe("validation des entrées métier", () => {
     expect(productMediaOrderSchema.safeParse({ mediaIds: [mediaA, mediaB] }).success).toBe(true);
     expect(productMediaOrderSchema.safeParse({ mediaIds: [mediaA, mediaA] }).success).toBe(false);
     expect(productMediaOrderSchema.safeParse({ mediaIds: [] }).success).toBe(false);
+  });
+  it("accepte publication, archivage et restauration sans ambiguïté", () => {
+    expect(productPublicationSchema.safeParse({ productId: variantA, publish: false }).success).toBe(true);
+    expect(productPublicationSchema.safeParse({ productId: variantA, action: "archive" }).success).toBe(true);
+    expect(productPublicationSchema.safeParse({ productId: variantA, action: "restore" }).success).toBe(true);
+    expect(productPublicationSchema.safeParse({ productId: variantA, action: "delete" }).success).toBe(false);
   });
   it("normalise un email d’inscription valide", () => {
     const result = signUpWithPasswordSchema.parse({
@@ -179,7 +190,15 @@ describe("validation des entrées métier", () => {
     });
 
     expect(input).toMatchObject({ minDelayDays: 0, maxDelayDays: 0 });
-    expect(deliveryRegionInputSchema.safeParse({ ...input, maxDelayDays: 1 }).success).toBe(false);
+    expect(deliveryRegionInputSchema.safeParse({ ...input, minDelayDays: 2, maxDelayDays: 1 }).success).toBe(false);
+    expect(deliveryRegionInputSchema.safeParse({ ...input, minDelayDays: 1, maxDelayDays: 3 }).success).toBe(true);
+  });
+
+  it("borne et normalise la pagination des commandes marchand", () => {
+    expect(merchantOrdersQuerySchema.parse({ merchantId: merchantA })).toMatchObject({ page: 1, limit: 15, status: "all" });
+    expect(merchantOrdersQuerySchema.safeParse({ merchantId: merchantA, page: 2, limit: 25, query: "CMD-000042", status: "paid" }).success).toBe(true);
+    expect(merchantOrdersQuerySchema.safeParse({ merchantId: merchantA, limit: 101 }).success).toBe(false);
+    expect(merchantOrdersQuerySchema.safeParse({ merchantId: merchantA, query: "x),status.eq.cancelled" }).success).toBe(false);
   });
 });
 
@@ -216,5 +235,38 @@ describe("paiements directs et abonnements", () => {
     }
     const parsed = subscriptionPaymentSchema.parse({ merchantId: merchantA, planId: "pro", billingCycle: "annual", channel: "wave", externalReference: "REF-ANNUAL", paidAt: "2026-08-11T12:00:00.000Z", amountXof: 1 });
     expect("amountXof" in parsed).toBe(false);
+  });
+
+  it("rejette les métacaractères de filtre PostgREST dans region/city/query (régression I1)", () => {
+    // repositories.ts construit un .or(`region.eq.${region},region.is.null`) :
+    // sans cette garde, une région comme `x),status.eq.suspended,(y` altère
+    // la structure du filtre plutôt que de simplement ne rien matcher.
+    const injected = "x),or(status.eq.suspended";
+    expect(storefrontQuerySchema.safeParse({ region: injected }).success).toBe(false);
+    expect(storefrontQuerySchema.safeParse({ city: injected }).success).toBe(false);
+    expect(storefrontQuerySchema.safeParse({ query: injected }).success).toBe(false);
+    expect(searchQuerySchema.safeParse({ region: injected }).success).toBe(false);
+    expect(searchQuerySchema.safeParse({ city: injected }).success).toBe(false);
+    expect(searchQuerySchema.safeParse({ query: injected }).success).toBe(false);
+
+    expect(storefrontQuerySchema.safeParse({ region: "Dakar" }).success).toBe(true);
+    expect(searchQuerySchema.safeParse({ query: "riz parfumé" }).success).toBe(true);
+  });
+
+  it("borne la période analytics marchand à 400 jours (régression M1)", () => {
+    const merchantId = "00000000-0000-4000-8000-000000000099";
+    const within = merchantAnalyticsQuerySchema.safeParse({ merchantId, from: "2026-01-01T00:00:00.000Z", to: "2026-06-01T00:00:00.000Z" });
+    expect(within.success).toBe(true);
+    const tooLong = merchantAnalyticsQuerySchema.safeParse({ merchantId, from: "2020-01-01T00:00:00.000Z", to: "2026-01-01T00:00:00.000Z" });
+    expect(tooLong.success).toBe(false);
+  });
+
+  it("borne page/limit et retombe sur des valeurs sûres si absentes ou invalides", () => {
+    const empty = storefrontQuerySchema.parse({});
+    expect(empty.page).toBe(1);
+    expect(empty.limit).toBe(24);
+    const outOfRange = storefrontQuerySchema.parse({ page: "0", limit: "9999" });
+    expect(outOfRange.page).toBe(1);
+    expect(outOfRange.limit).toBeLessThanOrEqual(60);
   });
 });

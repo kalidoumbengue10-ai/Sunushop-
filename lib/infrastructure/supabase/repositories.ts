@@ -194,73 +194,46 @@ export class SupabaseCatalogRepository implements CatalogRepository {
     // status='active' AND subscription_status IN ('active','grace') — le
     // KYC (verification_status) a été délibérément découplé du droit de
     // vendre depuis la migration 202608060001_merchant_fast_track_gates.sql.
-    // Ce filtre .eq("merchant_accounts.verification_status", "approved") a
-    // été retiré : il masquait des boutiques payantes mais non-KYC alors que
-    // la RLS elle-même ne l'exige plus (voir merchant_accounts_public_read).
-    let request = this.client
+    // Le filtre verification_status="approved" a été retiré : il masquait
+    // des boutiques payantes mais non-KYC alors que la RLS elle-même ne
+    // l'exige plus (voir merchant_accounts_public_read).
+    //
+    // Le filtrage "orderable" (pickup_enabled OU zone de livraison active)
+    // et le count total sont calculés en une seule requête SQL
+    // (storefront_catalog_page_product_ids, même modèle que
+    // nearby_storefront_product_ids) plutôt qu'en 2 requêtes JS
+    // supplémentaires après coup : un test de charge réel a mesuré un p95
+    // de 535ms à 2s sur cette route avec l'ancienne approche à 3 requêtes
+    // séquentielles (voir docs/backend-audit-2026-08.md).
+    const { data: pageRows, error: pageError } = await this.client.rpc("storefront_catalog_page_product_ids", {
+      p_query: input.query ?? null,
+      p_category_slug: input.category ?? null,
+      p_merchant_slug: input.merchantSlug ?? null,
+      p_region: input.region ?? null,
+      p_city: input.city ?? null,
+      p_limit: limit,
+      p_offset: from,
+    });
+    if (pageError) throw pageError;
+    const rows = (pageRows ?? []) as Array<{ product_id: string; total_count: number }>;
+    if (!rows.length) return { products: [], total: 0, page, limit };
+    const ids = rows.map((row) => row.product_id);
+    const orderById = new Map(ids.map((id, index) => [id, index]));
+    const { data, error } = await this.client
       .from("products")
-      .select(productSelection, { count: "exact" })
-      .eq("status", "published")
-      .eq("merchant_accounts.status", "active")
-      .in("merchant_accounts.subscription_status", ["active", "grace"])
-      .order("published_at", { ascending: false })
-      .range(from, from + limit - 1);
-
-    if (input.query) {
-      const escaped = input.query.replaceAll("%", "\\%").replaceAll(",", "\\,");
-      request = request.or(`title.ilike.%${escaped}%,description.ilike.%${escaped}%`);
-    }
-    if (input.category) {
-      request = request.eq("categories.slug", input.category);
-    }
-    if (input.merchantSlug) request = request.eq("merchant_accounts.slug", input.merchantSlug);
-    // Une boutique sans région renseignée doit rester visible plutôt que
-    // d'être silencieusement exclue par le filtre régional du client.
-    if (input.region) {
-      const escapedRegion = input.region.replaceAll(",", "\\,");
-      request = request.or(`region.eq.${escapedRegion},region.is.null`, { referencedTable: "merchant_accounts" });
-    }
-    if (input.city) request = request.ilike("merchant_accounts.city", input.city);
-
-    const { data, error, count } = await request;
+      .select(productSelection)
+      .in("id", ids);
     if (error) throw error;
-    const mapped = ((data ?? []) as unknown as RawProduct[])
+    const products = ((data ?? []) as unknown as RawProduct[])
       .map((product) => mapProduct(this.client, product))
       .filter(
         (product): product is CatalogItem =>
           product !== null &&
           product.imageUrl !== null &&
           product.variant.availableQuantity > 0,
-      );
-    if (!mapped.length) return { products: [], total: count ?? 0, page, limit };
-    const merchantIds = [...new Set(mapped.map((item) => item.merchant.id))];
-    const [{ data: zones, error: zonesError }, { data: pickupMerchants, error: pickupError }] =
-      await Promise.all([
-        this.client
-          .from("delivery_zones")
-          .select("merchant_id")
-          .in("merchant_id", merchantIds)
-          .eq("active", true),
-        this.client
-          .from("merchant_accounts")
-          .select("id")
-          .in("id", merchantIds)
-          .eq("pickup_enabled", true),
-      ]);
-    if (zonesError) throw zonesError;
-    if (pickupError) throw pickupError;
-    // Une boutique en retrait seul (pickup_enabled, sans zone de livraison)
-    // reste commandable — elle ne doit pas être invisible du catalogue.
-    const orderable = new Set([
-      ...(zones ?? []).map((zone) => zone.merchant_id),
-      ...(pickupMerchants ?? []).map((merchant) => merchant.id),
-    ]);
-    return {
-      products: mapped.filter((product) => orderable.has(product.merchant.id)),
-      total: count ?? mapped.length,
-      page,
-      limit,
-    };
+      )
+      .sort((left, right) => (orderById.get(left.id) ?? 0) - (orderById.get(right.id) ?? 0));
+    return { products, total: Number(rows[0]?.total_count ?? products.length), page, limit };
   }
 
   async findByVariantIds(variantIds: string[]) {

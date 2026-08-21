@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { clientLoginHref, conversationIntentPath } from "@/lib/domain/client-navigation";
 
 export function StartConversationButton({
   merchantId,
@@ -32,7 +33,8 @@ export function StartConversationButton({
         body: JSON.stringify({ kind: "buyer_merchant", merchantId, orderId, productId, subject }),
       });
       if (response.status === 401) {
-        router.push(`/connexion?profil=client&next=/messages`);
+        const next = conversationIntentPath({ merchantId, orderId, productId, subject });
+        router.push(clientLoginHref(next));
         return;
       }
       const payload = await response.json();

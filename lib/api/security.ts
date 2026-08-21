@@ -78,6 +78,9 @@ export async function verifyCaptcha(
         remoteip: remoteIp,
       }),
       cache: "no-store",
+      // Route d'inscription sur le chemin critique : un Turnstile lent ne
+      // doit pas bloquer indéfiniment la requête.
+      signal: AbortSignal.timeout(5_000),
     },
   );
   const result = (await response.json()) as { success?: boolean };

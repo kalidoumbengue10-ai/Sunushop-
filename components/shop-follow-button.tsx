@@ -4,13 +4,15 @@ import Link from "next/link";
 import { useState } from "react";
 import { Heart } from "lucide-react";
 import { useFavorites } from "@/components/favorites-provider";
+import { clientLoginHref } from "@/lib/domain/client-navigation";
 
 type ShopFollowButtonProps = {
   merchantId: string;
+  merchantSlug: string;
   variant?: "button" | "icon";
 };
 
-export function ShopFollowButton({ merchantId, variant = "button" }: ShopFollowButtonProps) {
+export function ShopFollowButton({ merchantId, merchantSlug, variant = "button" }: ShopFollowButtonProps) {
   const { authenticated, isFollowing, toggle } = useFavorites();
   const [busy, setBusy] = useState(false);
   const following = isFollowing(merchantId);
@@ -19,7 +21,7 @@ export function ShopFollowButton({ merchantId, variant = "button" }: ShopFollowB
     if (variant === "icon") {
       return (
         <Link
-          href="/connexion?profil=client&next=/boutiques"
+          href={clientLoginHref(`/boutiques/${merchantSlug}`)}
           className="shop-favorite-icon"
           aria-label="Se connecter pour suivre cette boutique"
           onClick={(event) => event.stopPropagation()}
@@ -29,7 +31,7 @@ export function ShopFollowButton({ merchantId, variant = "button" }: ShopFollowB
       );
     }
     return (
-      <Link href={`/connexion?profil=client&next=/boutiques`} className="mvp-button mvp-button--secondary">
+      <Link href={clientLoginHref(`/boutiques/${merchantSlug}`)} className="mvp-button mvp-button--secondary">
         Se connecter pour suivre
       </Link>
     );

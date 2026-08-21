@@ -106,23 +106,40 @@ export function OrderTracking({ orderId }: { orderId: string }) {
   const router = useRouter();
   const [payload, setPayload] = useState<OrderPayload>();
   const [error, setError] = useState("");
+  const [loadError, setLoadError] = useState("");
   const [busy, setBusy] = useState(false);
   const [showDisputeForm, setShowDisputeForm] = useState(false);
   const [showDeliveryDisputeForm, setShowDeliveryDisputeForm] = useState(false);
   const [savMessage, setSavMessage] = useState("");
+  const [contestingRefundId, setContestingRefundId] = useState<string | null>(null);
+  const [refundContestReason, setRefundContestReason] = useState("");
+  const [refundContestError, setRefundContestError] = useState("");
 
   const loadOrder = useCallback(() =>
     fetch(`/api/orders/${orderId}`).then(async (response) => {
       const body = await response.json();
       if (!response.ok) throw new Error(body.error?.message);
       setPayload(body.data as OrderPayload);
-      setError("");
+      setLoadError("");
     }), [orderId]);
+
+  const resendDeliveryCode = async () => {
+    setBusy(true); setError(""); setSavMessage("");
+    try {
+      const response = await fetch(`/api/orders/${orderId}/delivery-code/resend`, { method: "POST" });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error?.message ?? "Renvoi impossible.");
+      setSavMessage("Un nouveau code a été généré et envoyé par e-mail. L’ancien code ne fonctionne plus.");
+      await loadOrder();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Renvoi impossible.");
+    } finally { setBusy(false); }
+  };
 
   useEffect(() => {
     let cancelled = false;
     const refresh = () => loadOrder().catch((caught: Error) => {
-      if (!cancelled) setError(caught.message || "Commande introuvable.");
+      if (!cancelled) setLoadError(caught.message || "Commande introuvable.");
     });
     void refresh();
     const interval = window.setInterval(() => {
@@ -205,9 +222,7 @@ export function OrderTracking({ orderId }: { orderId: string }) {
     }
   };
 
-  const reviewRefund = async (refundId: string, decision: "confirmed" | "contested") => {
-    const contestReason = decision === "contested" ? window.prompt("Pourquoi contestez-vous la réception du remboursement ?") : null;
-    if (decision === "contested" && (!contestReason || contestReason.trim().length < 4)) return;
+  const reviewRefund = async (refundId: string, decision: "confirmed" | "contested", contestReason?: string) => {
     setBusy(true); setError("");
     try {
       const response = await fetch(`/api/orders/${orderId}/refunds`, {
@@ -217,6 +232,7 @@ export function OrderTracking({ orderId }: { orderId: string }) {
       const body = await response.json();
       if (!response.ok) throw new Error(body.error?.message ?? "Décision impossible.");
       setSavMessage(decision === "confirmed" ? "Remboursement confirmé." : "Remboursement contesté et transmis au support.");
+      setContestingRefundId(null); setRefundContestReason(""); setRefundContestError("");
       await loadOrder();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Décision impossible.");
@@ -245,6 +261,17 @@ export function OrderTracking({ orderId }: { orderId: string }) {
     } finally {
       setBusy(false);
     }
+  };
+
+  const submitRefundContest = async (event: FormEvent<HTMLFormElement>, refundId: string) => {
+    event.preventDefault();
+    const reason = refundContestReason.trim();
+    if (reason.length < 4) {
+      setRefundContestError("Décrivez le problème en au moins 4 caractères.");
+      return;
+    }
+    setRefundContestError("");
+    await reviewRefund(refundId, "contested", reason);
   };
 
   const cancelOrder = async () => {
@@ -279,10 +306,10 @@ export function OrderTracking({ orderId }: { orderId: string }) {
     }
   };
 
-  if (error) {
+  if (loadError && !payload) {
     return (
       <p className="mvp-alert mvp-alert--error">
-        {error} <Link href="/connexion?next=/marche">Se connecter</Link>
+        {loadError} <Link href="/connexion?next=/marche">Se connecter</Link>
       </p>
     );
   }
@@ -303,13 +330,30 @@ export function OrderTracking({ orderId }: { orderId: string }) {
           {payload.order.merchant_accounts.public_name} ·{" "}
           {formatPrice(payload.order.total_xof)}
         </p>
-        {payload.order.loyalty_discount_xof > 0 && <p className="mvp-alert"><strong>{payload.order.loyalty_points_redeemed} points utilisés</strong><br />Remise fidélité : {formatPrice(payload.order.loyalty_discount_xof)}</p>}
-        {payload.order.loyalty_points_earned > 0 && <p className="mvp-alert">Cette livraison vous a rapporté <strong>{payload.order.loyalty_points_earned} points</strong> dans cette boutique.</p>}
+        {loadError && <p className="mvp-alert mvp-alert--warning" role="status">Le suivi en direct n’a pas pu être actualisé. Les informations affichées restent disponibles.</p>}
+        {error && <p className="mvp-alert mvp-alert--error" role="alert">{error}</p>}
+        {payload.order.delivery_snapshot.zoneLabel && (
+          <p className="mvp-alert">
+            <strong>{payload.order.delivery_snapshot.zoneLabel}</strong>
+            {payload.order.delivery_snapshot.minDelayMinutes != null && payload.order.delivery_snapshot.maxDelayMinutes != null && (
+              <><br />Délai annoncé : entre {payload.order.delivery_snapshot.minDelayMinutes} et {payload.order.delivery_snapshot.maxDelayMinutes} minutes après préparation.</>
+            )}
+          </p>
+        )}
+        {payload.delivery?.status === "failed" && (
+          <p className="mvp-alert mvp-alert--warning" role="status">
+            <strong>Livraison à reprogrammer</strong><br />La dernière tentative a échoué. La boutique doit organiser une nouvelle livraison ou vous proposer une annulation et un remboursement.
+          </p>
+        )}
+        {payload.order.payment_status === "refund_pending" && (
+          <p className="mvp-alert mvp-alert--warning" role="status">Le remboursement est requis et reste en attente de déclaration par la boutique.</p>
+        )}
         {payload.delivery?.recipientCode && (
           <div className="mvp-alert">
             <strong>Code de réception</strong>
             <div className="mvp-code">{payload.delivery.recipientCode}</div>
             Ne communiquez ce code au livreur qu’après avoir reçu votre commande.
+            <div className="mvp-actions"><button type="button" className="mvp-button mvp-button--secondary" disabled={busy} onClick={() => void resendDeliveryCode()}>Générer et renvoyer un nouveau code</button></div>
           </div>
         )}
         <div className="mvp-list">
@@ -403,8 +447,23 @@ export function OrderTracking({ orderId }: { orderId: string }) {
           {refund.channel} · référence {refund.external_reference} · {refund.status.replaceAll("_", " ")}
           {refund.status === "pending_confirmation" && <div className="mvp-actions">
             <button className="mvp-button" onClick={() => void reviewRefund(refund.id, "confirmed")} disabled={busy}>Confirmer la réception</button>
-            <button className="mvp-button mvp-button--secondary" onClick={() => void reviewRefund(refund.id, "contested")} disabled={busy}>Contester</button>
+            <button className="mvp-button mvp-button--secondary" onClick={() => { setContestingRefundId(refund.id); setRefundContestReason(""); setRefundContestError(""); }} disabled={busy} aria-expanded={contestingRefundId === refund.id} aria-controls={`refund-contest-${refund.id}`}>Contester</button>
           </div>}
+          {refund.status === "pending_confirmation" && contestingRefundId === refund.id && (
+            <form id={`refund-contest-${refund.id}`} className="mvp-form" aria-labelledby={`refund-contest-title-${refund.id}`} onSubmit={(event) => void submitRefundContest(event, refund.id)}>
+              <h3 id={`refund-contest-title-${refund.id}`}>Contester la réception du remboursement</h3>
+              <p id={`refund-contest-help-${refund.id}`}>Expliquez ce qui manque ou ne correspond pas au transfert annoncé. Votre motif sera transmis au support.</p>
+              <label className="mvp-field">
+                Motif de la contestation
+                <textarea value={refundContestReason} onChange={(event) => { setRefundContestReason(event.target.value); if (refundContestError) setRefundContestError(""); }} minLength={4} maxLength={500} rows={4} required aria-describedby={`refund-contest-help-${refund.id}${refundContestError ? ` refund-contest-error-${refund.id}` : ""}`} aria-invalid={Boolean(refundContestError)} autoFocus />
+              </label>
+              {refundContestError && <p id={`refund-contest-error-${refund.id}`} className="mvp-alert mvp-alert--error" role="alert">{refundContestError}</p>}
+              <div className="mvp-actions">
+                <button className="mvp-button mvp-button--danger" disabled={busy}>{busy ? "Envoi…" : "Envoyer la contestation"}</button>
+                <button type="button" className="mvp-button mvp-button--secondary" disabled={busy} onClick={() => { setContestingRefundId(null); setRefundContestReason(""); setRefundContestError(""); }}>Annuler</button>
+              </div>
+            </form>
+          )}
           {refund.contest_reason && <p>Motif : {refund.contest_reason}</p>}
         </div>)}
         {savMessage && <p className="mvp-alert">{savMessage}</p>}

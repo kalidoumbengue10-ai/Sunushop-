@@ -3,6 +3,8 @@ import { requireCron } from "@/lib/api/cron";
 import { apiFailure, apiSuccess } from "@/lib/api/response";
 import { pilotConfig } from "@/lib/config/env";
 
+export const maxDuration = 60;
+
 export async function GET(request: Request) {
   const requestId = crypto.randomUUID();
   try {
@@ -13,6 +15,7 @@ export async function GET(request: Request) {
       {
         p_rejected_days: pilotConfig.rejectedRetentionDays,
         p_closed_days: pilotConfig.closedRetentionDays,
+        p_limit: 200,
       },
     );
     if (error) throw error;

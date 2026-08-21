@@ -68,9 +68,9 @@ function AccessMenu({ onNavigate }: { onNavigate: () => void }) {
       </button>
       {open && (
         <div id="auth-access-options" className="auth-access-menu__options" role="menu" aria-label="Choisir un espace de connexion">
-          <Link role="menuitem" href="/connexion?profil=client&next=/client" onClick={close}><strong>Client</strong><small>Commandes et messages</small></Link>
-          <Link role="menuitem" href="/connexion?profil=vendeur&next=/marchand" onClick={close}><strong>Marchand</strong><small>Boutique et catalogue</small></Link>
-          <Link role="menuitem" href="/connexion?profil=admin&next=/admin/crm" onClick={close}><strong>Admin</strong><small>Pilotage SunuShop</small></Link>
+          <a role="menuitem" href="/connexion?profil=client&next=/client" onClick={close}><strong>Client</strong><small>Commandes et messages</small></a>
+          <a role="menuitem" href="/connexion?profil=vendeur&next=/marchand" onClick={close}><strong>Marchand</strong><small>Boutique et catalogue</small></a>
+          <a role="menuitem" href="/connexion?profil=admin&next=/admin/crm" onClick={close}><strong>Admin</strong><small>Pilotage SunuShop</small></a>
         </div>
       )}
     </div>
@@ -129,7 +129,7 @@ function ShellChrome({ children }: { children: React.ReactNode }) {
       <header className="mvp-header">
         <div className="mvp-shell mvp-header__inner">
           <Link href="/" className="mvp-brand">Sunu<span>Shop</span></Link>
-          <button className="mvp-menu-toggle" type="button" aria-expanded={menuOpen} aria-controls="main-navigation" onClick={() => setMenuOpen((value) => !value)}>
+          <button className="mvp-menu-toggle" type="button" aria-label="Menu" aria-expanded={menuOpen} aria-controls="main-navigation" onClick={() => setMenuOpen((value) => !value)}>
             <span className="mvp-menu-toggle__icon"><span /><span /><span /></span><b>Menu</b>
           </button>
           <nav id="main-navigation" className={`mvp-nav ${menuOpen ? "is-open" : ""}`} aria-label="Navigation principale">

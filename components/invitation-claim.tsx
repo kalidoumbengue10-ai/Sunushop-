@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
@@ -48,8 +47,8 @@ export function InvitationClaim() {
       <p className={`mvp-alert ${state === "error" ? "mvp-alert--error" : ""}`}>
         {message}
       </p>
-      {state === "done" && <Link className="mvp-button" href="/marchand">Ouvrir mon espace</Link>}
-      {state === "error" && <Link className="mvp-button" href={reconnectUrl}>Changer de compte</Link>}
+      {state === "done" && <a className="mvp-button" href="/marchand">Ouvrir mon espace</a>}
+      {state === "error" && <a className="mvp-button" href={reconnectUrl}>Changer de compte</a>}
     </section>
   );
 }

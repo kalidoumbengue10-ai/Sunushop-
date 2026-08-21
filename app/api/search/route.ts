@@ -1,26 +1,29 @@
 import { requireAdminClient } from "@/lib/api/auth";
 import { apiFailure, apiSuccess } from "@/lib/api/response";
 import { SupabaseCatalogRepository } from "@/lib/infrastructure/supabase/repositories";
+import { searchQuerySchema } from "@/lib/domain/schemas";
 
 export async function GET(request: Request) {
   const requestId = crypto.randomUUID();
   try {
     const admin = requireAdminClient();
     const url = new URL(request.url);
-    const query = url.searchParams.get("query")?.trim() || undefined;
-    const category = url.searchParams.get("category")?.trim() || undefined;
-    const region = url.searchParams.get("region")?.trim() || undefined;
-    const city = url.searchParams.get("city")?.trim() || undefined;
-    const page = Math.max(1, Number.parseInt(url.searchParams.get("page") ?? "1", 10) || 1);
-    const limit = Math.min(60, Math.max(1, Number.parseInt(url.searchParams.get("limit") ?? "24", 10) || 24));
+    const input = searchQuerySchema.parse({
+      query: url.searchParams.get("query") ?? undefined,
+      category: url.searchParams.get("category") ?? undefined,
+      region: url.searchParams.get("region") ?? undefined,
+      city: url.searchParams.get("city") ?? undefined,
+      page: url.searchParams.get("page") ?? undefined,
+      limit: url.searchParams.get("limit") ?? undefined,
+    });
 
     const productPage = await new SupabaseCatalogRepository(admin).listPage({
-      page,
-      limit,
-      query,
-      category,
-      region,
-      city,
+      page: input.page,
+      limit: input.limit,
+      query: input.query,
+      category: input.category,
+      region: input.region,
+      city: input.city,
     });
 
     let shopRequest = admin
@@ -29,17 +32,22 @@ export async function GET(request: Request) {
       .eq("status", "active")
       .in("subscription_status", ["active", "grace"])
       .order("public_name")
-      .limit(limit);
-    if (query) shopRequest = shopRequest.ilike("public_name", `%${query.replaceAll("%", "\\%")}%`);
-    if (region) shopRequest = shopRequest.eq("region", region);
-    if (city) shopRequest = shopRequest.ilike("city", city);
-    const { data: shops, error: shopsError } = await shopRequest;
+      .limit(input.limit);
+    if (input.query) shopRequest = shopRequest.ilike("public_name", `%${input.query.replaceAll("%", "\\%")}%`);
+    if (input.region) shopRequest = shopRequest.eq("region", input.region);
+    if (input.city) shopRequest = shopRequest.ilike("city", input.city);
+    const [{ data: shops, error: shopsError }, { data: categories, error: categoriesError }] = await Promise.all([
+      shopRequest,
+      admin.from("categories").select("id, name, slug").eq("active", true).order("position"),
+    ]);
     if (shopsError) throw shopsError;
+    if (categoriesError) throw categoriesError;
 
     return apiSuccess(
       {
         products: productPage.products,
         shops: shops ?? [],
+        filters: { categories: categories ?? [] },
         pagination: {
           page: productPage.page,
           limit: productPage.limit,

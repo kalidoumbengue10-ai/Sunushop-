@@ -104,10 +104,12 @@ export function CheckoutFlow() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const resumedRef = useRef(false);
+  const submittingRef = useRef(false);
   const recipientRef = useRef(recipient);
   const hasHomeDelivery = groups.some(
     (group) => (methodKinds[group.merchantId] ?? "merchant_delivery") === "merchant_delivery",
   );
+  const shopsReady = groups.every((group) => Boolean(shops[group.merchantId]));
 
   const recipientForSubmission = hasHomeDelivery
     ? recipient
@@ -163,7 +165,7 @@ export function CheckoutFlow() {
                 },
           );
         })
-        .catch(() => {});
+        .catch(() => setError(`Les options de livraison de ${group.merchantName} ne peuvent pas être chargées.`));
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [groups]);
@@ -407,6 +409,9 @@ export function CheckoutFlow() {
   };
 
   const submitOrder = async () => {
+    if (submittingRef.current) return;
+    submittingRef.current = true;
+    let completed = false;
     setError("");
     setBusy(true);
     try {
@@ -441,7 +446,12 @@ export function CheckoutFlow() {
       }
 
       clearCheckoutDraft();
-      cart.clear();
+      let cartSyncWarning = "";
+      try {
+        await cart.clear();
+      } catch {
+        cartSyncWarning = "La commande est créée, mais le panier n’a pas pu être vidé sur le serveur. Actualisez-le avant un nouvel achat.";
+      }
       const merchantNames = Object.fromEntries(groups.map((group) => [group.merchantId, group.merchantName]));
       const confirmedOrders = payload.data.orders.map((order: ConfirmedOrder) => ({
         ...order,
@@ -449,6 +459,8 @@ export function CheckoutFlow() {
         paymentMethod: paymentMethods[order.merchantId],
       }));
       setConfirmedOrders(confirmedOrders);
+      completed = true;
+      if (cartSyncWarning) setError(cartSyncWarning);
       const batchTotalXof = confirmedOrders.reduce(
         (sum: number, order: ConfirmedOrder) => sum + order.totalXof,
         0,
@@ -465,6 +477,7 @@ export function CheckoutFlow() {
       setError(submissionError instanceof Error ? submissionError.message : "Une erreur est survenue.");
     } finally {
       setBusy(false);
+      if (!completed) submittingRef.current = false;
     }
   };
 
@@ -558,8 +571,8 @@ export function CheckoutFlow() {
             );
           })}
           <div className="mvp-actions">
-            <button type="button" className="mvp-button" onClick={goToLivraison} disabled={busy}>
-              Continuer vers la livraison
+            <button type="button" className="mvp-button" onClick={goToLivraison} disabled={busy || !shopsReady} aria-busy={!shopsReady}>
+              {shopsReady ? "Continuer vers la livraison" : "Chargement des options de livraison…"}
             </button>
           </div>
         </section>
@@ -649,7 +662,6 @@ export function CheckoutFlow() {
                 {quote.groups.map((group) => (
                   <li className="mvp-row" key={group.merchantId}>
                     <div><span>{group.merchantName} · {group.methodKind === "pickup" ? "Retrait en boutique — 0 F" : `livraison ${formatPrice(group.deliveryFeeXof)}`}</span>
-                      {group.availablePoints > 0 && <small>Vos {group.availablePoints} points restent visibles mais leur utilisation est temporairement suspendue.</small>}
                     </div>
                     <strong>{formatPrice(group.totalXof)}</strong>
                   </li>
@@ -696,8 +708,8 @@ export function CheckoutFlow() {
           <p className="mvp-price">Total : {formatPrice(quote.totalXof)}</p>
           <div className="mvp-actions">
             <button type="button" className="mvp-button mvp-button--secondary" onClick={() => setStep("livraison")}>Modifier</button>
-            <button type="button" className="mvp-button" onClick={submitOrder} disabled={busy}>
-              Confirmer la commande
+            <button type="button" className="mvp-button" onClick={submitOrder} disabled={busy} aria-busy={busy}>
+              {busy ? "Création de la commande…" : "Confirmer la commande"}
             </button>
           </div>
         </section>

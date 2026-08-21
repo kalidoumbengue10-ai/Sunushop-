@@ -13,11 +13,17 @@ export async function GET(request: Request) {
     const admin = requireAdminClient();
     const { data, error } = await admin
       .from("orders")
-      .select("id, public_code, merchant_sequence, status, payment_status, created_at, delivery_snapshot, recipient_snapshot, deliveries(id, status)")
+      .select("id, public_code, merchant_sequence, status, payment_status, delivery_fee_xof, created_at, delivery_snapshot, recipient_snapshot, deliveries(id, status)")
       .eq("merchant_id", merchantId)
       .in("status", ASSIGNABLE_ORDER_STATUSES as unknown as string[])
       .order("created_at", { ascending: false });
     if (error) throw error;
+    const orderIds = (data ?? []).map((order) => order.id);
+    const { data: pendingOffers, error: offerError } = orderIds.length
+      ? await (admin as any).from("delivery_offers").select("order_id").in("order_id", orderIds).eq("status", "pending")
+      : { data: [], error: null };
+    if (offerError) throw offerError;
+    const offeredOrderIds = new Set<string>((pendingOffers ?? []).map((offer: { order_id: string }) => offer.order_id));
 
     const items: Array<{
       id: string;
@@ -29,6 +35,7 @@ export async function GET(request: Request) {
       reassignment: boolean;
       recipientName: string;
       city: string;
+      deliveryFeeXof: number;
     }> = [];
     let excludedPickup = 0;
     let excludedLocked = 0;
@@ -37,7 +44,10 @@ export async function GET(request: Request) {
       // Une commande directe non payée reste dans le suivi client, mais ne doit
       // pas encombrer la file d'affectation du marchand.
       if (!isVisibleInAssignmentQueue(order.status, order.payment_status)) continue;
-      const delivery = one(order.deliveries);
+      if (offeredOrderIds.has(order.id)) { excludedLocked += 1; continue; }
+      const delivery = Array.isArray(order.deliveries)
+        ? order.deliveries.find((item) => ["assigned", "accepted", "at_pickup", "picked_up", "in_transit"].includes(item.status)) ?? null
+        : order.deliveries;
       const reason = assignableOrderReason({
         status: order.status,
         deliverySnapshot: order.delivery_snapshot as { methodKind?: string | null; zoneId?: string | null } | null,
@@ -61,6 +71,7 @@ export async function GET(request: Request) {
         reassignment: Boolean(delivery),
         recipientName: String(recipient?.name ?? ""),
         city: String(recipient?.city ?? ""),
+        deliveryFeeXof: order.delivery_fee_xof,
       });
     }
 

@@ -40,7 +40,13 @@ npm run typecheck
 npm run lint
 npm test
 npm run build
+npm run test:e2e
 ```
+
+`test:e2e` démarre et reconstruit une pile Supabase locale jetable, injecte ses
+clés sans modifier `.env.local`, refuse toute cible distante, puis supprime la
+pile à la fin. Les scénarios qui créent des comptes ou des commandes ne doivent
+jamais être lancés directement contre le projet cloud.
 
 Les migrations sont dans `supabase/migrations` et ne doivent jamais être
 remplacées par des modifications manuelles sur la base distante.

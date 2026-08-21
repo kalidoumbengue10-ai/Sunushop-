@@ -31,8 +31,6 @@ export function OrderBatchConfirmation({ orders, batchTotalXof }: { orders: Conf
             <div>
               <strong>{order.merchantName ?? "Boutique"}</strong>
               <small>Commande {order.publicCode} · {formatPrice(order.totalXof)}</small>
-              {Boolean(order.loyaltyDiscountXof) && <small>{order.loyaltyPointsRedeemed} points utilisés · remise {formatPrice(order.loyaltyDiscountXof ?? 0)}</small>}
-              {Boolean(order.loyaltyPointsEarnable) && <small>{order.loyaltyPointsEarnable} points après livraison</small>}
             </div>
             <Link
               href={`/commandes/${order.id}${order.paymentMethod === "cash_on_delivery" ? "#retrait" : "#paiement"}`}

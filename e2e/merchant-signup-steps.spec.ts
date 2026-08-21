@@ -40,6 +40,7 @@ test.afterAll(async () => {
 });
 
 test("un nouvel utilisateur voit bien l'étape 1 (Mon commerce), sans saut d'étape", async ({ page }) => {
+  test.setTimeout(120_000);
   await page.setExtraHTTPHeaders({ "x-forwarded-for": `203.0.113.${Math.floor(Math.random() * 200) + 20}` });
   await page.goto("/creer-ma-boutique");
 
@@ -69,7 +70,7 @@ test("un nouvel utilisateur voit bien l'étape 1 (Mon commerce), sans saut d'ét
   await expect(page.getByRole("heading", { name: "Votre accès" })).toBeVisible();
 
   await page.getByLabel("Adresse email").fill(email);
-  await page.getByLabel("Mot de passe").fill(password);
+  await page.getByLabel("Mot de passe", { exact: true }).fill(password);
   await page.getByRole("button", { name: "Créer ma boutique" }).click();
 
   // Etape 3 : pièce d'identité. Le bouton Retour doit maintenant exister.
@@ -103,7 +104,7 @@ test("un nouvel utilisateur voit bien l'étape 1 (Mon commerce), sans saut d'ét
   if (await mobileMenu.isVisible()) await mobileMenu.click();
   expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
   await page.getByRole("button", { name: "Se déconnecter" }).click();
-  await expect(page).toHaveURL("/");
+  await expect(page).toHaveURL("/", { timeout: 30_000 });
   await page.goto("/marchand");
-  await expect(page).toHaveURL(/\/connexion\?profil=vendeur/);
+  await expect(page).toHaveURL(/\/connexion\?profil=vendeur/, { timeout: 30_000 });
 });

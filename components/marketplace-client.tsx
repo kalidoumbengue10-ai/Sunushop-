@@ -153,8 +153,10 @@ export function ProductCard({ product }: { product: CatalogItem }) {
   return (
     <article className="mvp-product">
       <button type="button" className="mvp-product__image-trigger" onClick={() => setDetailOpen(true)} aria-label={`Voir les détails de ${product.title}`}>
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img className="mvp-product__image" src={product.imageUrl ?? ""} alt={product.title} />
+        {product.imageUrl ? <>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img className="mvp-product__image" src={product.imageUrl} alt={product.title} />
+        </> : <div className="mvp-product__image" aria-hidden="true" />}
         {product.imageUrls.length > 1 && <span className="mvp-product__photo-count">+{product.imageUrls.length - 1} photo{product.imageUrls.length > 2 ? "s" : ""}</span>}
       </button>
       <div className="mvp-product__body">

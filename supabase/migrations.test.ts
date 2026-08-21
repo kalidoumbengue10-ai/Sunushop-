@@ -10,6 +10,10 @@ const sql = migrationFiles
   .map((name) => readFileSync(join(migrationDirectory, name), "utf8"))
   .join("\n")
   .replaceAll("\r\n", "\n");
+const reliabilityFollowupSql = readFileSync(
+  join(migrationDirectory, "202608230005_backend_audit_reliability_followup.sql"),
+  "utf8",
+).replaceAll("\r\n", "\n");
 
 describe("contrat statique des migrations", () => {
   it("garde les migrations versionnées et ordonnées", () => {
@@ -104,6 +108,28 @@ describe("contrat statique des migrations", () => {
     expect(sql).toContain("PAYTECH_DISABLED");
     expect(sql).toContain("revoke insert, update, delete on public.payment_intents");
     expect(sql).toContain("LOYALTY_PROGRAM_FROZEN");
+  });
+
+  it("garde les correctifs de fiabilité post-audit", () => {
+    const subscriptionEnqueueSql = reliabilityFollowupSql.slice(
+      reliabilityFollowupSql.indexOf(
+        "create function public.enqueue_due_subscription_notifications",
+      ),
+    );
+
+    expect(reliabilityFollowupSql).not.toContain("returning 1 into v_marked");
+    expect(reliabilityFollowupSql).toContain("get diagnostics v_marked = row_count");
+    expect(reliabilityFollowupSql).toContain("processing_started_at");
+    expect(reliabilityFollowupSql).toContain("interval '2 minutes'");
+    expect(reliabilityFollowupSql).toContain("for update skip locked");
+    expect(reliabilityFollowupSql).toContain("pre_reliability_deploy_backlog");
+    expect(reliabilityFollowupSql).toContain("suppressed_at is null");
+    expect(reliabilityFollowupSql).toContain("create function public.enqueue_due_subscription_notifications");
+    expect(subscriptionEnqueueSql.indexOf("and not exists (")).toBeLessThan(
+      subscriptionEnqueueSql.indexOf(
+        "limit greatest(1, least(p_limit, 2000))",
+      ),
+    );
   });
 
   it("modernise l’espace marchand via une migration additive", () => {

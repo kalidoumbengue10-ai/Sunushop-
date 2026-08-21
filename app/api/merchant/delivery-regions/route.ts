@@ -67,7 +67,7 @@ export async function PUT(request: Request) {
     if (!existing?.id) {
       const { error: courierFeeError } = await admin
         .from("delivery_zones")
-        .update({ courier_fee_xof: input.courierFeeXof })
+        .update({ courier_fee_xof: input.courierFeeXof, active: input.enabled })
         .eq("id", zoneId);
       if (courierFeeError) throw courierFeeError;
     }

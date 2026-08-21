@@ -194,7 +194,10 @@ export function DirectDocumentUploader({
       setSuccess(`${documentLabel} enregistré avec succès.`);
       inputRef.current && (inputRef.current.value = "");
       if (finalized.data?.id) onSaved?.(finalized.data.id);
-      router.refresh();
+      // Les écrans qui fournissent onSaved mettent déjà le document à jour de
+      // façon optimiste. Un refresh serveur ici remontait tout le workspace et
+      // renvoyait le marchand vers le tableau de bord au milieu de son dossier.
+      if (!onSaved) router.refresh();
     } catch (caught) {
       setError(
         caught instanceof Error && caught.message === "STORAGE_UPLOAD_FAILED"

@@ -1,4 +1,5 @@
-import { createHash, createHmac, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac } from "node:crypto";
+import { constantTimeEqual } from "@/lib/api/constant-time";
 
 export type DeliveryCodeStage = "pickup" | "recipient";
 
@@ -13,9 +14,9 @@ function secret() {
   return value;
 }
 
-export function deriveDeliveryCode(deliveryId: string, stage: DeliveryCodeStage) {
+export function deriveDeliveryCode(deliveryId: string, stage: DeliveryCodeStage, version = 0) {
   const digest = createHmac("sha256", secret())
-    .update(`${stage}:${deliveryId}`)
+    .update(version === 0 ? `${stage}:${deliveryId}` : `${stage}:${deliveryId}:${version}`)
     .digest();
   return (digest.readUInt32BE(0) % 1_000_000).toString().padStart(6, "0");
 }
@@ -27,5 +28,5 @@ export function hashDeliveryCode(code: string) {
 export function verifyDeliveryCode(expectedHash: string, received: string) {
   const actual = Buffer.from(hashDeliveryCode(received), "hex");
   const expected = Buffer.from(expectedHash, "hex");
-  return actual.length === expected.length && timingSafeEqual(actual, expected);
+  return constantTimeEqual(actual, expected);
 }

@@ -1,6 +1,7 @@
 import { requireAdminClient } from "@/lib/api/auth";
 import { requireActiveMerchantAccess } from "@/lib/api/merchant-access";
 import { apiFailure, apiSuccess } from "@/lib/api/response";
+import { enforceRateLimit } from "@/lib/api/security";
 import { merchantAnalyticsQuerySchema } from "@/lib/domain/schemas";
 
 type Granularity = "day" | "week" | "month" | "year";
@@ -30,6 +31,9 @@ export async function GET(request: Request) {
       granularity: url.searchParams.get("granularity") ?? "day",
     });
     await requireActiveMerchantAccess(input.merchantId, ["owner", "manager"]);
+    // Route coûteuse (jusqu'à 15 000 lignes agrégées en JavaScript par
+    // appel) : bornée en plus de la limite de période sur le schéma.
+    await enforceRateLimit({ key: `merchant:${input.merchantId}`, action: "merchant_analytics", windowSeconds: 60, maxRequests: 20 });
     const admin = requireAdminClient();
     const duration = new Date(input.to).getTime() - new Date(input.from).getTime();
     const previousFrom = new Date(new Date(input.from).getTime() - duration).toISOString();

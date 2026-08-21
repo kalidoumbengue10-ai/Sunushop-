@@ -2,13 +2,15 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { formatPrice } from "@/lib/marketplace";
 import { merchantStatusLabel } from "@/lib/domain/merchant-ui";
 import { StartConversationButton } from "@/components/start-conversation-button";
 import { getBrowserSupabase } from "@/lib/infrastructure/supabase/browser";
 import { canBuyerCancelOrder, canBuyerHideOrder } from "@/lib/domain/client-order-actions";
+import { useCart } from "@/components/cart-provider";
 
-type OrderItem = { id: string; product_snapshot: { title?: string; variantTitle?: string }; quantity: number; line_total_xof: number };
+type OrderItem = { id: string; variant_id: string; product_snapshot: { title?: string; variantTitle?: string }; quantity: number; line_total_xof: number };
 type Order = {
   id: string;
   merchant_id: string;
@@ -47,6 +49,8 @@ function one<T>(value: T | T[]): T {
 }
 
 export function ClientOrders() {
+  const router = useRouter();
+  const cart = useCart();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -135,6 +139,32 @@ export function ClientOrders() {
     } finally { setBusyOrderId(""); }
   };
 
+  const reorder = async (order: Order) => {
+    setBusyOrderId(order.id); setError("");
+    try {
+      await cart.clear();
+      const results = await Promise.all(order.order_items.map(async (item) => {
+        const response = await fetch("/api/client/cart", {
+          method: "PUT",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ variantId: item.variant_id, quantity: item.quantity }),
+        });
+        return response.ok;
+      }));
+      const availableCount = results.filter(Boolean).length;
+      await cart.merge();
+      if (!availableCount) throw new Error("Les articles de cette commande ne sont plus disponibles.");
+      if (availableCount !== results.length) {
+        setError(`${availableCount} article${availableCount > 1 ? "s ont" : " a"} été ajouté${availableCount > 1 ? "s" : ""}. Les autres ne sont plus disponibles dans les quantités demandées.`);
+        cart.open();
+        return;
+      }
+      router.push("/commander");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Impossible de reconstruire le panier.");
+    } finally { setBusyOrderId(""); }
+  };
+
   return (
     <div className="client-orders">
       <section className="mvp-card mvp-card--full">
@@ -197,7 +227,7 @@ export function ClientOrders() {
                 ))}
               </ul>
               <footer>
-                <div><strong>{formatPrice(order.total_xof)}</strong>{order.loyalty_discount_xof > 0 && <small>{order.loyalty_points_redeemed} points utilisés</small>}{order.loyalty_points_earned > 0 && <small>{order.loyalty_points_earned} points gagnés</small>}</div>
+                <div><strong>{formatPrice(order.total_xof)}</strong></div>
                 <div className="mvp-actions">
                   <Link className="mvp-button mvp-button--secondary" href={`/commandes/${order.id}`}>Voir le suivi</Link>
                   <StartConversationButton
@@ -206,7 +236,7 @@ export function ClientOrders() {
                     subject={`Commande ${order.public_code}`}
                     label="Discuter"
                   />
-                  <Link className="mvp-button mvp-button--secondary" href={`/boutiques/${merchant.slug}`}>Commander à nouveau</Link>
+                  <button type="button" className="mvp-button mvp-button--secondary" disabled={busyOrderId === order.id || !cart.ready} onClick={() => void reorder(order)}>{busyOrderId === order.id ? "Reconstruction…" : "Commander à nouveau"}</button>
                   {canCancel && <button type="button" className="mvp-button mvp-button--danger" disabled={busyOrderId === order.id} onClick={() => void cancelOrder(order)}>Annuler</button>}
                   {canHide && <button type="button" className="mvp-button mvp-button--secondary" disabled={busyOrderId === order.id} onClick={() => void hideOrder(order)}>Retirer de ma liste</button>}
                 </div>

@@ -9,7 +9,6 @@ import {
   Boxes,
   ClipboardCheck,
   ExternalLink,
-  Gift,
   LayoutDashboard,
   MessageSquare,
   PackageSearch,
@@ -22,7 +21,6 @@ import { getBrowserSupabase } from "@/lib/infrastructure/supabase/browser";
 import { CourierManager } from "@/components/courier-manager";
 import { MerchantMedia } from "@/components/merchant-media";
 import { MerchantDashboard } from "@/components/merchant-dashboard";
-import { MerchantLoyalty } from "@/components/merchant-loyalty";
 import { ConversationList } from "@/components/conversation-list";
 import { MerchantProductWizard, type MerchantProductEditor } from "@/components/merchant-product-wizard";
 import { MerchantDeliverySettings, type MerchantDeliveryZone } from "@/components/merchant-delivery-settings";
@@ -30,7 +28,15 @@ import { LocationPicker } from "@/components/location-map";
 import type { Coordinates, GeoPlace } from "@/lib/domain/geo";
 import { IntentLetterForm } from "@/components/intent-letter-form";
 import { DirectDocumentUploader, documentLabels, type VerificationDocumentRow } from "@/components/direct-document-uploader";
-import { formatMerchantOrderNumber, merchantStatusLabel } from "@/lib/domain/merchant-ui";
+import {
+  defaultMerchantTab,
+  formatMerchantOrderNumber,
+  merchantCanAccessTab,
+  merchantStatusLabel,
+  merchantTabsForRole,
+  type MerchantWorkspaceRole,
+  type MerchantWorkspaceTab,
+} from "@/lib/domain/merchant-ui";
 import {
   BILLING_CYCLES,
   billingCycleMonths,
@@ -76,8 +82,28 @@ type VerificationCase = {
 
 type DocumentRow = VerificationDocumentRow;
 
+type MerchantOrder = {
+  id: string;
+  public_code: string;
+  merchant_sequence: number;
+  status: string;
+  payment_method: string;
+  payment_status: string;
+  total_xof: number;
+  delivery_snapshot: { methodKind?: string | null };
+  deliveries: Array<{ id: string }>;
+  created_at: string;
+  direct_payment_declarations: Array<{
+    id: string;
+    external_reference: string;
+    status: string;
+    rejection_reason: string | null;
+    confirmed_by_merchant_at: string | null;
+  }>;
+};
+
 type MerchantWorkspaceProps = {
-  memberRole: "owner" | "manager" | "catalog" | "fulfillment";
+  memberRole: MerchantWorkspaceRole;
   merchant: Merchant | null;
   verificationCase: VerificationCase | null;
   documents: DocumentRow[];
@@ -109,25 +135,8 @@ type MerchantWorkspaceProps = {
     status: string;
     created_at: string;
   }>;
-  orders: Array<{
-    id: string;
-    public_code: string;
-    merchant_sequence: number;
-    status: string;
-    payment_method: string;
-    payment_status: string;
-    total_xof: number;
-    delivery_snapshot: { methodKind?: string | null };
-    deliveries: Array<{ id: string }>;
-    created_at: string;
-    direct_payment_declarations: Array<{
-      id: string;
-      external_reference: string;
-      status: string;
-      rejection_reason: string | null;
-      confirmed_by_merchant_at: string | null;
-    }>;
-  }>;
+  orders: MerchantOrder[];
+  ordersTotal: number;
   notifications: Array<{
     id: string;
     template: string;
@@ -187,7 +196,7 @@ function ProductMediaUploader({ productId }: { productId: string }) {
   );
 }
 
-function nextMerchantOrderStatus(order: MerchantWorkspaceProps["orders"][number]) {
+function nextMerchantOrderStatus(order: MerchantOrder) {
   if (order.delivery_snapshot?.methodKind === "pickup") {
     if (order.status === "ready_for_handoff") return "in_transit";
     if (order.status === "in_transit") return "delivered";
@@ -206,17 +215,7 @@ const orderPaymentStatusLabels: Record<string, string> = {
   refunded: "Remboursé",
 };
 
-type MerchantTab =
-  | "dashboard"
-  | "commandes"
-  | "catalogue"
-  | "livraison"
-  | "livreurs"
-  | "fidelite"
-  | "messages"
-  | "boutique"
-  | "abonnement"
-  | "dossier";
+type MerchantTab = MerchantWorkspaceTab;
 
 const merchantNavigation = [
   { id: "dashboard", label: "Vue d’ensemble", hint: "Activité et chiffres", icon: LayoutDashboard },
@@ -224,7 +223,6 @@ const merchantNavigation = [
   { id: "catalogue", label: "Produits", hint: "Photos, prix et stocks", icon: Boxes },
   { id: "livraison", label: "Livraison", hint: "Zones et tarifs", icon: Truck },
   { id: "livreurs", label: "Livreurs", hint: "Équipe et affectations", icon: Bike },
-  { id: "fidelite", label: "Fidélité", hint: "Points de vos clients", icon: Gift },
   { id: "messages", label: "Messages", hint: "Discussions avec vos clients", icon: MessageSquare },
   { id: "boutique", label: "Ma boutique", hint: "Image et présentation", icon: Store },
   { id: "abonnement", label: "Abonnement", hint: "Plan et paiements", icon: BadgeDollarSign },
@@ -237,7 +235,6 @@ const merchantSectionTitles: Record<MerchantTab, { eyebrow: string; title: strin
   catalogue: { eyebrow: "Catalogue", title: "Produits", description: "Ajoutez vos photos, variantes, prix et stocks." },
   livraison: { eyebrow: "Logistique", title: "Livraison", description: "Configurez simplement les régions et leurs tarifs." },
   livreurs: { eyebrow: "Équipe", title: "Livreurs", description: "Organisez les personnes qui prennent en charge vos colis." },
-  fidelite: { eyebrow: "Relation client", title: "Fidélité", description: "Suivez les points gagnés et utilisés dans votre boutique." },
   messages: { eyebrow: "Relation client", title: "Messages", description: "Répondez aux questions de vos clients sur vos produits et commandes." },
   boutique: { eyebrow: "Vitrine", title: "Ma boutique", description: "Soignez la présentation visible par vos clients." },
   abonnement: { eyebrow: "Accès", title: "Abonnement", description: "Consultez votre plan et transmettez un paiement." },
@@ -247,10 +244,11 @@ const merchantSectionTitles: Record<MerchantTab, { eyebrow: string; title: strin
 export function MerchantWorkspace(props: MerchantWorkspaceProps) {
   const router = useRouter();
   const realtimeMerchantId = props.merchant?.id;
+  const subscriptionReady = Boolean(
+    props.merchant && ["active", "grace"].includes(props.merchant.subscription_status),
+  );
   const [tab, setTab] = useState<MerchantTab>(
-    props.merchant && ["active", "grace"].includes(props.merchant.subscription_status)
-      ? "dashboard"
-      : "abonnement",
+    defaultMerchantTab(props.memberRole, subscriptionReady),
   );
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
@@ -276,6 +274,16 @@ export function MerchantWorkspace(props: MerchantWorkspaceProps) {
   const [pickupEnabled, setPickupEnabled] = useState(props.merchant?.pickup_enabled ?? false);
   const [pickupHours, setPickupHours] = useState(props.merchant?.pickup_hours ?? "");
   const [pickupInstructions, setPickupInstructions] = useState(props.merchant?.pickup_instructions ?? "");
+  const [orderQuery, setOrderQuery] = useState("");
+  const [orderStatus, setOrderStatus] = useState("all");
+  const [orderPage, setOrderPage] = useState(1);
+  const [merchantOrders, setMerchantOrders] = useState(props.orders);
+  const [merchantOrdersTotal, setMerchantOrdersTotal] = useState(props.ordersTotal);
+  const [ordersLoading, setOrdersLoading] = useState(false);
+  const [ordersError, setOrdersError] = useState("");
+  const [ordersRevision, setOrdersRevision] = useState(0);
+  const [refundOrder, setRefundOrder] = useState<MerchantOrder | null>(null);
+  const [rejectedDeclaration, setRejectedDeclaration] = useState<{ orderId: string; declarationId: string; reference: string } | null>(null);
 
   useEffect(() => {
     if (!realtimeMerchantId) return;
@@ -296,16 +304,58 @@ export function MerchantWorkspace(props: MerchantWorkspaceProps) {
     };
   }, [realtimeMerchantId, router]);
 
+  useEffect(() => {
+    if (!realtimeMerchantId || tab !== "commandes") return;
+    const controller = new AbortController();
+    const timeout = window.setTimeout(async () => {
+      setOrdersLoading(true);
+      setOrdersError("");
+      const search = new URLSearchParams({
+        merchantId: realtimeMerchantId,
+        page: String(orderPage),
+        limit: "15",
+        status: orderStatus,
+      });
+      if (orderQuery.trim()) search.set("query", orderQuery.trim());
+      try {
+        const response = await fetch(`/api/merchant/orders?${search}`, { signal: controller.signal });
+        const payload = await response.json();
+        if (!response.ok) {
+          setOrdersError(payload.error?.message ?? "Les commandes n’ont pas pu être chargées.");
+          return;
+        }
+        const result = payload.data as { items: MerchantOrder[]; total: number; totalPages: number };
+        if (orderPage > result.totalPages) {
+          setOrderPage(result.totalPages);
+          return;
+        }
+        setMerchantOrders(result.items);
+        setMerchantOrdersTotal(result.total);
+      } catch (fetchError) {
+        if ((fetchError as Error).name !== "AbortError") {
+          setOrdersError("Les commandes n’ont pas pu être chargées.");
+        }
+      } finally {
+        if (!controller.signal.aborted) setOrdersLoading(false);
+      }
+    }, orderQuery.trim() ? 250 : 0);
+    return () => {
+      window.clearTimeout(timeout);
+      controller.abort();
+    };
+  }, [orderPage, orderQuery, orderStatus, ordersRevision, props.orders, props.ordersTotal, realtimeMerchantId, tab]);
+
   const submitJson = async (
     url: string,
     body: object,
     successMessage: string,
+    method: "POST" | "PATCH" = "POST",
   ) => {
     setBusy(true);
     setError("");
     setMessage("");
     const response = await fetch(url, {
-      method: "POST",
+      method,
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
     });
@@ -316,6 +366,7 @@ export function MerchantWorkspace(props: MerchantWorkspaceProps) {
       return false;
     }
     setMessage(successMessage);
+    if (url.startsWith("/api/orders/")) setOrdersRevision((revision) => revision + 1);
     router.refresh();
     return true;
   };
@@ -411,15 +462,30 @@ export function MerchantWorkspace(props: MerchantWorkspaceProps) {
     );
   };
 
-  const declareRefund = async (order: MerchantWorkspaceProps["orders"][number]) => {
-    const amount = Number(window.prompt("Montant remboursé en FCFA", String(order.total_xof)));
-    if (!Number.isInteger(amount) || amount <= 0 || amount > order.total_xof) return;
-    const channel = window.prompt("Canal du remboursement : wave ou orange_money", "wave");
-    if (channel !== "wave" && channel !== "orange_money") return;
-    const destinationNumber = window.prompt("Numéro du client au format +221...");
-    const externalReference = window.prompt("Référence du transfert");
-    if (!destinationNumber || !externalReference) return;
-    await submitJson(`/api/orders/${order.id}/refunds`, { amountXof: amount, channel, destinationNumber, externalReference }, "Remboursement transmis au client pour confirmation.");
+  const declareRefund = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!refundOrder) return;
+    const form = new FormData(event.currentTarget);
+    const success = await submitJson(`/api/orders/${refundOrder.id}/refunds`, {
+      amountXof: Number(form.get("amountXof")),
+      channel: form.get("channel"),
+      destinationNumber: form.get("destinationNumber"),
+      externalReference: form.get("externalReference"),
+    }, "Remboursement transmis au client pour confirmation.");
+    if (success) setRefundOrder(null);
+  };
+
+  const rejectPaymentDeclaration = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!rejectedDeclaration) return;
+    const form = new FormData(event.currentTarget);
+    const success = await submitJson(
+      `/api/orders/${rejectedDeclaration.orderId}/payment-declarations`,
+      { declarationId: rejectedDeclaration.declarationId, decision: "rejected", rejectionReason: form.get("rejectionReason") },
+      "Paiement refusé avec son motif.",
+      "PATCH",
+    );
+    if (success) setRejectedDeclaration(null);
   };
 
   const saveRecoveryEmail = async (event: FormEvent<HTMLFormElement>) => {
@@ -499,6 +565,9 @@ export function MerchantWorkspace(props: MerchantWorkspaceProps) {
   const merchantId = props.merchant.id;
   const hasLocation = props.merchant.pickup_latitude != null && props.merchant.pickup_longitude != null;
   const hasDeliveryOption = props.zones.some((zone) => zone.active);
+  const canManageMerchantSettings = ["owner", "manager"].includes(props.memberRole);
+  const ordersPerPage = 15;
+  const orderPageCount = Math.max(1, Math.ceil(merchantOrdersTotal / ordersPerPage));
 
   const latestDocuments = new Map<VerificationDocumentType, DocumentRow>();
   props.documents.forEach((document) => {
@@ -548,8 +617,8 @@ export function MerchantWorkspace(props: MerchantWorkspaceProps) {
   const waveCheckoutUrl = props.subscriptionPaymentNumbers.waveLink && subscriptionAmountXof > 0
     ? `${props.subscriptionPaymentNumbers.waveLink}?amount=${subscriptionAmountXof}`
     : null;
-  const subscriptionReady = ["active", "grace"].includes(props.merchant.subscription_status);
-  const visibleNavigation = merchantNavigation;
+  const visibleTabs = merchantTabsForRole(props.memberRole);
+  const visibleNavigation = merchantNavigation.filter(({ id }) => visibleTabs.includes(id));
   const currentSection = merchantSectionTitles[tab];
 
   return (
@@ -609,17 +678,17 @@ export function MerchantWorkspace(props: MerchantWorkspaceProps) {
           </div>
         </header>
 
-        {missingRequired.length > 0 && props.merchant.status !== "suspended" && (
+        {merchantCanAccessTab(props.memberRole, "dossier") && missingRequired.length > 0 && props.merchant.status !== "suspended" && (
           <div className="merchant-context-note"><PackageSearch /><p>Votre dossier documentaire est incomplet. Vous pouvez continuer à préparer votre boutique en attendant : <button type="button" className="merchant-context-note__link" onClick={() => setTab("dossier")}>terminez-le ici</button>.</p></div>
         )}
 
-        {(props.merchant.pickup_latitude == null || props.merchant.pickup_longitude == null) && props.merchant.status !== "suspended" && (
+        {merchantCanAccessTab(props.memberRole, "livraison") && (props.merchant.pickup_latitude == null || props.merchant.pickup_longitude == null) && props.merchant.status !== "suspended" && (
           <div className="merchant-context-note"><PackageSearch /><p>Votre boutique n’a pas encore de position enregistrée. Tant qu’elle est absente, vos clients ne peuvent plus passer de commande en livraison : <button type="button" className="merchant-context-note__link" onClick={() => setTab("livraison")}>placez-la sur la carte</button>.</p></div>
         )}
         {message && <p className="mvp-alert merchant-global-feedback">{message}</p>}
         {error && <p className="mvp-alert mvp-alert--error merchant-global-feedback">{error}</p>}
 
-        {!subscriptionReady && (
+        {!subscriptionReady && merchantCanAccessTab(props.memberRole, "abonnement") && (
           <div className="merchant-subscription-paywall" role="status">
             <div><span className="mvp-eyebrow">Abonnement requis</span><h2>Votre boutique est prête. Activez votre abonnement pour publier vos produits et recevoir des commandes.</h2><p>Préparez vos produits en brouillon dès maintenant. La publication, la visibilité sur le marché et les commandes nécessitent un abonnement actif.</p></div>
             <button className="mvp-button" onClick={() => setTab("abonnement")}>Activer mon abonnement</button>
@@ -633,8 +702,6 @@ export function MerchantWorkspace(props: MerchantWorkspaceProps) {
         {tab === "livreurs" && (
           <CourierManager merchantId={props.merchant.id} canManagePayments={["owner", "manager"].includes(props.memberRole)} onOpenOrders={() => setTab("commandes")} />
         )}
-
-        {tab === "fidelite" && <MerchantLoyalty merchantId={props.merchant.id} />}
 
         {tab === "messages" && (
           <section className="merchant-content-surface">
@@ -755,7 +822,7 @@ export function MerchantWorkspace(props: MerchantWorkspaceProps) {
           </div>
         )}
 
-        {tab === "catalogue" && <div className="mvp-card mvp-card--full"><MerchantProductWizard merchantId={props.merchant.id} categories={props.categories} products={props.products} deliveryReady={props.zones.some((zone) => zone.active)} subscriptionReady={subscriptionReady} onOpenSubscription={() => setTab("abonnement")} onOpenDelivery={() => setTab("livraison")} /></div>}
+        {tab === "catalogue" && <div className="mvp-card mvp-card--full"><MerchantProductWizard merchantId={props.merchant.id} categories={props.categories} products={props.products} deliveryReady={props.zones.some((zone) => zone.active)} subscriptionReady={subscriptionReady} onOpenSubscription={merchantCanAccessTab(props.memberRole, "abonnement") ? () => setTab("abonnement") : undefined} onOpenDelivery={merchantCanAccessTab(props.memberRole, "livraison") ? () => setTab("livraison") : undefined} /></div>}
 
         {tab === "livraison" && (
           <div className="mvp-card mvp-card--full">
@@ -776,6 +843,7 @@ export function MerchantWorkspace(props: MerchantWorkspaceProps) {
                 </li>
               </ol>
             </div>
+            {canManageMerchantSettings && <>
             <div className="mvp-divider" />
             <form className="mvp-form" onSubmit={savePaymentNumbers}>
               <h3>Coordonnées de paiement à la commande</h3>
@@ -868,6 +936,7 @@ export function MerchantWorkspace(props: MerchantWorkspaceProps) {
               </button>
             </form>
             <div className="mvp-divider" />
+            </>}
             <MerchantDeliverySettings merchantId={props.merchant.id} categories={props.categories} zones={props.zones} pickupSettingEnabled={props.merchant.pickup_enabled ?? false} />
           </div>
         )}
@@ -1043,11 +1112,46 @@ export function MerchantWorkspace(props: MerchantWorkspaceProps) {
         {tab === "commandes" && (
           <div className="mvp-card mvp-card--full">
             <h2>Commandes</h2>
+            <div className="mvp-form__grid">
+              <label className="mvp-field">Rechercher une commande
+                <input type="search" value={orderQuery} onChange={(event) => { setOrderQuery(event.target.value); setOrderPage(1); }} placeholder="Code ou numéro CMD-…" />
+              </label>
+              <label className="mvp-field">Filtrer par état
+                <select value={orderStatus} onChange={(event) => { setOrderStatus(event.target.value); setOrderPage(1); }}>
+                  <option value="all">Tous les états</option>
+                  <option value="pending_seller_confirmation">À confirmer</option>
+                  <option value="preparing">En préparation</option>
+                  <option value="ready_for_handoff">Prête à remettre</option>
+                  <option value="in_transit">En livraison</option>
+                  <option value="delivered">Livrée</option>
+                  <option value="cancelled">Annulée</option>
+                  <option value="refund_pending">Remboursement en attente</option>
+                </select>
+              </label>
+            </div>
+            <p><small>{merchantOrdersTotal} commande(s) correspondant aux filtres.</small></p>
+            {ordersLoading && <p className="mvp-alert" role="status">Chargement des commandes…</p>}
+            {ordersError && <p className="mvp-alert mvp-alert--error" role="alert">{ordersError}</p>}
+            {rejectedDeclaration && <form className="mvp-form" onSubmit={rejectPaymentDeclaration}>
+              <h3>Refuser le paiement {rejectedDeclaration.reference}</h3>
+              <label className="mvp-field">Motif communiqué au client<textarea name="rejectionReason" minLength={4} maxLength={500} required /></label>
+              <div className="mvp-actions"><button className="mvp-button mvp-button--danger" disabled={busy}>Confirmer le refus</button><button type="button" className="mvp-button mvp-button--secondary" onClick={() => setRejectedDeclaration(null)} disabled={busy}>Annuler</button></div>
+            </form>}
+            {refundOrder && <form className="mvp-form" onSubmit={declareRefund}>
+              <h3>Déclarer le remboursement de {formatMerchantOrderNumber(refundOrder.merchant_sequence)}</h3>
+              <div className="mvp-form__grid">
+                <label className="mvp-field">Montant remboursé (FCFA)<input name="amountXof" type="number" min="1" max={refundOrder.total_xof} defaultValue={refundOrder.total_xof} required /></label>
+                <label className="mvp-field">Canal<select name="channel"><option value="wave">Wave</option><option value="orange_money">Orange Money</option></select></label>
+                <label className="mvp-field">Numéro du client<input name="destinationNumber" type="tel" placeholder="+221770000000" required /></label>
+                <label className="mvp-field">Référence du transfert<input name="externalReference" required /></label>
+              </div>
+              <div className="mvp-actions"><button className="mvp-button" disabled={busy}>Transmettre au client</button><button type="button" className="mvp-button mvp-button--secondary" onClick={() => setRefundOrder(null)} disabled={busy}>Annuler</button></div>
+            </form>}
             <div className="mvp-list">
-              {props.orders.map((order) => (
+              {merchantOrders.map((order) => (
                 <div className="mvp-row" key={order.id}>
                   <div>
-                    <Link href={`/commandes/${order.id}`}>
+                    <Link href={`/marchand/commandes/${order.id}`}>
                       <strong>{formatMerchantOrderNumber(order.merchant_sequence)}</strong>
                     </Link>
                     <small>{order.public_code} · {formatPrice(order.total_xof)}</small>
@@ -1066,26 +1170,15 @@ export function MerchantWorkspace(props: MerchantWorkspaceProps) {
                       .filter((declaration) => declaration.status === "pending")
                       .map((declaration) => (
                         <div className="mvp-actions" key={declaration.id}>
-                          <button className="mvp-button mvp-button--secondary" onClick={async () => {
-                            await fetch(`/api/orders/${order.id}/payment-declarations`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ declarationId: declaration.id, decision: "confirmed" }) });
-                            router.refresh();
-                          }}>Confirmer {declaration.external_reference}</button>
-                          <button className="mvp-button mvp-button--danger" onClick={async () => {
-                            const reason = window.prompt("Pourquoi refusez-vous ce paiement ?");
-                            if (!reason || reason.trim().length < 4) return;
-                            await fetch(`/api/orders/${order.id}/payment-declarations`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ declarationId: declaration.id, decision: "rejected", rejectionReason: reason }) });
-                            router.refresh();
-                          }}>Refuser</button>
+                          <button className="mvp-button mvp-button--secondary" disabled={busy} onClick={() => void submitJson(`/api/orders/${order.id}/payment-declarations`, { declarationId: declaration.id, decision: "confirmed" }, "Paiement confirmé.", "PATCH")}>Confirmer {declaration.external_reference}</button>
+                          <button className="mvp-button mvp-button--danger" disabled={busy} onClick={() => setRejectedDeclaration({ orderId: order.id, declarationId: declaration.id, reference: declaration.external_reference })}>Refuser</button>
                         </div>
                       ))}
                     {order.payment_method === "cash_on_delivery" && order.payment_status === "cash_due" && order.status === "ready_for_handoff" && (
-                      <button className="mvp-button mvp-button--secondary" onClick={async () => {
-                        await fetch(`/api/orders/${order.id}/cash-payment`, { method: "POST" });
-                        router.refresh();
-                      }}>Confirmer les espèces reçues</button>
+                      <button className="mvp-button mvp-button--secondary" disabled={busy} onClick={() => void submitJson(`/api/orders/${order.id}/cash-payment`, {}, "Espèces reçues confirmées.")}>Confirmer les espèces reçues</button>
                     )}
                     {["paid", "refund_pending"].includes(order.payment_status) && (
-                      <button className="mvp-button mvp-button--secondary" onClick={() => void declareRefund(order)}>Déclarer un remboursement</button>
+                      <button className="mvp-button mvp-button--secondary" disabled={busy} onClick={() => setRefundOrder(order)}>Déclarer un remboursement</button>
                     )}
                     {["pending_seller_confirmation", "confirmed", "preparing"].includes(order.status) && (order.payment_method === "cash_on_delivery" || order.payment_status === "paid") && (
                       <button
@@ -1128,10 +1221,15 @@ export function MerchantWorkspace(props: MerchantWorkspaceProps) {
                   </div>
                 </div>
               ))}
-              {!props.orders.length && (
-                <p className="mvp-empty">Aucune commande pour le moment.</p>
+              {!ordersLoading && !merchantOrders.length && (
+                <p className="mvp-empty">Aucune commande ne correspond à ces critères.</p>
               )}
             </div>
+            {orderPageCount > 1 && <nav className="mvp-actions" aria-label="Pagination des commandes">
+              <button type="button" className="mvp-button mvp-button--secondary" disabled={orderPage === 1} onClick={() => setOrderPage((page) => Math.max(1, page - 1))}>Précédent</button>
+              <span>Page {orderPage} sur {orderPageCount}</span>
+              <button type="button" className="mvp-button mvp-button--secondary" disabled={orderPage === orderPageCount} onClick={() => setOrderPage((page) => Math.min(orderPageCount, page + 1))}>Suivant</button>
+            </nav>}
           </div>
         )}
       </main>

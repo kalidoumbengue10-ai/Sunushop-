@@ -24,7 +24,12 @@ function copyFor(template: string, payload: Record<string, unknown>): EmailCopy 
     case "merchant_application_received": return { subject: `Nouvelle candidature SunuShop — ${String(payload.shopName ?? "boutique")}`, preheader: "Une nouvelle candidature commerçant a été déposée.", title: "Nouvelle candidature commerçant", body: `<strong>${escapeHtml(payload.contactName)}</strong> souhaite référencer <strong>${shop}</strong>.`, details: [`E-mail : ${escapeHtml(payload.email)}`, `Téléphone : ${escapeHtml(payload.phone)}`] };
     case "prelaunch_lead_received": return { subject: `Nouveau contact SunuShop — ${String(payload.shopName ?? "boutique")}`, preheader: "Un nouveau contact souhaite rejoindre SunuShop.", title: "Nouveau contact de pré-lancement", body: `<strong>${escapeHtml(payload.contactName)}</strong> souhaite présenter <strong>${shop}</strong>.`, details: [`E-mail : ${escapeHtml(payload.email)}`, `Téléphone : ${escapeHtml(payload.phone)}`] };
     case "merchant_invitation": return { subject: `SunuShop — Votre lien sécurisé pour déposer vos documents`, preheader: `Accédez au dossier marchand de ${shop}.`, title: "Votre accès au dépôt de documents", body: `Votre candidature pour <strong>${shop}</strong> a bien été reçue. Cliquez sur le bouton ci-dessous pour créer votre mot de passe, ouvrir votre espace sécurisé et déposer les documents demandés. Ce lien personnel est valable sept jours.`, cta: "Accéder à mon dossier marchand", url };
-    case "courier_invitation": return { subject: "Invitation livreur SunuShop", preheader: "Une boutique souhaite vous confier ses livraisons.", title: "Rejoignez l’équipe de livraison", body: "Créez ou ouvrez votre compte sécurisé pour accepter les missions de la boutique. Ce lien est valable sept jours.", cta: "Ouvrir mon espace livreur", url };
+    case "courier_invitation": return { subject: `Votre accès livreur — ${String(payload.shopName ?? "SunuShop")}`, preheader: "Choisissez votre PIN à 6 chiffres et ouvrez votre espace.", title: "Votre espace livreur est prêt", body: `<strong>${shop}</strong> souhaite vous confier des livraisons. Ouvrez ce lien personnel, choisissez simplement un PIN à 6 chiffres et retrouvez toutes vos missions au même endroit. Ce lien est valable sept jours et ne peut servir qu’une fois.`, cta: "Activer mon espace livreur", url };
+    case "delivery_offer": return { subject: `Nouvelle mission — gain ${formatXof(payload.courierFeeXof)}`, preheader: `${shop} vous propose une nouvelle livraison.`, title: "Une nouvelle mission vous attend", body: `<strong>${shop}</strong> vous propose une livraison vers <strong>${escapeHtml(payload.zone ?? "la zone indiquée")}</strong>. Acceptez-la ou refusez-la en un geste depuis votre espace.`, details: [`Distance estimée : ${escapeHtml(payload.distanceLabel ?? "—")}`, `Durée estimée : ${escapeHtml(payload.durationLabel ?? "—")}`, `Votre gain : ${formatXof(payload.courierFeeXof)}`], cta: "Voir et décider", url };
+    case "delivery_offer_accepted": return { subject: `Mission acceptée — ${order}`, preheader: "Le livreur a accepté votre proposition.", title: "La mission est acceptée", body: `Le livreur a accepté la mission <strong>${order}</strong>. Les coordonnées exactes du client lui sont désormais accessibles.`, cta: "Suivre la mission", url };
+    case "delivery_offer_declined": return { subject: `Mission refusée — ${order}`, preheader: "La commande est de nouveau disponible à l’affectation.", title: "Le livreur a refusé la mission", body: `La proposition pour la commande <strong>${order}</strong> a été refusée. Elle est immédiatement revenue dans votre liste « À affecter ».`, cta: "Choisir un autre livreur", url };
+    case "recipient_delivery_code": return { subject: `Votre code de livraison — ${order}`, preheader: "Présentez ce code au livreur uniquement lorsque vous avez votre colis.", title: "Votre colis est en route", body: `Votre commande <strong>${order}</strong> a été retirée. Lorsque le livreur est devant vous et que vous avez vérifié le colis, communiquez-lui ce code :`, details: [`Code de livraison : ${escapeHtml(payload.code)}`, "Ne partagez jamais ce code avant d’avoir reçu votre colis."], cta: "Suivre ma livraison", url };
+    case "courier_payout_declared": return { subject: `Transfert déclaré — ${formatXof(payload.amountXof)}`, preheader: `${shop} a déclaré un règlement à confirmer.`, title: "Un règlement attend votre confirmation", body: `<strong>${shop}</strong> indique avoir transféré <strong>${formatXof(payload.amountXof)}</strong> sur votre compte ${escapeHtml(payload.paymentMethod ?? "de paiement")}. Confirmez la réception ou contestez-la depuis votre espace.`, details: payload.externalReference ? [`Référence : ${escapeHtml(payload.externalReference)}`] : [], cta: "Vérifier le règlement", url };
     case "order_created_buyer": return { subject: `Commande ${order} bien enregistrée`, preheader: `Votre commande de ${amount} est transmise au marchand.`, title: "Votre commande est enregistrée", body: `Le marchand a reçu votre commande <strong>${order}</strong>. Vous pourrez suivre chaque étape depuis votre espace SunuShop.`, details: [`Total : ${amount}`], cta: "Suivre ma commande", url };
     case "order_created_merchant": return { subject: `Nouvelle commande ${escapeHtml(payload.merchantOrderCode ?? order)}`, preheader: `Une nouvelle commande de ${amount} attend votre confirmation.`, title: "Vous avez une nouvelle commande", body: `La commande <strong>${escapeHtml(payload.merchantOrderCode ?? order)}</strong> attend votre confirmation de stock.`, details: [`Référence SunuShop : ${order}`, `Total : ${amount}`], cta: "Voir la commande", url };
     case "order_status_changed": return { subject: `Commande ${order} — ${String(payload.statusLabel ?? "mise à jour")}`, preheader: "Le suivi de votre commande vient d’être actualisé.", title: String(payload.statusLabel ?? "Commande mise à jour"), body: `Le statut de la commande <strong>${order}</strong> a changé.`, details: payload.publicMessage ? [escapeHtml(payload.publicMessage)] : [], cta: "Consulter le suivi", url };
@@ -60,12 +65,30 @@ export function renderNotificationEmail(template: string, payload: Record<string
   return { subject: copy.subject, html: renderEnvelope(copy), text };
 }
 
-export async function sendNotificationEmail(template: string, payload: Record<string, unknown>) {
+export async function sendNotificationEmail(
+  template: string,
+  payload: Record<string, unknown>,
+  options: { idempotencyKey?: string } = {},
+) {
   const apiKey = process.env.RESEND_API_KEY?.trim();
   if (!apiKey) throw new Error("RESEND_API_KEY_REQUIRED");
   const to = String(payload.to ?? "");
   if (!to) throw new Error("EMAIL_RECIPIENT_REQUIRED");
   const content = renderNotificationEmail(template, payload);
-  const response = await fetch("https://api.resend.com/emails", { method: "POST", headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" }, body: JSON.stringify({ from: process.env.SUNUSHOP_EMAIL_FROM ?? "SunuShop <noreply@sunushop.fr>", reply_to: process.env.SUNUSHOP_EMAIL_REPLY_TO ?? "contact@sunushop.fr", to: [to], subject: content.subject, html: content.html, text: content.text }) });
+  const headers: Record<string, string> = {
+    authorization: `Bearer ${apiKey}`,
+    "content-type": "application/json",
+  };
+  if (options.idempotencyKey) headers["Idempotency-Key"] = options.idempotencyKey;
+  const response = await fetch(process.env.SUNUSHOP_EMAIL_API_URL?.trim() || "https://api.resend.com/emails", {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ from: process.env.SUNUSHOP_EMAIL_FROM ?? "SunuShop <noreply@sunushop.fr>", reply_to: process.env.SUNUSHOP_EMAIL_REPLY_TO ?? "contact@sunushop.fr", to: [to], subject: content.subject, html: content.html, text: content.text }),
+    // Sans timeout, un Resend lent bloque indéfiniment le worker appelant :
+    // fatal sur les 7 routes qui envoient en synchrone (sendImmediately).
+    signal: AbortSignal.timeout(8_000),
+  });
   if (!response.ok) throw new Error(`RESEND_${response.status}`);
+  const result = await response.json().catch(() => ({})) as { id?: string };
+  return { providerMessageId: result.id ?? null };
 }

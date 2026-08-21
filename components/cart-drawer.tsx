@@ -38,8 +38,10 @@ export function CartDrawer() {
               const attributes = Object.entries(line.product.variant.attributes);
               return (
                 <li key={line.product.variant.id} className="cart-drawer__line">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={line.product.imageUrl ?? ""} alt={line.product.title} />
+                  {line.product.imageUrl ? <>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={line.product.imageUrl} alt={line.product.title} />
+                  </> : <span className="cart-drawer__image-placeholder" aria-hidden="true" />}
                   <div className="cart-drawer__line-body">
                     <strong>{line.product.title}</strong>
                     <small>{line.product.merchant.name}</small>

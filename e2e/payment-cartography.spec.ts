@@ -139,9 +139,14 @@ function merchantOrderRow(page: Page, publicCode: string) {
 
 async function declareOrangeMoneyFromClient(page: Page, order: TestOrder, reference: string) {
   await page.goto(`/commandes/${order.id}`);
-  await expect(page.getByText("Orange Money", { exact: false }).first()).toBeVisible();
+  await expect(page.getByText("Orange Money", { exact: false }).first()).toBeVisible({ timeout: 20_000 });
   await page.getByLabel("Référence du transfert").fill(reference);
-  await activate(page.getByRole("button", { name: "Déclarer le paiement" }));
+  const declarationResponse = page.waitForResponse((response) =>
+    response.url().includes(`/api/orders/${order.id}/payment-declarations`)
+      && response.request().method() === "POST",
+  );
+  await page.getByRole("button", { name: "Déclarer le paiement" }).click();
+  expect((await declarationResponse).status()).toBe(201);
   await expect.poll(async () => (await admin.from("orders").select("payment_status").eq("id", order.id).single()).data?.payment_status).toBe("pending_confirmation");
   // L'ecran client ne se recharge actuellement pas apres la declaration :
   // le test poursuit la cartographie apres un rechargement explicite.
@@ -209,11 +214,14 @@ async function openOrderDispute(clientPage: Page, order: TestOrder, reason: stri
 
 async function declareRefundViaMerchant(page: Page, order: TestOrder, reference: string) {
   await openMerchantOrders(page);
-  const prompts = [String(order.totalXof), "orange_money", "+221770004443", reference];
-  page.on("dialog", async (dialog) => dialog.accept(prompts.shift() ?? ""));
   await activate(merchantOrderRow(page, order.publicCode).getByRole("button", { name: "Déclarer un remboursement" }));
+  const form = page.locator("form").filter({ has: page.getByRole("heading", { name: /Déclarer le remboursement/ }) });
+  await form.getByLabel("Montant remboursé (FCFA)").fill(String(order.totalXof));
+  await form.getByLabel("Canal").selectOption("orange_money");
+  await form.getByLabel("Numéro du client").fill("+221770004443");
+  await form.getByLabel("Référence du transfert").fill(reference);
+  await form.getByRole("button", { name: "Transmettre au client" }).click();
   await expect(page.locator(".merchant-global-feedback")).toContainText("Remboursement transmis", { timeout: 15_000 });
-  page.removeAllListeners("dialog");
 }
 
 async function cleanup() {
@@ -262,9 +270,15 @@ test.describe.serial("cartographie des paiements directs", () => {
       await declareOrangeMoneyFromClient(clientPage, refusedThenRefunded, `OM-REFUSED-${runId}`);
       await openMerchantOrders(merchantPage);
       let row = merchantOrderRow(merchantPage, refusedThenRefunded.publicCode);
-      merchantPage.once("dialog", (dialog) => dialog.accept("Reference non visible dans le wallet"));
       await activate(row.getByRole("button", { name: "Refuser" }));
-      await expect.poll(async () => (await admin.from("orders").select("payment_status").eq("id", refusedThenRefunded.id).single()).data?.payment_status).toBe("payment_refused");
+      await merchantPage.getByLabel("Motif communiqué au client").fill("Reference non visible dans le wallet");
+      const rejectionResponse = merchantPage.waitForResponse((response) =>
+        response.url().includes(`/api/orders/${refusedThenRefunded.id}/payment-declarations`)
+          && response.request().method() === "PATCH",
+      );
+      await merchantPage.getByRole("button", { name: "Confirmer le refus" }).click();
+      expect((await rejectionResponse).status()).toBe(200);
+      await expect.poll(async () => (await admin.from("orders").select("payment_status").eq("id", refusedThenRefunded.id).single()).data?.payment_status, { timeout: 15_000 }).toBe("payment_refused");
       const blockedProgress = await merchantContext.request.post(`/api/orders/${refusedThenRefunded.id}/status`, { data: { status: "confirmed", publicMessage: "Tentative bloquee" } });
       expect(blockedProgress.status()).not.toBe(200);
       await clientPage.reload();
@@ -301,9 +315,10 @@ test.describe.serial("cartographie des paiements directs", () => {
 
       await declareRefundViaMerchant(merchantPage, refundContested, `OM-REFUND-CONTEST-${runId}`);
       await clientPage.goto(`/commandes/${refundContested.id}`);
-      clientPage.once("dialog", (dialog) => dialog.accept("Le transfert ne figure pas dans mon solde Orange Money"));
       await activate(clientPage.getByRole("button", { name: "Contester" }));
-      await expect(clientPage.getByText(/Remboursement contesté et transmis au support/i)).toBeVisible();
+      await clientPage.getByLabel("Motif de la contestation").fill("Le transfert ne figure pas dans mon solde Orange Money");
+      await activate(clientPage.getByRole("button", { name: "Envoyer la contestation" }));
+      await expect(clientPage.getByText(/Remboursement contesté et transmis au support/i)).toBeVisible({ timeout: 15_000 });
       expect((await admin.from("orders").select("payment_status").eq("id", refundContested.id).single()).data?.payment_status).toBe("paid");
       expect((await admin.from("order_refunds").select("status, contest_reason").eq("order_id", refundContested.id).single()).data).toMatchObject({ status: "contested", contest_reason: "Le transfert ne figure pas dans mon solde Orange Money" });
 

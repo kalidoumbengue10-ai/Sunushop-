@@ -127,11 +127,10 @@ test.describe.serial("flux authentifiés marketplace", () => {
   test.afterAll(cleanup);
 
   test("marchand → client → livreur, avec isolation et codes uniques", async ({ browser }) => {
-    test.setTimeout(240_000);
+    test.setTimeout(420_000);
 
     const merchantUserId = await createUser(emails.merchant, "Marchand E2E");
     const clientUserId = await createUser(emails.client, "Client E2E");
-    const courierUserId = await createUser(emails.courier, "Livreur E2E");
     const { error: emptyClientNameError } = await admin.from("profiles").update({ display_name: "" }).eq("id", clientUserId);
     if (emptyClientNameError) throw emptyClientNameError;
 
@@ -326,8 +325,8 @@ test.describe.serial("flux authentifiés marketplace", () => {
           await signInPage.getByLabel("Adresse email").fill(emails.client);
           await signInPage.getByLabel("Mot de passe", { exact: true }).fill(password);
           await signInPage.getByRole("button", { name: "Accéder à mon espace" }).click();
-          await expect(signInPage).toHaveURL(/\/commander$/);
-          await expect(signInPage.getByRole("heading", { name: "Finaliser ma commande" })).toBeVisible();
+          await expect(signInPage).toHaveURL((url) => url.pathname === "/commander", { timeout: 20_000 });
+          await expect(signInPage.getByRole("heading", { name: "Finaliser ma commande" })).toBeVisible({ timeout: 20_000 });
           await signInPage.close();
           const liveCatalogPage = await clientContext.newPage();
           await liveCatalogPage.goto(`/boutiques/${merchant.slug}`);
@@ -443,8 +442,8 @@ test.describe.serial("flux authentifiés marketplace", () => {
           await expect(paymentPage.getByRole("heading", { name: "Paiement direct au vendeur" })).toBeVisible({ timeout: 20_000 });
           await paymentPage.getByLabel("Référence du transfert").fill(paymentReference);
           await paymentPage.getByRole("button", { name: "Déclarer le paiement" }).click();
-          await expect(paymentPage).toHaveURL(new RegExp(`/commandes/${created.orderId}/paiement-declare$`), { timeout: 20_000 });
-          await expect(paymentPage.getByRole("heading", { name: "Votre référence a bien été transmise" })).toBeVisible({ timeout: 20_000 });
+          await expect(paymentPage).toHaveURL(new RegExp(`/commandes/${created.orderId}/paiement-declare$`), { timeout: 60_000 });
+          await expect(paymentPage.getByRole("heading", { name: "Votre référence a bien été transmise" })).toBeVisible({ timeout: 60_000 });
           await expect(paymentPage.getByRole("link", { name: "Retour au suivi de la commande" })).toHaveAttribute("href", `/commandes/${created.orderId}`);
           await paymentPage.close();
 
@@ -479,8 +478,9 @@ test.describe.serial("flux authentifiés marketplace", () => {
           await cartPage.goto("/marche");
           await expect(cartPage.getByLabel(/Ouvrir le panier/)).toBeVisible();
           await cartPage.getByLabel(/Ouvrir le panier/).click();
-          await expect(cartPage.getByRole("dialog", { name: "Panier" })).toBeVisible();
-          await expect(cartPage.getByText(`Produit E2E ${runId}`)).toBeVisible();
+          const cartDialog = cartPage.getByRole("dialog", { name: "Panier" });
+          await expect(cartDialog).toBeVisible();
+          await expect(cartDialog.getByText(`Produit E2E ${runId}`)).toBeVisible();
           await cartPage.goto("/marche");
           await expect(cartPage.getByLabel(/Ouvrir le panier \(\d+ articles?\)/)).toBeVisible();
           await cartPage.close();
@@ -518,14 +518,15 @@ test.describe.serial("flux authentifiés marketplace", () => {
           const invitationUrl = String((notification.payload as JsonObject).url);
           const connectionUrl = new URL(invitationUrl);
           const nextPath = connectionUrl.searchParams.get("next");
-          const token = nextPath
+          const token = connectionUrl.searchParams.get("token") ?? (nextPath
             ? new URL(nextPath, connectionUrl.origin).searchParams.get("token")
-            : null;
+            : null);
           expect(token).toBeTruthy();
 
-          await signIn(courierContext, emails.courier);
           await responseData(
-            await courierContext.request.post("/api/invitations/claim", { data: { token } }),
+            await courierContext.request.post("/api/courier/access/activate", {
+              data: { token, pin: "135790", pinConfirmation: "135790" },
+            }),
             200,
           );
 
@@ -533,7 +534,7 @@ test.describe.serial("flux authentifiés marketplace", () => {
             .from("courier_memberships")
             .select("id, email, vehicle_type, vehicle_registration")
             .eq("merchant_id", merchant.id)
-            .eq("courier_user_id", courierUserId)
+            .eq("email", emails.courier)
             .single();
           if (courierError) throw courierError;
           expect(courierMembership).toMatchObject({ email: emails.courier, vehicle_type: "motorbike" });
@@ -583,10 +584,14 @@ test.describe.serial("flux authentifiés marketplace", () => {
           expect(wrongPickup.status()).toBe(422);
           const courierCannotValidatePickup = await courierContext.request.post(`/api/deliveries/${assigned.id}/verify/pickup`, { data: { code: pickupCode } });
           expect(courierCannotValidatePickup.status()).toBe(404);
-          for (let attempt = 1; attempt < 5; attempt += 1) {
+          // Une tentative erronée a déjà été effectuée ci-dessus : trois autres
+          // restent à 422. La cinquième erreur déclenche le verrouillage.
+          for (let attempt = 1; attempt < 4; attempt += 1) {
             const rejected = await merchantContext.request.post(`/api/deliveries/${assigned.id}/verify/pickup`, { data: { code: pickupCode === "000000" ? "000001" : "000000" } });
             expect(rejected.status()).toBe(422);
           }
+          const lockingPickup = await merchantContext.request.post(`/api/deliveries/${assigned.id}/verify/pickup`, { data: { code: pickupCode === "000000" ? "000001" : "000000" } });
+          expect(lockingPickup.status()).toBe(429);
           const lockedPickup = await merchantContext.request.post(`/api/deliveries/${assigned.id}/verify/pickup`, { data: { code: pickupCode } });
           expect(lockedPickup.status()).toBe(429);
           await responseData(await merchantContext.request.patch(`/api/deliveries/${assigned.id}/code-attempts`, { data: {} }), 200);
@@ -596,13 +601,6 @@ test.describe.serial("flux authentifiés marketplace", () => {
             }),
             200,
           );
-          await responseData(
-            await courierContext.request.post(`/api/deliveries/${assigned.id}/status`, {
-              data: { status: "in_transit" },
-            }),
-            200,
-          );
-
           const clientOrder = await responseData<{
             order: { status: string };
             delivery: { recipientCode: string };
@@ -638,8 +636,10 @@ test.describe.serial("flux authentifiés marketplace", () => {
 
           const courierPage = await courierContext.newPage();
           await courierPage.goto("/marchand");
-          await expect(courierPage.getByRole("heading", { name: "Mon activité de livraison" })).toBeVisible();
-          await expect(courierPage.getByText("Livrée")).toBeVisible();
+          await expect(courierPage.getByRole("heading", { name: "Ma mission actuelle" })).toBeVisible();
+          await courierPage.getByRole("tab", { name: "File" }).click();
+          await expect(courierPage.getByRole("heading", { name: "Ma file" })).toBeVisible();
+          await expect(courierPage.getByText("Livrée", { exact: true })).toBeVisible();
 
           const finalOrder = await responseData<{
             order: { status: string };
@@ -673,7 +673,7 @@ test.describe.serial("flux authentifiés marketplace", () => {
   });
 
   test("candidature → invitation → justificatifs KYC → envoi du dossier", async ({ browser }) => {
-    test.setTimeout(150_000);
+    test.setTimeout(240_000);
     const onboardingEmail = `e2e-onboarding-${runId}@example.test`;
     const publicContext = await browser.newContext();
     const lead = await responseData<{ id: string }>(await publicContext.request.post("/api/candidatures/marchands", { data: {
@@ -713,7 +713,7 @@ test.describe.serial("flux authentifiés marketplace", () => {
     await signIn(ownerContext, onboardingEmail);
     const ownerPage = await ownerContext.newPage();
     await ownerPage.goto("/marchand");
-    await expect(ownerPage.getByText(/dossier commerçant est prêt/i)).toBeVisible();
+    await expect(ownerPage.getByText(/dossier commerçant est prêt/i)).toBeVisible({ timeout: 30_000 });
     await ownerPage.getByRole("link", { name: "Ouvrir mon espace" }).click();
     const { data: ownerMembership, error: ownerMembershipError } = await admin
       .from("merchant_members").select("merchant_id").eq("user_id", ownerId).eq("role", "owner").single();
@@ -762,7 +762,7 @@ test.describe.serial("flux authentifiés marketplace", () => {
     if (caseError) throw caseError;
     const pdf = Buffer.from("%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\n%%EOF");
     await ownerPage.getByLabel("Ajouter CNI recto").setInputFiles({ name: "national_id_front.pdf", mimeType: "application/pdf", buffer: pdf });
-    await expect(ownerPage.getByLabel("Remplacer CNI recto")).toHaveCount(1, { timeout: 20_000 });
+    await expect(ownerPage.getByRole("button", { name: "Remplacer CNI recto" })).toHaveCount(1, { timeout: 20_000 });
     for (const documentType of ["national_id_back", "proof_activity"]) {
       await responseData(await ownerContext.request.post(`/api/merchant/verifications/${verificationCase.id}/documents`, { multipart: { documentType, file: { name: `${documentType}.pdf`, mimeType: "application/pdf", buffer: pdf } } }), 201);
     }

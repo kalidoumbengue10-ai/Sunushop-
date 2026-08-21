@@ -1,8 +1,8 @@
 "use client";
 
 import Image from "next/image";
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import { Copy, Mail, MessageCircle } from "lucide-react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Copy, Mail, MessageCircle, Smartphone } from "lucide-react";
 import { getBrowserSupabase } from "@/lib/infrastructure/supabase/browser";
 import { formatPrice } from "@/lib/marketplace";
 
@@ -16,27 +16,23 @@ type InvitationState = {
   lastError: string | null;
 };
 type Courier = {
-  id: string; courier_user_id: string | null; display_name: string; email: string | null; phone: string; status: "active" | "inactive";
+  id: string; courier_user_id: string | null; display_name: string; email: string | null; phone: string; status: "pending_invitation" | "active" | "inactive";
   vehicle_type: string | null; vehicle_registration: string | null; photoUrl: string | null;
   wave_payment_number: string | null; orange_money_payment_number: string | null;
   preferred_payment_channel: "wave" | "orange_money" | null; invitation: InvitationState | null;
-  stats: { active: number; deliveredThisMonth: number; deliveredTotal: number; failedTotal: number };
+  availability: "available" | "busy";
+  stats: { active: number; deliveredThisMonth: number; deliveredTotal: number; failedTotal: number; globalActive: number };
 };
 type OrderInfo = {
   public_code: string; merchant_sequence: number; created_at: string; status: string;
   recipient_snapshot: Record<string, unknown>;
   order_items: Array<{ product_snapshot: { title?: string }; sku_snapshot: string; quantity: number }>;
 };
-type CourierSearchResult = {
-  phone: string;
-  courier: { id: string; displayName: string; vehicleType: string | null; verified: boolean } | null;
-  reason?: "not_found" | "not_verified";
-  linkedStatus?: string | null;
-};
 type AssignableOrder = {
   id: string; publicCode: string; merchantSequence: number; status: string;
-  ready: boolean; label: string; reassignment: boolean; recipientName: string; city: string;
+  ready: boolean; label: string; reassignment: boolean; recipientName: string; city: string; deliveryFeeXof: number;
 };
+type OfferQuote = { distanceMeters: number; durationSeconds: number; clientDeliveryFeeXof: number; suggestedCourierFeeXof: number };
 type Delivery = {
   id: string; status: string; pickupLocked: boolean; pickup_snapshot: Record<string, unknown>;
   assigned_at: string; pickup_verified_at: string | null; delivered_at: string | null; terminal_at: string | null; failure_reason: string | null;
@@ -54,6 +50,10 @@ type Payout = {
 type DeliveryStats = { active: number; deliveredThisMonth: number; grossDeliveryFeesXof: number; platformCommissionXof: number };
 type PaymentPayload = { deliveries: Delivery[]; payouts: Payout[]; courierMonthlyStats: Array<{ courierMembershipId: string; displayName: string; courseCount: number; dueXof: number; pendingXof: number; paidXof: number }>; stats: { dueXof: number; paidThisMonthXof: number } };
 type ManagerTab = "missions" | "assign" | "couriers" | "payments";
+type ManagerDialog =
+  | { kind: "compensation"; delivery: Delivery }
+  | { kind: "void-payout"; payout: Payout }
+  | null;
 
 const terminalStatuses = new Set(["delivered", "failed", "cancelled"]);
 const vehicleLabels: Record<string, string> = { walking: "À pied", bicycle: "Vélo", motorbike: "Moto", car: "Voiture", van: "Fourgon", other: "Autre" };
@@ -67,11 +67,17 @@ function whatsappUrl(phone: string, invitationUrl: string) {
   const message = `Bonjour, voici votre invitation sécurisée SunuShop pour activer votre espace livreur : ${invitationUrl}`;
   return `https://wa.me/${digits}?text=${encodeURIComponent(message)}`;
 }
+function smsUrl(phone: string, invitationUrl: string) {
+  const message = `SunuShop : ouvrez votre espace livreur et choisissez votre PIN : ${invitationUrl}`;
+  return `sms:${phone}?body=${encodeURIComponent(message)}`;
+}
 
 function invitationLabel(courier: Courier) {
-  if (courier.courier_user_id || courier.invitation?.status === "claimed") return { text: "Invitation acceptée", tone: "claimed" };
+  if (courier.status === "active" || courier.invitation?.status === "claimed") return { text: "Accès actif", tone: "claimed" };
   if (courier.invitation?.status === "expired") return { text: "Invitation expirée", tone: "expired" };
-  if (courier.invitation?.emailStatus === "sent") return { text: "Email envoyé", tone: "sent" };
+  if (courier.invitation?.status === "revoked") return { text: "Invitation révoquée", tone: "expired" };
+  if (["sent", "accepted", "delivered"].includes(courier.invitation?.emailStatus ?? "")) return { text: courier.invitation?.emailStatus === "delivered" ? "Email livré" : "Email accepté", tone: "sent" };
+  if (courier.invitation && !courier.email) return { text: "À partager", tone: "pending" };
   if (courier.invitation?.emailStatus === "failed") return { text: "Échec de l’envoi", tone: "failed" };
   return { text: "Envoi en attente", tone: "pending" };
 }
@@ -89,7 +95,15 @@ export function CourierManager({ merchantId, canManagePayments = false, onOpenOr
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const [search, setSearch] = useState<CourierSearchResult | null>(null);
+  const [offerQuote, setOfferQuote] = useState<OfferQuote | null>(null);
+  const [managerDialog, setManagerDialog] = useState<ManagerDialog>(null);
+  const [dialogError, setDialogError] = useState("");
+  const dialogFieldRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    if (!managerDialog) return;
+    dialogFieldRef.current?.focus();
+  }, [managerDialog]);
 
   const load = useCallback(async () => {
     const responses = await Promise.all([
@@ -105,18 +119,32 @@ export function CourierManager({ merchantId, canManagePayments = false, onOpenOr
     setPaymentData(payloads[2].data); setAssignable(payloads[3].data);
   }, [merchantId]);
 
+  const reloadTimer = useRef<number | null>(null);
+  const scheduleReload = useCallback(() => {
+    // Coalesce les événements réaltime rapprochés (5 tables abonnées, une
+    // rafale de mises à jour de livraison déclenche sinon jusqu'à 5 rechargements
+    // complets de 4 endpoints en quelques secondes) en un seul `load()`.
+    if (reloadTimer.current) window.clearTimeout(reloadTimer.current);
+    reloadTimer.current = window.setTimeout(() => { void load(); }, 800);
+  }, [load]);
+
   useEffect(() => {
     let cancelled = false;
     queueMicrotask(() => { if (!cancelled) load().catch((caught: Error) => setError(caught.message)); });
     const supabase = getBrowserSupabase();
     const channel = supabase.channel(`merchant-logistics-${merchantId}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "deliveries", filter: `merchant_id=eq.${merchantId}` }, () => void load())
-      .on("postgres_changes", { event: "*", schema: "public", table: "courier_memberships", filter: `merchant_id=eq.${merchantId}` }, () => void load())
-      .on("postgres_changes", { event: "*", schema: "public", table: "courier_payouts", filter: `merchant_id=eq.${merchantId}` }, () => void load())
-      .on("postgres_changes", { event: "*", schema: "public", table: "orders", filter: `merchant_id=eq.${merchantId}` }, () => void load())
+      .on("postgres_changes", { event: "*", schema: "public", table: "deliveries", filter: `merchant_id=eq.${merchantId}` }, scheduleReload)
+      .on("postgres_changes", { event: "*", schema: "public", table: "courier_memberships", filter: `merchant_id=eq.${merchantId}` }, scheduleReload)
+      .on("postgres_changes", { event: "*", schema: "public", table: "courier_payouts", filter: `merchant_id=eq.${merchantId}` }, scheduleReload)
+      .on("postgres_changes", { event: "*", schema: "public", table: "delivery_offers", filter: `merchant_id=eq.${merchantId}` }, scheduleReload)
+      .on("postgres_changes", { event: "*", schema: "public", table: "orders", filter: `merchant_id=eq.${merchantId}` }, scheduleReload)
       .subscribe();
-    return () => { cancelled = true; void supabase.removeChannel(channel); };
-  }, [load, merchantId]);
+    return () => {
+      cancelled = true;
+      if (reloadTimer.current) window.clearTimeout(reloadTimer.current);
+      void supabase.removeChannel(channel);
+    };
+  }, [load, merchantId, scheduleReload]);
 
   const submit = async (url: string, method: string, body: BodyInit, success: string) => {
     setBusy(true); setError(""); setMessage("");
@@ -131,24 +159,24 @@ export function CourierManager({ merchantId, canManagePayments = false, onOpenOr
     } finally { setBusy(false); }
   };
 
-  const lookup = async (event: FormEvent<HTMLFormElement>) => {
+  const inviteCourier = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const phone = String(new FormData(event.currentTarget).get("phone") ?? "");
-    setBusy(true); setError(""); setMessage(""); setSearch(null);
-    try {
-      const response = await fetch(`/api/merchant/couriers/lookup?merchantId=${merchantId}&phone=${encodeURIComponent(phone)}`, { cache: "no-store" });
-      const payload = await response.json();
-      if (!response.ok) { setError(payload.error?.message ?? "Recherche impossible."); return; }
-      setSearch({ ...payload.data, phone });
-    } catch {
-      setError("Connexion interrompue. Réessayez sans ressaisir les informations.");
-    } finally { setBusy(false); }
-  };
-
-  const inviteFound = async () => {
-    if (!search?.courier) return;
-    const data = await submit("/api/merchant/couriers/invite-existing", "POST", JSON.stringify({ merchantId, courierProfileId: search.courier.id }), "Invitation envoyée. Le livreur la retrouve dans son espace.");
-    if (data) setSearch(null);
+    const form = event.currentTarget;
+    const values = new FormData(form);
+    const data = await submit("/api/merchant/couriers", "POST", JSON.stringify({
+      merchantId,
+      displayName: values.get("displayName"),
+      phone: values.get("phone"),
+      email: values.get("email") || undefined,
+      vehicleType: values.get("vehicleType") || undefined,
+      vehicleRegistration: values.get("vehicleRegistration") || undefined,
+    }), "Invitation créée.");
+    if (data) {
+      form.reset();
+      setMessage(data.emailSent
+        ? "Invitation envoyée par e-mail. Vous pouvez aussi la partager par WhatsApp ou SMS."
+        : "Invitation prête. Partagez le lien par WhatsApp, SMS ou copie.");
+    }
   };
 
   const cancelInvitation = async (courier: Courier) => {
@@ -164,23 +192,39 @@ export function CourierManager({ merchantId, canManagePayments = false, onOpenOr
   };
   const resendInvitation = async (courier: Courier) => {
     const data = await submit(`/api/merchant/couriers/${courier.id}/invitation`, "POST", JSON.stringify({ merchantId }), "Invitation traitée.");
-    if (data) setMessage(data.emailSent ? "Invitation renvoyée par email." : "L’email a échoué. Le lien WhatsApp reste disponible.");
+    if (data) setMessage(data.emailSent ? "Nouveau lien envoyé par e-mail." : "Le lien est prêt à être partagé par WhatsApp ou SMS.");
   };
   const copyInvitation = async (courier: Courier) => {
     if (!courier.invitation?.invitationUrl) return;
     await navigator.clipboard.writeText(courier.invitation.invitationUrl);
     setMessage("Lien d’invitation copié.");
   };
+  const loadQuote = async (orderId: string) => {
+    setOfferQuote(null);
+    if (!orderId) return;
+    const response = await fetch(`/api/merchant/delivery-offers/quote?merchantId=${merchantId}&orderId=${orderId}`, { cache: "no-store" });
+    const payload = await response.json();
+    if (!response.ok) { setError(payload.error?.message ?? "Estimation du trajet impossible."); return; }
+    setOfferQuote(payload.data);
+  };
   const assign = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const values = new FormData(event.currentTarget);
     const orderId = String(values.get("orderId") ?? "");
     const courierMembershipId = String(values.get("courierMembershipId") ?? "");
+    const courierFeeXof = Number(values.get("courierFeeXof") ?? 0);
     const order = assignable.items.find((item) => item.id === orderId);
     if (!order?.ready) { setError("Marquez d’abord cette commande comme prête."); return; }
     if (!courierMembershipId) { setError("Choisissez le livreur qui prendra la mission."); return; }
-    const data = await submit("/api/merchant/deliveries", "POST", JSON.stringify({ orderId, courierMembershipId }), "Mission affectée au livreur.");
-    if (data) { setSelectedOrderId(""); setSelectedCourierId(""); setTab("missions"); }
+    if (!Number.isInteger(courierFeeXof) || courierFeeXof < 0) { setError("Indiquez une rémunération valide."); return; }
+    const data = await submit("/api/merchant/delivery-offers", "POST", JSON.stringify({
+      merchantId,
+      orderId,
+      courierMembershipId,
+      courierFeeXof,
+      idempotencyKey: `offer-${orderId}-${courierMembershipId}-${crypto.randomUUID()}`,
+    }), "Offre envoyée au livreur.");
+    if (data) { setSelectedOrderId(""); setSelectedCourierId(""); setOfferQuote(null); setTab("missions"); }
   };
   const markReady = async (order: AssignableOrder) => {
     await submit(`/api/orders/${order.id}/ready-for-handoff`, "POST", JSON.stringify({}), `${order.publicCode} est prête à être affectée.`);
@@ -198,10 +242,29 @@ export function CourierManager({ merchantId, canManagePayments = false, onOpenOr
     await submit(`/api/deliveries/${delivery.id}/verify/pickup`, "POST", JSON.stringify({ code: values.get("code") }), "Retrait confirmé. Le livreur est maintenant en route.");
   };
   const resetAttempts = (delivery: Delivery) => submit(`/api/deliveries/${delivery.id}/code-attempts`, "PATCH", JSON.stringify({}), "Les essais du code ont été réinitialisés.");
-  const compensate = async (delivery: Delivery) => {
-    const amount = window.prompt("Compensation à verser au livreur (FCFA)", String(delivery.courier_payable_xof || delivery.courier_fee_xof || 0));
-    if (amount == null || !/^\d+$/.test(amount)) return;
-    await submit(`/api/merchant/deliveries/${delivery.id}/compensation`, "POST", JSON.stringify({ amountXof: Number(amount) }), "Compensation enregistrée.");
+  const openCompensation = (delivery: Delivery) => {
+    setDialogError("");
+    setManagerDialog({ kind: "compensation", delivery });
+  };
+  const submitCompensation = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (managerDialog?.kind !== "compensation") return;
+    const amount = Number(new FormData(event.currentTarget).get("amountXof"));
+    if (!Number.isInteger(amount) || amount < 0 || amount > 100_000_000) {
+      setDialogError("Saisissez un montant entier compris entre 0 et 100 000 000 FCFA.");
+      return;
+    }
+    setBusy(true); setDialogError(""); setMessage("");
+    try {
+      const response = await fetch(`/api/merchant/deliveries/${managerDialog.delivery.id}/compensation`, {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ amountXof: amount }),
+      });
+      const payload = await response.json();
+      if (!response.ok) { setDialogError(payload.error?.message ?? "Compensation impossible à enregistrer."); return; }
+      setManagerDialog(null); setMessage("Compensation enregistrée."); await load();
+    } catch {
+      setDialogError("Connexion interrompue. Réessayez sans fermer cette fenêtre.");
+    } finally { setBusy(false); }
   };
   const recordPayout = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault(); const form = event.currentTarget;
@@ -212,15 +275,35 @@ export function CourierManager({ merchantId, canManagePayments = false, onOpenOr
     const data = await submit("/api/merchant/courier-payments", "POST", JSON.stringify({ merchantId, courierMembershipId: courierIds[0], deliveryIds: selectedDeliveries, paymentMethod: values.get("paymentMethod"), externalReference: values.get("externalReference"), paidAt: new Date().toISOString() }), "Transfert déclaré. Le livreur doit confirmer sa réception.");
     if (data) { setSelectedDeliveries([]); form.reset(); }
   };
-  const voidPayout = async (payout: Payout) => {
-    const reason = window.prompt("Pourquoi annuler ce règlement ?");
-    if (reason) await submit(`/api/merchant/courier-payments/${payout.id}/void`, "POST", JSON.stringify({ reason }), "Règlement annulé : les missions sont de nouveau dues.");
+  const openVoidPayout = (payout: Payout) => {
+    setDialogError("");
+    setManagerDialog({ kind: "void-payout", payout });
+  };
+  const submitVoidPayout = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (managerDialog?.kind !== "void-payout") return;
+    const reason = String(new FormData(event.currentTarget).get("reason") ?? "").trim();
+    if (reason.length < 4 || reason.length > 500) {
+      setDialogError("Le motif doit contenir entre 4 et 500 caractères.");
+      return;
+    }
+    setBusy(true); setDialogError(""); setMessage("");
+    try {
+      const response = await fetch(`/api/merchant/courier-payments/${managerDialog.payout.id}/void`, {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ reason }),
+      });
+      const payload = await response.json();
+      if (!response.ok) { setDialogError(payload.error?.message ?? "Ce règlement ne peut pas être annulé."); return; }
+      setManagerDialog(null); setMessage("Règlement annulé : les missions sont de nouveau dues."); await load();
+    } catch {
+      setDialogError("Connexion interrompue. Réessayez sans fermer cette fenêtre.");
+    } finally { setBusy(false); }
   };
 
   const activeDeliveries = useMemo(() => deliveries.filter((delivery) => !terminalStatuses.has(delivery.status)), [deliveries]);
   const historyDeliveries = useMemo(() => deliveries.filter((delivery) => terminalStatuses.has(delivery.status)), [deliveries]);
   const readyCount = assignable.items.filter((order) => order.ready).length;
-  const pendingInvitations = couriers.filter((courier) => !courier.courier_user_id).length;
+  const pendingInvitations = couriers.filter((courier) => courier.status === "pending_invitation").length;
   const selectedOrder = assignable.items.find((order) => order.id === selectedOrderId);
   const selectedCourier = couriers.find((courier) => courier.id === selectedCourierId);
 
@@ -233,7 +316,7 @@ export function CourierManager({ merchantId, canManagePayments = false, onOpenOr
       <p><strong>Rémunération :</strong> {delivery.courier_fee_xof == null ? "non configurée" : formatPrice(delivery.courier_payable_xof || delivery.courier_fee_xof)} · {delivery.courier_payment_status.replaceAll("_", " ")}</p>
       {delivery.status === "at_pickup" && !delivery.pickupLocked && <form className="courier-code-form" onSubmit={(event) => void verifyPickup(event, delivery)}><label>Code présenté par le livreur<input name="code" inputMode="numeric" pattern="[0-9]{6}" placeholder="000000" required /></label><button className="mvp-button" disabled={busy}>Autoriser le retrait</button></form>}
       {delivery.pickupLocked && <div className="mvp-alert mvp-alert--warning"><p>Code verrouillé après cinq essais.</p><button className="mvp-button mvp-button--secondary" onClick={() => void resetAttempts(delivery)}>Réinitialiser les essais</button></div>}
-      {canManagePayments && delivery.status === "failed" && delivery.courier_payment_status !== "paid" && <button type="button" className="mvp-button mvp-button--secondary" onClick={() => void compensate(delivery)}>Fixer la compensation</button>}
+      {canManagePayments && delivery.status === "failed" && delivery.courier_payment_status !== "paid" && <button type="button" className="mvp-button mvp-button--secondary" onClick={() => openCompensation(delivery)}>Fixer la compensation</button>}
     </article>;
   };
 
@@ -258,20 +341,22 @@ export function CourierManager({ merchantId, canManagePayments = false, onOpenOr
     {tab === "assign" && <section role="tabpanel" className="courier-tab-panel">
       <div className="marketplace-section-heading"><div><h2>Affecter une commande</h2><p>Sélectionnez la commande puis le livreur. Les commandes non prêtes restent visibles et peuvent être préparées ici.</p></div><span>{assignable.items.length}</span></div>
       <form className="mvp-card mvp-card--full mvp-form" onSubmit={assign}>
-        <label className="mvp-field">1. Commande<select name="orderId" required value={selectedOrderId} onChange={(event) => { setSelectedOrderId(event.target.value); setError(""); }}><option value="">Choisir une commande</option>{assignable.items.map((order) => <option value={order.id} key={order.id}>{order.publicCode} · n° {order.merchantSequence} · {order.label}{order.reassignment ? " · réaffectation" : ""}</option>)}</select></label>
+        <label className="mvp-field">1. Commande<select name="orderId" required value={selectedOrderId} onChange={(event) => { setSelectedOrderId(event.target.value); setError(""); void loadQuote(event.target.value); }}><option value="">Choisir une commande</option>{assignable.items.map((order) => <option value={order.id} key={order.id}>{order.publicCode} · n° {order.merchantSequence} · {order.label}{order.reassignment ? " · réaffectation" : ""}</option>)}</select></label>
         {selectedOrder && <div className={`courier-selection-summary ${selectedOrder.ready ? "is-ready" : ""}`}><div><strong>{selectedOrder.publicCode}</strong><small>{selectedOrder.recipientName} · {selectedOrder.city} · {selectedOrder.label}</small></div>{!selectedOrder.ready && <button type="button" className="mvp-button" disabled={busy} onClick={() => void markReady(selectedOrder)}>Marquer prête</button>}</div>}
-        <label className="mvp-field">2. Livreur<select name="courierMembershipId" required value={selectedCourierId} onChange={(event) => setSelectedCourierId(event.target.value)}><option value="">Choisir un livreur</option>{couriers.filter((courier) => courier.status === "active").map((courier) => <option value={courier.id} key={courier.id}>{courier.display_name}{courier.courier_user_id ? "" : " · activation en attente"}</option>)}</select></label>
-        {selectedOrder?.ready && selectedCourier && <p className="mvp-alert"><strong>Confirmation</strong><br />Affecter {selectedOrder.publicCode} à {selectedCourier.display_name}.</p>}
-        <button className="mvp-button" disabled={busy || !selectedOrder?.ready || !selectedCourierId}>{busy ? "Affectation…" : "Affecter la mission"}</button>
+        {offerQuote && <div className="courier-offer-metrics" aria-label="Estimation du trajet"><span><small>Distance</small><strong>{(offerQuote.distanceMeters / 1000).toFixed(1)} km</strong></span><span><small>Durée estimée</small><strong>{Math.max(1, Math.round(offerQuote.durationSeconds / 60))} min</strong></span><span><small>Payé par le client</small><strong>{formatPrice(offerQuote.clientDeliveryFeeXof)}</strong></span></div>}
+        <label className="mvp-field">2. Livreur<select name="courierMembershipId" required value={selectedCourierId} onChange={(event) => setSelectedCourierId(event.target.value)}><option value="">Choisir un livreur</option>{couriers.filter((courier) => ["active", "pending_invitation"].includes(courier.status)).map((courier) => <option value={courier.id} key={courier.id}>{courier.display_name}{courier.status === "pending_invitation" ? " · activation en attente" : ""}</option>)}</select></label>
+        <label className="mvp-field">3. Rémunération proposée au livreur (FCFA)<input key={offerQuote?.suggestedCourierFeeXof ?? "empty"} name="courierFeeXof" type="number" min="0" step="25" defaultValue={offerQuote?.suggestedCourierFeeXof ?? selectedOrder?.deliveryFeeXof ?? 0} required /><small>Cette somme est figée lorsque le livreur accepte. Elle ne modifie pas ce que le client a déjà payé.</small></label>
+        {selectedOrder?.ready && selectedCourier && <p className="mvp-alert"><strong>Confirmation</strong><br />Proposer {selectedOrder.publicCode} à {selectedCourier.display_name}. Le livreur verra la zone, le trajet estimé et son gain avant de décider.</p>}
+        <button className="mvp-button" disabled={busy || !selectedOrder?.ready || !selectedCourierId || !offerQuote}>{busy ? "Envoi…" : "Envoyer l’offre"}</button>
       </form>
       {!assignable.items.length && <p className="mvp-empty">Aucune commande à affecter. {assignable.excluded.pickup > 0 && `${assignable.excluded.pickup} commande(s) en retrait boutique ne nécessitent pas de livreur.`}</p>}
-      {!couriers.some((courier) => courier.status === "active") && <p className="mvp-alert mvp-alert--warning">Aucun livreur actif. Enregistrez-en un depuis l’onglet Livreurs.</p>}
+      {!couriers.some((courier) => ["active", "pending_invitation"].includes(courier.status)) && <p className="mvp-alert mvp-alert--warning">Aucun livreur disponible. Invitez-en un depuis l’onglet Livreurs.</p>}
       {onOpenOrders && <button type="button" className="mvp-button mvp-button--secondary" onClick={onOpenOrders}>Ouvrir toutes les commandes</button>}
     </section>}
 
     {tab === "couriers" && <section role="tabpanel" className="courier-tab-panel">
-      <div className="mvp-grid"><section className="mvp-card"><h2>Inviter un livreur</h2><p>Cherchez un livreur déjà inscrit sur SunuShop avec son numéro de téléphone.</p><form className="mvp-form" onSubmit={lookup}><label className="mvp-field">Téléphone du livreur<input name="phone" inputMode="tel" placeholder="+221 77 000 00 00" required /></label><button className="mvp-button" disabled={busy}>{busy ? "Recherche…" : "Rechercher"}</button></form>{search?.courier && <div className="mvp-row"><span><strong>{search.courier.displayName}</strong><small>{search.courier.vehicleType ? vehicleLabels[search.courier.vehicleType] ?? search.courier.vehicleType : "Véhicule non renseigné"} · Profil vérifié</small></span>{search.linkedStatus ? <small>{search.linkedStatus === "pending_invitation" ? "Invitation déjà envoyée" : "Déjà dans votre équipe"}</small> : <button type="button" className="mvp-button" disabled={busy} onClick={() => void inviteFound()}>Inviter dans mon équipe</button>}</div>}{search && !search.courier && <p className="mvp-empty">{search.reason === "not_verified" ? "Ce livreur est inscrit mais sa vérification n’est pas encore terminée." : "Aucun livreur vérifié à ce numéro. Invitez-le à s’inscrire sur sunushop.fr/devenir-livreur, puis recherchez-le à nouveau."}</p>}</section>
-      <section className="mvp-card"><h2>Comment ça marche ?</h2><ol className="courier-steps"><li>Le livreur s’inscrit seul sur SunuShop et fait vérifier sa pièce d’identité.</li><li>Vous le retrouvez avec son numéro de téléphone.</li><li>Il accepte votre invitation depuis son espace et reçoit vos missions.</li></ol></section></div>
+      <div className="mvp-grid"><section className="mvp-card"><h2>Inviter un livreur</h2><p>Renseignez ses coordonnées. Aucun compte ni document n’est demandé au livreur : il choisira seulement un PIN à 6 chiffres.</p><form className="mvp-form" onSubmit={inviteCourier}><div className="mvp-form__grid"><label className="mvp-field">Nom complet<input name="displayName" autoComplete="name" required /></label><label className="mvp-field">Téléphone<input name="phone" inputMode="tel" autoComplete="tel" placeholder="+221 77 000 00 00" required /></label><label className="mvp-field">E-mail (facultatif)<input name="email" type="email" autoComplete="email" /></label><label className="mvp-field">Véhicule (facultatif)<select name="vehicleType" defaultValue=""><option value="">Non renseigné</option>{Object.entries(vehicleLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label><label className="mvp-field">Immatriculation (facultatif)<input name="vehicleRegistration" /></label></div><button className="mvp-button" disabled={busy}>{busy ? "Création…" : "Créer et inviter"}</button></form></section>
+      <section className="mvp-card"><h2>Un accès en trois gestes</h2><ol className="courier-steps"><li>Vous saisissez son nom et son téléphone.</li><li>Vous partagez le lien par e-mail, WhatsApp ou SMS.</li><li>Il choisit son PIN et retrouve toutes ses missions, même s’il travaille avec plusieurs boutiques.</li></ol></section></div>
       <section>
         <div className="marketplace-section-heading"><div><h2>Équipe de livraison</h2><p>L’état affiché correspond à l’envoi réel de l’invitation.</p></div><span>{couriers.length}</span></div>
         <div className="courier-profile-grid">{couriers.map((courier) => {
@@ -279,21 +364,23 @@ export function CourierManager({ merchantId, canManagePayments = false, onOpenOr
           return <article className="courier-profile" key={courier.id}>
             {courier.photoUrl ? <Image unoptimized width={72} height={72} src={courier.photoUrl} alt="" /> : <div className="courier-profile__placeholder">{courier.display_name.slice(0, 1)}</div>}
             <span className="courier-invitation-status" data-status={state.tone}>{state.text}</span>
-            {!courier.courier_user_id && courier.invitation?.invitationUrl && <div className="courier-invitation-actions">
-              <button type="button" className="mvp-button mvp-button--secondary" disabled={busy} onClick={() => void resendInvitation(courier)}><Mail /> Renvoyer</button>
+            {courier.invitation?.invitationUrl && <div className="courier-invitation-actions">
+              <button type="button" className="mvp-button mvp-button--secondary" disabled={busy} onClick={() => void resendInvitation(courier)}><Mail /> {courier.status === "active" ? "Renvoyer un lien d’accès" : "Renvoyer"}</button>
               <button type="button" className="mvp-button mvp-button--secondary" onClick={() => void copyInvitation(courier)}><Copy /> Copier le lien</button>
               <a className="mvp-button mvp-button--secondary" href={whatsappUrl(courier.phone, courier.invitation.invitationUrl)} target="_blank" rel="noreferrer"><MessageCircle /> Envoyer par WhatsApp</a>
+              <a className="mvp-button mvp-button--secondary" href={smsUrl(courier.phone, courier.invitation.invitationUrl)}><Smartphone /> Envoyer par SMS</a>
+              {courier.status === "pending_invitation" && <button type="button" className="mvp-button mvp-button--danger" disabled={busy} onClick={() => void cancelInvitation(courier)}>Révoquer</button>}
             </div>}
             <form className="mvp-form" onSubmit={(event) => void updateCourier(event, courier)}>
               <div className="mvp-form__grid">
                 <label className="mvp-field">Nom<input name="displayName" defaultValue={courier.display_name} required /></label>
-                <label className="mvp-field">Téléphone<input name="phone" defaultValue={courier.phone} required /></label>
+                <label className="mvp-field">Téléphone<input name="phone" defaultValue={courier.phone} readOnly aria-describedby={`courier-phone-help-${courier.id}`} /><small id={`courier-phone-help-${courier.id}`}>Identifiant global, modifiable uniquement par le support.</small></label>
                 <label className="mvp-field">Email<input value={courier.email ?? ""} readOnly /></label>
                 <label className="mvp-field">Véhicule<select name="vehicleType" defaultValue={courier.vehicle_type ?? ""}><option value="">Non renseigné</option>{Object.entries(vehicleLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label>
                 <label className="mvp-field">Immatriculation<input name="vehicleRegistration" defaultValue={courier.vehicle_registration ?? ""} /></label>
-                <label className="mvp-field">Accès<select name="status" defaultValue={courier.status}><option value="active">Actif</option><option value="inactive">Inactif</option></select></label>
+                <label className="mvp-field">Accès<select name="status" defaultValue={courier.status} disabled={courier.status === "pending_invitation"}>{courier.status === "pending_invitation" && <option value="pending_invitation">Invitation en attente</option>}<option value="active">Actif</option><option value="inactive">Inactif</option></select></label>
               </div>
-              <div className="courier-profile__stats"><span>{courier.stats.active} active(s)</span><span>{courier.stats.deliveredThisMonth} ce mois</span><span>{courier.stats.deliveredTotal} livrée(s)</span><span>{courier.stats.failedTotal} échec(s)</span></div>
+              <div className="courier-profile__stats"><span>{courier.availability === "busy" ? `Occupé · ${courier.stats.globalActive} mission(s)` : "Disponible"}</span><span>{courier.stats.deliveredThisMonth} ce mois</span><span>{courier.stats.deliveredTotal} livrée(s)</span><span>{courier.stats.failedTotal} échec(s)</span></div>
               <label className="mvp-button mvp-button--secondary">Changer la photo<input type="file" hidden accept="image/jpeg,image/png,image/webp" onChange={(event) => void uploadPhoto(courier, event.target.files?.[0] ?? null)} /></label>
               <button className="mvp-button" disabled={busy}>Enregistrer</button>
             </form>
@@ -306,7 +393,11 @@ export function CourierManager({ merchantId, canManagePayments = false, onOpenOr
     {tab === "payments" && <section role="tabpanel" className="courier-tab-panel">
       <section className="merchant-kpi-grid"><article><span>Dû aux livreurs</span><strong>{formatPrice(paymentData.stats.dueXof)}</strong></article><article><span>Payé ce mois</span><strong>{formatPrice(paymentData.stats.paidThisMonthXof)}</strong></article><article><span>Livrées ce mois</span><strong>{stats.deliveredThisMonth}</strong></article></section>
       <section className="mvp-card mvp-card--full"><h2>Rémunérations du mois</h2><div className="mvp-list">{paymentData.courierMonthlyStats.map((item) => <div className="mvp-row" key={item.courierMembershipId}><span><strong>{item.displayName}</strong><small>{item.courseCount} course(s) terminée(s)</small></span><span><small>{formatPrice(item.dueXof)} dû</small><small>{formatPrice(item.pendingXof)} en confirmation</small><small>{formatPrice(item.paidXof)} payé</small></span></div>)}</div>{!paymentData.courierMonthlyStats.length && <p className="mvp-empty">Aucune rémunération ce mois.</p>}</section>
-      <section className="mvp-card mvp-card--full"><h2>Régler les livreurs</h2>{canManagePayments ? <><p>Sélectionnez les missions dues d’un seul livreur.</p><div className="mvp-list">{paymentData.deliveries.filter((delivery) => delivery.courier_payment_status === "due").map((delivery) => { const order = one(delivery.orders); const courier = one(delivery.courier_memberships); return <label className="mvp-row" key={delivery.id}><span><input type="checkbox" checked={selectedDeliveries.includes(delivery.id)} onChange={(event) => setSelectedDeliveries((current) => event.target.checked ? [...current, delivery.id] : current.filter((id) => id !== delivery.id))} /> <strong>{order?.public_code}</strong> · {courier?.display_name}<small>Wave : {courier?.wave_payment_number ?? "non renseigné"} · Orange Money : {courier?.orange_money_payment_number ?? "non renseigné"}</small></span><strong>{formatPrice(delivery.courier_payable_xof)}</strong></label>; })}</div><form className="mvp-form" onSubmit={recordPayout}><div className="mvp-form__grid"><label className="mvp-field">Moyen<select name="paymentMethod" required defaultValue="wave"><option value="wave">Wave</option><option value="orange_money">Orange Money</option></select></label><label className="mvp-field">Référence du transfert<input name="externalReference" required /></label></div><button className="mvp-button" disabled={busy || selectedDeliveries.length === 0}>Déclarer le transfert ({selectedDeliveries.length})</button></form></> : <p className="mvp-alert">Seuls le propriétaire et les managers peuvent déclarer un règlement.</p>}<div className="mvp-divider" /><h3>Historique</h3><div className="mvp-list">{paymentData.payouts.map((payout) => { const courier = one(payout.courier_memberships); return <div className="mvp-row" key={payout.id}><div><strong>{courier?.display_name} · {formatPrice(payout.amount_xof)}</strong><small>{paymentLabels[payout.payment_method] ?? payout.payment_method} vers {payout.destination_number} · {new Date(payout.paid_at).toLocaleString("fr-SN")}{payout.external_reference ? ` · réf. ${payout.external_reference}` : ""}</small><small>{payout.status === "pending_confirmation" ? "Confirmation en attente" : payout.status === "confirmed" ? "Réception confirmée" : payout.status === "contested" ? `Contesté : ${payout.contest_reason}` : `Annulé : ${payout.void_reason}`}</small></div>{canManagePayments && ["pending_confirmation", "contested"].includes(payout.status) && <button type="button" className="mvp-button mvp-button--secondary" onClick={() => void voidPayout(payout)}>Annuler</button>}</div>; })}</div></section>
+      <section className="mvp-card mvp-card--full"><h2>Régler les livreurs</h2>{canManagePayments ? <><p>Sélectionnez les missions dues d’un seul livreur.</p><div className="mvp-list">{paymentData.deliveries.filter((delivery) => delivery.courier_payment_status === "due").map((delivery) => { const order = one(delivery.orders); const courier = one(delivery.courier_memberships); return <label className="mvp-row" key={delivery.id}><span><input type="checkbox" checked={selectedDeliveries.includes(delivery.id)} onChange={(event) => setSelectedDeliveries((current) => event.target.checked ? [...current, delivery.id] : current.filter((id) => id !== delivery.id))} /> <strong>{order?.public_code}</strong> · {courier?.display_name}<small>Wave : {courier?.wave_payment_number ?? "non renseigné"} · Orange Money : {courier?.orange_money_payment_number ?? "non renseigné"}</small></span><strong>{formatPrice(delivery.courier_payable_xof)}</strong></label>; })}</div><form className="mvp-form" onSubmit={recordPayout}><div className="mvp-form__grid"><label className="mvp-field">Moyen<select name="paymentMethod" required defaultValue="wave"><option value="wave">Wave</option><option value="orange_money">Orange Money</option></select></label><label className="mvp-field">Référence du transfert<input name="externalReference" required /></label></div><button className="mvp-button" disabled={busy || selectedDeliveries.length === 0}>Déclarer le transfert ({selectedDeliveries.length})</button></form></> : <p className="mvp-alert">Seuls le propriétaire et les managers peuvent déclarer un règlement.</p>}<div className="mvp-divider" /><h3>Historique</h3><div className="mvp-list">{paymentData.payouts.map((payout) => { const courier = one(payout.courier_memberships); return <div className="mvp-row" key={payout.id}><div><strong>{courier?.display_name} · {formatPrice(payout.amount_xof)}</strong><small>{paymentLabels[payout.payment_method] ?? payout.payment_method} vers {payout.destination_number} · {new Date(payout.paid_at).toLocaleString("fr-SN")}{payout.external_reference ? ` · réf. ${payout.external_reference}` : ""}</small><small>{payout.status === "pending_confirmation" ? "Confirmation en attente" : payout.status === "confirmed" ? "Réception confirmée" : payout.status === "contested" ? `Contesté : ${payout.contest_reason}` : `Annulé : ${payout.void_reason}`}</small></div>{canManagePayments && ["pending_confirmation", "contested"].includes(payout.status) && <button type="button" className="mvp-button mvp-button--secondary" onClick={() => openVoidPayout(payout)}>Annuler</button>}</div>; })}</div></section>
     </section>}
+    {managerDialog && <div className="courier-sheet-backdrop" role="presentation" onMouseDown={(event) => { if (!busy && event.target === event.currentTarget) setManagerDialog(null); }}><section className="courier-sheet" role="dialog" aria-modal="true" aria-labelledby="manager-dialog-title" aria-describedby={dialogError ? "manager-dialog-error" : undefined} onKeyDown={(event) => { if (!busy && event.key === "Escape") setManagerDialog(null); }}><div className="courier-sheet__handle" />
+      {managerDialog.kind === "compensation" ? <form className="mvp-form" onSubmit={submitCompensation}><h2 id="manager-dialog-title">Confirmer la compensation</h2><p>Fixez le montant dû pour cette tentative de livraison échouée.</p>{dialogError && <p id="manager-dialog-error" className="mvp-alert mvp-alert--error" role="alert">{dialogError}</p>}<label className="mvp-field">Montant en FCFA<input ref={dialogFieldRef as React.RefObject<HTMLInputElement>} name="amountXof" type="number" min="0" max="100000000" step="1" required defaultValue={managerDialog.delivery.courier_payable_xof || managerDialog.delivery.courier_fee_xof || 0} /></label><div className="mvp-actions"><button className="mvp-button" disabled={busy}>{busy ? "Enregistrement…" : "Confirmer la compensation"}</button><button type="button" className="mvp-button mvp-button--secondary" disabled={busy} onClick={() => setManagerDialog(null)}>Annuler</button></div></form>
+      : <form className="mvp-form" onSubmit={submitVoidPayout}><h2 id="manager-dialog-title">Annuler ce règlement ?</h2><p>Les missions concernées redeviendront dues après confirmation.</p>{dialogError && <p id="manager-dialog-error" className="mvp-alert mvp-alert--error" role="alert">{dialogError}</p>}<label className="mvp-field">Motif de l’annulation<textarea ref={dialogFieldRef as React.RefObject<HTMLTextAreaElement>} name="reason" rows={4} minLength={4} maxLength={500} required /></label><div className="mvp-actions"><button className="mvp-button mvp-button--danger" disabled={busy}>{busy ? "Annulation…" : "Confirmer l’annulation"}</button><button type="button" className="mvp-button mvp-button--secondary" disabled={busy} onClick={() => setManagerDialog(null)}>Retour</button></div></form>}
+    </section></div>}
   </div>;
 }

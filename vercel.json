@@ -11,11 +11,15 @@
     },
     {
       "path": "/api/cron/notifications",
-      "schedule": "0 8 * * *"
+      "schedule": "*/5 * * * *"
     },
     {
       "path": "/api/cron/abandoned-carts",
       "schedule": "0 2 * * *"
+    },
+    {
+      "path": "/api/cron/data-retention",
+      "schedule": "30 2 * * *"
     }
   ]
 }

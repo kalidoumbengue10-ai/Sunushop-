@@ -6,7 +6,6 @@ import { formatPrice } from "@/lib/marketplace";
 import { getBrowserSupabase } from "@/lib/infrastructure/supabase/browser";
 import { SENEGAL_REGIONS } from "@/lib/domain/merchant-ui";
 import { AbandonedCarts } from "@/components/abandoned-carts";
-import { ClientLoyalty } from "@/components/client-loyalty";
 import { LocationPicker } from "@/components/location-map";
 import type { Coordinates } from "@/lib/domain/geo";
 import { SenegalPhoneInput } from "@/components/senegal-phone-input";
@@ -36,6 +35,8 @@ export function ClientWorkspace() {
   const [message, setMessage] = useState("");
   const [addressCoordinates, setAddressCoordinates] = useState<Coordinates | null>(null);
   const [addressPhone, setAddressPhone] = useState("+221");
+  const [editingAddress, setEditingAddress] = useState<Address | null>(null);
+  const [addressBusy, setAddressBusy] = useState(false);
   const load = useCallback(async () => {
     const [addressResponse, orderResponse, shopFollowResponse] = await Promise.all([
       fetch("/api/client/addresses"),
@@ -74,17 +75,45 @@ export function ClientWorkspace() {
     return () => { cancelled = true; window.clearInterval(interval); if (channel) channel.unsubscribe(); };
   }, [load]);
   const saveAddress = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault(); setError(""); setMessage(""); const form = new FormData(event.currentTarget);
+    event.preventDefault(); setError(""); setMessage("");
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
     if (!addressCoordinates) return setError("Placez cette adresse sur la carte.");
-    const response = await fetch("/api/client/addresses", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({
-      label: form.get("label"), recipientName: form.get("recipientName"), phone: addressPhone, region: form.get("region"), city: form.get("city"), addressHint: form.get("addressHint"), latitude: addressCoordinates.latitude, longitude: addressCoordinates.longitude, isDefault: form.get("isDefault") === "on",
-    }) });
-    const payload = await response.json(); if (!response.ok) return setError(payload.error?.message ?? "Adresse non enregistrée.");
-    setMessage("Adresse enregistrée."); event.currentTarget.reset(); setAddressPhone("+221"); setAddressCoordinates(null); await load();
+    setAddressBusy(true);
+    try {
+      const response = await fetch("/api/client/addresses", { method: editingAddress ? "PATCH" : "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({
+        ...(editingAddress ? { id: editingAddress.id } : {}), label: form.get("label"), recipientName: form.get("recipientName"), phone: addressPhone, region: form.get("region"), city: form.get("city"), addressHint: form.get("addressHint"), latitude: addressCoordinates.latitude, longitude: addressCoordinates.longitude, isDefault: form.get("isDefault") === "on",
+      }) });
+      const payload = await response.json(); if (!response.ok) return setError(payload.error?.message ?? "Adresse non enregistrée.");
+      setMessage(editingAddress ? "Adresse mise à jour." : "Adresse enregistrée."); formElement.reset(); setAddressPhone("+221"); setAddressCoordinates(null); setEditingAddress(null); await load();
+    } catch { setError("Impossible de joindre SunuShop pour enregistrer cette adresse."); }
+    finally { setAddressBusy(false); }
+  };
+  const editAddress = (address: Address) => {
+    setEditingAddress(address); setAddressPhone(address.phone); setError(""); setMessage("");
+    setAddressCoordinates(address.latitude != null && address.longitude != null ? { latitude: address.latitude, longitude: address.longitude } : null);
+  };
+  const setDefaultAddress = async (address: Address) => {
+    setAddressBusy(true); setError(""); setMessage("");
+    try {
+      const response = await fetch("/api/client/addresses", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({
+        id: address.id, label: address.label, recipientName: address.recipient_name, phone: address.phone, region: address.region, city: address.city, addressHint: address.address_hint, latitude: address.latitude, longitude: address.longitude, isDefault: true,
+      }) });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) return setError(payload?.error?.message ?? "Adresse par défaut non enregistrée.");
+      setMessage("Adresse par défaut mise à jour."); await load();
+    } catch { setError("Impossible de joindre SunuShop pour modifier cette adresse."); }
+    finally { setAddressBusy(false); }
   };
   const archive = async (id: string) => {
-    const response = await fetch("/api/client/addresses", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ id, archive: true }) });
-    if (!response.ok) return setError("Adresse non supprimée."); await load();
+    if (!window.confirm("Archiver cette adresse ? Elle ne sera plus proposée lors de la commande.")) return;
+    setAddressBusy(true); setError(""); setMessage("");
+    try {
+      const response = await fetch("/api/client/addresses", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ id, archive: true }) });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) return setError(payload?.error?.message ?? "Adresse non archivée."); setMessage("Adresse archivée."); await load();
+    } catch { setError("Impossible de joindre SunuShop pour archiver cette adresse."); }
+    finally { setAddressBusy(false); }
   };
   const unfollow = async (merchantId: string) => {
     const response = await fetch("/api/client/shop-follows", { method: "DELETE", headers: { "content-type": "application/json" }, body: JSON.stringify({ merchantId }) });
@@ -94,9 +123,8 @@ export function ClientWorkspace() {
   return <div className="mvp-grid">
     <section className="mvp-card mvp-card--full"><span className="mvp-eyebrow">Espace client</span><h1 className="mvp-title">Achats, adresses et suivi</h1><div className="mvp-actions"><Link className="mvp-button" href="/marche">Ouvrir mon panier</Link></div>{message && <p className="mvp-alert">{message}</p>}{error && <p className="mvp-alert mvp-alert--error">{error}</p>}</section>
     <AbandonedCarts />
-    <ClientLoyalty />
-    <section className="mvp-card"><h2>Mes adresses</h2><div className="mvp-list">{addresses.map((address) => <div className="mvp-row" key={address.id}><div><strong>{address.label}{address.is_default ? " · par défaut" : ""}</strong><small>{address.recipient_name} · {address.phone}<br />{address.city}, {address.address_hint}<br />{address.latitude == null ? "À localiser avant une livraison" : "Position enregistrée"}</small></div><button className="mvp-button mvp-button--secondary" onClick={() => archive(address.id)}>Retirer</button></div>)}</div>
-      <form className="mvp-form" onSubmit={saveAddress}><h3>Ajouter une adresse</h3><div className="mvp-form__grid"><label className="mvp-field">Libellé<input name="label" placeholder="Maison" required /></label><label className="mvp-field">Destinataire<input name="recipientName" required /></label><label className="mvp-field">Téléphone<SenegalPhoneInput value={addressPhone} onChange={setAddressPhone} required /></label><label className="mvp-field">Région<select name="region" required defaultValue=""><option value="" disabled>Choisissez une région</option>{SENEGAL_REGIONS.map((value) => <option value={value} key={value}>{value}</option>)}</select></label><label className="mvp-field">Ville<input name="city" required /></label></div><label className="mvp-field">Adresse et repère<textarea name="addressHint" required /></label><LocationPicker value={addressCoordinates} onChange={setAddressCoordinates} label="Position de livraison" required /><label><input name="isDefault" type="checkbox" /> Adresse par défaut</label><button className="mvp-button">Enregistrer</button></form>
+    <section className="mvp-card"><h2>Mes adresses</h2><div className="mvp-list">{addresses.map((address) => <div className="mvp-row" key={address.id}><div><strong>{address.label}{address.is_default ? " · par défaut" : ""}</strong><small>{address.recipient_name} · {address.phone}<br />{address.city}, {address.address_hint}<br />{address.latitude == null ? "À localiser avant une livraison" : "Position enregistrée"}</small></div><div className="mvp-actions"><button type="button" className="mvp-button mvp-button--secondary" disabled={addressBusy} onClick={() => editAddress(address)}>Modifier</button>{!address.is_default && <button type="button" className="mvp-button mvp-button--secondary" disabled={addressBusy || address.latitude == null || address.longitude == null} onClick={() => void setDefaultAddress(address)}>Définir par défaut</button>}<button type="button" className="mvp-button mvp-button--secondary" disabled={addressBusy} onClick={() => void archive(address.id)}>Archiver</button></div></div>)}</div>
+      <form className="mvp-form" onSubmit={saveAddress} key={editingAddress?.id ?? "new-address"}><h3>{editingAddress ? "Modifier l’adresse" : "Ajouter une adresse"}</h3><div className="mvp-form__grid"><label className="mvp-field">Libellé<input name="label" placeholder="Maison" defaultValue={editingAddress?.label} required /></label><label className="mvp-field">Destinataire<input name="recipientName" defaultValue={editingAddress?.recipient_name} required /></label><label className="mvp-field">Téléphone<SenegalPhoneInput value={addressPhone} onChange={setAddressPhone} required /></label><label className="mvp-field">Région<select name="region" required defaultValue={editingAddress?.region ?? ""}><option value="" disabled>Choisissez une région</option>{SENEGAL_REGIONS.map((value) => <option value={value} key={value}>{value}</option>)}</select></label><label className="mvp-field">Ville<input name="city" defaultValue={editingAddress?.city} required /></label></div><label className="mvp-field">Adresse et repère<textarea name="addressHint" defaultValue={editingAddress?.address_hint} required /></label><LocationPicker value={addressCoordinates} onChange={setAddressCoordinates} label="Position de livraison" required /><label><input name="isDefault" type="checkbox" defaultChecked={editingAddress?.is_default} /> Adresse par défaut</label><div className="mvp-actions"><button className="mvp-button" disabled={addressBusy}>{addressBusy ? "Enregistrement…" : editingAddress ? "Mettre à jour" : "Enregistrer"}</button>{editingAddress && <button type="button" className="mvp-button mvp-button--secondary" disabled={addressBusy} onClick={() => { setEditingAddress(null); setAddressPhone("+221"); setAddressCoordinates(null); }}>Annuler la modification</button>}</div></form>
     </section>
     <section className="mvp-card"><h2>Mes commandes</h2><Link className="mvp-link" href="/client/commandes">Voir toutes mes commandes en détail →</Link>
       <div className="mvp-tabs" role="tablist" aria-label="Filtrer mes commandes">

@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { ConversationThread } from "@/components/conversation-thread";
 import { getBrowserSupabase } from "@/lib/infrastructure/supabase/browser";
 
@@ -54,11 +55,16 @@ function ConversationContext({ conversation, view }: { conversation: Conversatio
   );
 }
 
-export function ConversationList({ view, currentUserId }: { view: View; currentUserId?: string }) {
+type ConversationIntent = { merchantId?: string; orderId?: string; productId?: string; subject?: string };
+
+export function ConversationList({ view, currentUserId, startIntent }: { view: View; currentUserId?: string; startIntent?: ConversationIntent }) {
+  const router = useRouter();
   const [conversations, setConversations] = useState<ConversationRow[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [resolvedUserId, setResolvedUserId] = useState(currentUserId);
+  const [intentError, setIntentError] = useState("");
+  const intentHandled = useRef(false);
 
   const load = async () => {
     const response = await fetch("/api/conversations");
@@ -85,11 +91,40 @@ export function ConversationList({ view, currentUserId }: { view: View; currentU
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view]);
 
+  useEffect(() => {
+    if (view !== "asBuyer" || !startIntent?.merchantId || intentHandled.current) return;
+    intentHandled.current = true;
+    void (async () => {
+      const response = await fetch("/api/conversations", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          kind: "buyer_merchant",
+          merchantId: startIntent.merchantId,
+          orderId: startIntent.orderId,
+          productId: startIntent.productId,
+          subject: startIntent.subject,
+        }),
+      });
+      const payload = await response.json().catch(() => null);
+      if (response.ok && payload?.data?.id) {
+        await load();
+        setActiveId(payload.data.id);
+        router.replace("/messages");
+      } else {
+        setIntentError(payload?.error?.message ?? "Impossible d’ouvrir la conversation demandée.");
+      }
+    })().catch(() => setIntentError("Impossible de joindre SunuShop pour ouvrir cette conversation."));
+    // L'intention initiale ne doit être consommée qu'une fois.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [startIntent, view]);
+
   const activeConversation = conversations.find((c) => c.id === activeId);
 
   return (
     <div className="conversation-list-layout">
       <div className="conversation-list">
+        {intentError && <p className="mvp-alert mvp-alert--error" role="alert">{intentError}</p>}
         {loading && <p className="mvp-empty">Chargement…</p>}
         {!loading && !conversations.length && <p className="mvp-empty">Aucune conversation pour l’instant.</p>}
         {conversations.map((conversation) => {
