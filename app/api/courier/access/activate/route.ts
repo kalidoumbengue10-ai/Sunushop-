@@ -32,6 +32,12 @@ export async function POST(request: Request) {
       .eq("id", invitation.courier_membership_id)
       .single();
     if (membershipError) throw membershipError;
+    // Un rattachement créé avant l'introduction des profils livreur peut
+    // n'avoir aucun courier_profile_id : sans ce garde, la requête suivante
+    // échoue en erreur SQL opaque plutôt qu'en message compréhensible.
+    if (!membership.courier_profile_id) {
+      throw new ApiError(404, "COURIER_PROFILE_MISSING", "Ce profil livreur est incomplet. Demandez au marchand de vous renvoyer une invitation.");
+    }
     const { data: profile, error: profileError } = await admin
       .from("courier_profiles")
       .select("id, user_id")
