@@ -3,6 +3,7 @@ import { ApiError } from "@/lib/api/errors";
 import { requireFulfillment } from "@/lib/api/merchant-guards";
 import { apiFailure, apiSuccess } from "@/lib/api/response";
 import { enforceRateLimit } from "@/lib/api/security";
+import { courierInvitationUrl, createInvitationToken } from "@/lib/domain/invitation-token";
 import { hasCoordinatePair } from "@/lib/domain/geo";
 import { deliveryOfferSchema } from "@/lib/domain/schemas";
 import { calculateRoute } from "@/lib/maps/openroute-service";
@@ -48,7 +49,7 @@ export async function POST(request: Request) {
     const user = await requireFulfillment(order.merchant_id);
     const { data: courier, error: courierError } = await admin
       .from("courier_memberships")
-      .select("id, courier_user_id, email, status, courier_profile_id")
+      .select("id, courier_user_id, email, status, courier_profile_id, display_name, phone")
       .eq("id", input.courierMembershipId)
       .eq("merchant_id", order.merchant_id)
       .in("status", ["pending_invitation", "active"])
@@ -100,22 +101,32 @@ export async function POST(request: Request) {
       .single();
     if (offerError) throw offerError;
 
-    let url = new URL("/marchand?mode=missions", request.url).toString();
-    if (courier.status === "pending_invitation") {
-      const { data: invitation } = await (admin as any)
-        .from("workspace_invitations")
-        .select("id")
-        .eq("courier_membership_id", courier.id)
-        .eq("status", "pending")
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      if (invitation) {
-        const { data: notification } = await admin.from("notification_outbox").select("payload").eq("dedupe_key", `courier-invitation:${invitation.id}`).maybeSingle();
-        const invitationUrl = (notification?.payload as { url?: string } | null)?.url;
-        if (invitationUrl) url = invitationUrl;
-      }
-    }
+    // Le livreur n'a ni compte ni mot de passe classiques : chaque offre porte
+    // son propre lien d'accès à usage unique (même mécanisme que l'invitation
+    // initiale), sinon un clic depuis un appareil sans session active échoue
+    // sur l'écran de connexion marchand.
+    await (admin as any)
+      .from("workspace_invitations")
+      .update({ status: "revoked" })
+      .eq("kind", "courier")
+      .eq("courier_membership_id", courier.id)
+      .eq("status", "pending");
+    const { token, tokenHash } = createInvitationToken();
+    const invitationExpiresAt = new Date(Date.now() + 7 * 86_400_000).toISOString();
+    const url = courierInvitationUrl(request, token);
+    const { error: accessInvitationError } = await (admin as any)
+      .from("workspace_invitations")
+      .insert({
+        kind: "courier",
+        merchant_id: order.merchant_id,
+        courier_membership_id: courier.id,
+        email: courier.email,
+        token_hash: tokenHash,
+        payload: { displayName: courier.display_name, phone: courier.phone },
+        expires_at: invitationExpiresAt,
+        invited_by: user.id,
+      });
+    if (accessInvitationError) throw accessInvitationError;
     if (courier.email) {
       await enqueueEmail(admin, {
         dedupeKey: `delivery-offer:${offer.id}`,
