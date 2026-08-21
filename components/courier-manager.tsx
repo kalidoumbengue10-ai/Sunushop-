@@ -5,6 +5,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "re
 import { Copy, Mail, MessageCircle, Smartphone } from "lucide-react";
 import { getBrowserSupabase } from "@/lib/infrastructure/supabase/browser";
 import { formatPrice } from "@/lib/marketplace";
+import { courierSmsUrl, courierWhatsappUrl } from "@/lib/domain/courier-sharing";
 
 type InvitationState = {
   id: string;
@@ -61,17 +62,6 @@ const paymentLabels: Record<string, string> = { wave: "Wave", orange_money: "Ora
 const statusLabels: Record<string, string> = { assigned: "Affectée", accepted: "Acceptée", at_pickup: "Au retrait", picked_up: "Récupérée", in_transit: "En route", delivered: "Livrée", failed: "Échec", cancelled: "Annulée" };
 const one = <T,>(value: T | T[]) => Array.isArray(value) ? value[0] : value;
 
-function whatsappUrl(phone: string, invitationUrl: string) {
-  let digits = phone.replace(/\D/g, "");
-  if (digits.length === 9) digits = `221${digits}`;
-  const message = `Bonjour, voici votre invitation sécurisée SunuShop pour activer votre espace livreur : ${invitationUrl}`;
-  return `https://wa.me/${digits}?text=${encodeURIComponent(message)}`;
-}
-function smsUrl(phone: string, invitationUrl: string) {
-  const message = `SunuShop : ouvrez votre espace livreur et choisissez votre PIN : ${invitationUrl}`;
-  return `sms:${phone}?body=${encodeURIComponent(message)}`;
-}
-
 function invitationLabel(courier: Courier) {
   if (courier.status === "active" || courier.invitation?.status === "claimed") return { text: "Accès actif", tone: "claimed" };
   if (courier.invitation?.status === "expired") return { text: "Invitation expirée", tone: "expired" };
@@ -96,6 +86,7 @@ export function CourierManager({ merchantId, canManagePayments = false, onOpenOr
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [offerQuote, setOfferQuote] = useState<OfferQuote | null>(null);
+  const [invitationUrls, setInvitationUrls] = useState<Record<string, string>>({});
   const [managerDialog, setManagerDialog] = useState<ManagerDialog>(null);
   const [dialogError, setDialogError] = useState("");
   const dialogFieldRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
@@ -115,7 +106,10 @@ export function CourierManager({ merchantId, canManagePayments = false, onOpenOr
     const payloads = await Promise.all(responses.map((response) => response.json()));
     const failed = responses.findIndex((response) => !response.ok);
     if (failed >= 0) throw new Error(payloads[failed].error?.message ?? "Chargement impossible.");
-    setCouriers(payloads[0].data.items); setDeliveries(payloads[1].data.items); setStats(payloads[1].data.stats);
+    const courierItems = payloads[0].data.items as Courier[];
+    setCouriers(courierItems);
+    setInvitationUrls((current) => Object.fromEntries(Object.entries(current).filter(([membershipId]) => courierItems.find((courier) => courier.id === membershipId)?.invitation?.status === "pending")));
+    setDeliveries(payloads[1].data.items); setStats(payloads[1].data.stats);
     setPaymentData(payloads[2].data); setAssignable(payloads[3].data);
   }, [merchantId]);
 
@@ -163,6 +157,7 @@ export function CourierManager({ merchantId, canManagePayments = false, onOpenOr
     event.preventDefault();
     const form = event.currentTarget;
     const values = new FormData(form);
+    const requestedEmail = String(values.get("email") ?? "").trim();
     const data = await submit("/api/merchant/couriers", "POST", JSON.stringify({
       merchantId,
       displayName: values.get("displayName"),
@@ -172,10 +167,17 @@ export function CourierManager({ merchantId, canManagePayments = false, onOpenOr
       vehicleRegistration: values.get("vehicleRegistration") || undefined,
     }), "Invitation créée.");
     if (data) {
+      if (data.membershipId && data.invitationUrl) {
+        setInvitationUrls((current) => ({ ...current, [data.membershipId]: data.invitationUrl }));
+      }
       form.reset();
-      setMessage(data.emailSent
-        ? "Invitation envoyée par e-mail. Vous pouvez aussi la partager par WhatsApp ou SMS."
-        : "Invitation prête. Partagez le lien par WhatsApp, SMS ou copie.");
+      setMessage(!requestedEmail
+        ? "Lien prêt pour WhatsApp."
+        : data.emailSent
+          ? "E-mail envoyé. Le lien est aussi prêt pour WhatsApp."
+          : data.invitation?.emailStatus === "failed"
+            ? "Échec de l’e-mail — utilisez WhatsApp."
+            : "E-mail en cours d’envoi. Le lien est prêt pour WhatsApp.");
     }
   };
 
@@ -192,12 +194,30 @@ export function CourierManager({ merchantId, canManagePayments = false, onOpenOr
   };
   const resendInvitation = async (courier: Courier) => {
     const data = await submit(`/api/merchant/couriers/${courier.id}/invitation`, "POST", JSON.stringify({ merchantId }), "Invitation traitée.");
-    if (data) setMessage(data.emailSent ? "Nouveau lien envoyé par e-mail." : "Le lien est prêt à être partagé par WhatsApp ou SMS.");
+    if (data?.invitationUrl) {
+      setInvitationUrls((current) => ({ ...current, [courier.id]: data.invitationUrl }));
+      setMessage(!courier.email
+        ? "Nouveau lien prêt pour WhatsApp."
+        : data.emailSent
+          ? "Nouveau lien envoyé par e-mail et prêt pour WhatsApp."
+          : "Échec de l’e-mail — utilisez WhatsApp.");
+    }
   };
   const copyInvitation = async (courier: Courier) => {
-    if (!courier.invitation?.invitationUrl) return;
-    await navigator.clipboard.writeText(courier.invitation.invitationUrl);
+    const invitationUrl = invitationUrls[courier.id] ?? (courier.invitation?.status === "pending" ? courier.invitation.invitationUrl : null);
+    if (!invitationUrl) return;
+    await navigator.clipboard.writeText(invitationUrl);
     setMessage("Lien d’invitation copié.");
+  };
+  const shareOnWhatsApp = async (courier: Courier) => {
+    let invitationUrl = invitationUrls[courier.id] ?? (courier.invitation?.status === "pending" ? courier.invitation.invitationUrl : null);
+    if (!invitationUrl) {
+      const data = await submit(`/api/merchant/couriers/${courier.id}/invitation`, "POST", JSON.stringify({ merchantId }), "Préparation du lien WhatsApp.");
+      invitationUrl = data?.invitationUrl;
+      if (!invitationUrl) return;
+      setInvitationUrls((current) => ({ ...current, [courier.id]: invitationUrl }));
+    }
+    window.location.assign(courierWhatsappUrl(courier.phone, invitationUrl));
   };
   const loadQuote = async (orderId: string) => {
     setOfferQuote(null);
@@ -355,22 +375,23 @@ export function CourierManager({ merchantId, canManagePayments = false, onOpenOr
     </section>}
 
     {tab === "couriers" && <section role="tabpanel" className="courier-tab-panel">
-      <div className="mvp-grid"><section className="mvp-card"><h2>Inviter un livreur</h2><p>Renseignez ses coordonnées. Aucun compte ni document n’est demandé au livreur : il choisira seulement un PIN à 6 chiffres.</p><form className="mvp-form" onSubmit={inviteCourier}><div className="mvp-form__grid"><label className="mvp-field">Nom complet<input name="displayName" autoComplete="name" required /></label><label className="mvp-field">Téléphone<input name="phone" inputMode="tel" autoComplete="tel" placeholder="+221 77 000 00 00" required /></label><label className="mvp-field">E-mail (facultatif)<input name="email" type="email" autoComplete="email" /></label><label className="mvp-field">Véhicule (facultatif)<select name="vehicleType" defaultValue=""><option value="">Non renseigné</option>{Object.entries(vehicleLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label><label className="mvp-field">Immatriculation (facultatif)<input name="vehicleRegistration" /></label></div><button className="mvp-button" disabled={busy}>{busy ? "Création…" : "Créer et inviter"}</button></form></section>
-      <section className="mvp-card"><h2>Un accès en trois gestes</h2><ol className="courier-steps"><li>Vous saisissez son nom et son téléphone.</li><li>Vous partagez le lien par e-mail, WhatsApp ou SMS.</li><li>Il choisit son PIN et retrouve toutes ses missions, même s’il travaille avec plusieurs boutiques.</li></ol></section></div>
+      <div className="mvp-grid"><section className="mvp-card"><h2>Inviter un livreur</h2><p>Son nom et son téléphone suffisent. Ajoutez son e-mail seulement si vous souhaitez lui envoyer aussi le lien par e-mail.</p><form className="mvp-form" onSubmit={inviteCourier}><div className="mvp-form__grid"><label className="mvp-field">Nom complet<input name="displayName" autoComplete="name" required /></label><label className="mvp-field">Téléphone<input name="phone" inputMode="tel" autoComplete="tel" placeholder="+221 77 000 00 00" required /></label><label className="mvp-field">E-mail (facultatif)<input name="email" type="email" autoComplete="email" /></label></div><button className="mvp-button" disabled={busy}>{busy ? "Création…" : "Créer le lien de partage"}</button></form></section>
+      <section className="mvp-card"><h2>Deux gestes seulement</h2><ol className="courier-steps"><li>Vous saisissez son nom, son téléphone et éventuellement son e-mail.</li><li>L’e-mail part automatiquement et vous pouvez partager le même lien sur WhatsApp.</li></ol></section></div>
       <section>
         <div className="marketplace-section-heading"><div><h2>Équipe de livraison</h2><p>L’état affiché correspond à l’envoi réel de l’invitation.</p></div><span>{couriers.length}</span></div>
         <div className="courier-profile-grid">{couriers.map((courier) => {
           const state = invitationLabel(courier);
+          const invitationUrl = invitationUrls[courier.id] ?? (courier.invitation?.status === "pending" ? courier.invitation.invitationUrl : null);
           return <article className="courier-profile" key={courier.id}>
             {courier.photoUrl ? <Image unoptimized width={72} height={72} src={courier.photoUrl} alt="" /> : <div className="courier-profile__placeholder">{courier.display_name.slice(0, 1)}</div>}
             <span className="courier-invitation-status" data-status={state.tone}>{state.text}</span>
-            {courier.invitation?.invitationUrl && <div className="courier-invitation-actions">
+            <div className="courier-invitation-actions">
               <button type="button" className="mvp-button mvp-button--secondary" disabled={busy} onClick={() => void resendInvitation(courier)}><Mail /> {courier.status === "active" ? "Renvoyer un lien d’accès" : "Renvoyer"}</button>
-              <button type="button" className="mvp-button mvp-button--secondary" onClick={() => void copyInvitation(courier)}><Copy /> Copier le lien</button>
-              <a className="mvp-button mvp-button--secondary" href={whatsappUrl(courier.phone, courier.invitation.invitationUrl)} target="_blank" rel="noreferrer"><MessageCircle /> Envoyer par WhatsApp</a>
-              <a className="mvp-button mvp-button--secondary" href={smsUrl(courier.phone, courier.invitation.invitationUrl)}><Smartphone /> Envoyer par SMS</a>
+              {invitationUrl && <button type="button" className="mvp-button mvp-button--secondary" onClick={() => void copyInvitation(courier)}><Copy /> Copier le lien</button>}
+              <button type="button" className="mvp-button mvp-button--secondary" disabled={busy} onClick={() => void shareOnWhatsApp(courier)}><MessageCircle /> Envoyer par WhatsApp</button>
+              {invitationUrl && <a className="mvp-button mvp-button--secondary" href={courierSmsUrl(courier.phone, invitationUrl)}><Smartphone /> Envoyer par SMS</a>}
               {courier.status === "pending_invitation" && <button type="button" className="mvp-button mvp-button--danger" disabled={busy} onClick={() => void cancelInvitation(courier)}>Révoquer</button>}
-            </div>}
+            </div>
             <form className="mvp-form" onSubmit={(event) => void updateCourier(event, courier)}>
               <div className="mvp-form__grid">
                 <label className="mvp-field">Nom<input name="displayName" defaultValue={courier.display_name} required /></label>

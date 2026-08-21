@@ -4,7 +4,6 @@ import {
   AlertTriangle,
   ArrowRight,
   CheckCircle2,
-  Bike,
   FileCheck2,
   LayoutDashboard,
   MessageSquare,
@@ -25,20 +24,7 @@ import { ConversationList } from "@/components/conversation-list";
 import { MerchantInvitationPanel } from "@/components/merchant-invitation-panel";
 import { formatPrice } from "@/lib/marketplace";
 
-type AdminTab = "overview" | "crm" | "verifications" | "courier-verifications" | "subscriptions" | "litiges" | "support" | "categories";
-
-type CourierCaseItem = {
-  id: string;
-  courier_id: string;
-  status: string;
-  submitted_at: string | null;
-  courier_profiles: { display_name: string; phone: string; email: string | null; vehicle_type: string | null; vehicle_registration: string | null } | Array<{ display_name: string; phone: string; email: string | null; vehicle_type: string | null; vehicle_registration: string | null }>;
-};
-
-type CourierCaseDetail = {
-  case: CourierCaseItem;
-  documents: Array<{ id: string; documentType: string; version: number; status: string; url: string | null }>;
-};
+type AdminTab = "overview" | "crm" | "verifications" | "subscriptions" | "litiges" | "support" | "categories";
 
 type VerificationQueueItem = {
   id: string;
@@ -171,8 +157,6 @@ export function AdminWorkspace({ initialTab = "overview" }: { initialTab?: Admin
   const [merchantQuery, setMerchantQuery] = useState("");
   const [grantMerchant, setGrantMerchant] = useState<MerchantSearchResult>();
   const [selected, setSelected] = useState<VerificationDetail>();
-  const [courierQueue, setCourierQueue] = useState<CourierCaseItem[]>([]);
-  const [courierCase, setCourierCase] = useState<CourierCaseDetail | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
@@ -183,10 +167,6 @@ export function AdminWorkspace({ initialTab = "overview" }: { initialTab?: Admin
   const loadQueue = async () => {
     const payload = await adminFetch<{ items: VerificationQueueItem[] }>("/api/admin/verifications");
     setQueue(payload.items);
-  };
-  const loadCourierQueue = async () => {
-    const payload = await adminFetch<{ items: CourierCaseItem[] }>("/api/admin/courier-verifications");
-    setCourierQueue(payload.items);
   };
   const loadPayments = async () => {
     const params = new URLSearchParams({ month: billingMonth });
@@ -223,7 +203,7 @@ export function AdminWorkspace({ initialTab = "overview" }: { initialTab?: Admin
   useEffect(() => {
     // Chaque module se charge indépendamment pour préserver les accès plus restreints.
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    Promise.allSettled([loadQueue(), loadCourierQueue(), loadPayments(), loadPlatformSettings(), loadLeads(), loadDisputes(), loadDeliveryDisputes(), loadGrants()]).then((results) => {
+    Promise.allSettled([loadQueue(), loadPayments(), loadPlatformSettings(), loadLeads(), loadDisputes(), loadDeliveryDisputes(), loadGrants()]).then((results) => {
       const failures = results.filter((result) => result.status === "rejected");
       if (failures.length === results.length) {
         setError("Votre espace ne peut pas être chargé pour le moment.");
@@ -239,7 +219,7 @@ export function AdminWorkspace({ initialTab = "overview" }: { initialTab?: Admin
   useEffect(() => {
     const refreshOnFocus = () => {
       setAnalyticsRefreshKey((value) => value + 1);
-      void Promise.allSettled([loadQueue(), loadCourierQueue(), loadPayments(), loadLeads()]).then(() => setLastSyncedAt(new Date()));
+      void Promise.allSettled([loadQueue(), loadPayments(), loadLeads()]).then(() => setLastSyncedAt(new Date()));
     };
     window.addEventListener("focus", refreshOnFocus);
     return () => window.removeEventListener("focus", refreshOnFocus);
@@ -271,38 +251,6 @@ export function AdminWorkspace({ initialTab = "overview" }: { initialTab?: Admin
     } finally {
       setBusy(false);
     }
-  };
-
-  const openCourierCase = async (id: string) => {
-    setBusy(true); setError("");
-    try {
-      setCourierCase(await adminFetch<CourierCaseDetail>(`/api/admin/courier-verifications/${id}`));
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Dossier livreur indisponible.");
-    } finally { setBusy(false); }
-  };
-
-  const decideCourierCase = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (!courierCase) return;
-    setBusy(true); setError("");
-    const form = new FormData(event.currentTarget);
-    try {
-      await adminFetch(`/api/admin/courier-verifications/${courierCase.case.id}/decision`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          outcome: form.get("outcome"),
-          courierMessage: form.get("courierMessage") || undefined,
-          internalNote: form.get("internalNote") || undefined,
-        }),
-      });
-      setMessage("Décision enregistrée.");
-      setCourierCase(null);
-      await loadCourierQueue();
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "La décision n’a pas pu être enregistrée.");
-    } finally { setBusy(false); }
   };
 
   const decideCase = async (event: FormEvent<HTMLFormElement>) => {
@@ -455,7 +403,6 @@ export function AdminWorkspace({ initialTab = "overview" }: { initialTab?: Admin
     { id: "overview" as const, label: "Vue d’ensemble", icon: LayoutDashboard },
     { id: "crm" as const, label: "CRM commerçants", icon: UsersRound, badge: leads.filter((lead) => lead.status === "new").length },
     { id: "verifications" as const, label: "Dossiers commerçants", icon: FileCheck2, badge: queue.length },
-    { id: "courier-verifications" as const, label: "Dossiers livreurs", icon: Bike, badge: courierQueue.length },
     { id: "subscriptions" as const, label: "Abonnements", icon: ReceiptText, badge: payments.length },
     { id: "litiges" as const, label: "Litiges", icon: AlertTriangle, badge: disputes.length + deliveryDisputes.filter((item) => item.status === "open").length },
     { id: "support" as const, label: "Support", icon: MessageSquare },
@@ -466,7 +413,6 @@ export function AdminWorkspace({ initialTab = "overview" }: { initialTab?: Admin
     overview: ["Vue d’ensemble", "Les priorités du jour, au même endroit."],
     crm: ["Prospects & clients", "Contactez les commerçants et suivez leur activité au même endroit."],
     verifications: ["Dossiers commerçants", "Validez les informations avec un parcours lisible et traçable."],
-    "courier-verifications": ["Dossiers livreurs", "Vérifiez l’identité et le véhicule avant d’ouvrir l’accès au vivier."],
     subscriptions: ["Abonnements", "Activez les accès après confirmation des paiements."],
     litiges: ["Litiges", "Arbitrez les commandes signalées et suivez les remboursements directs."],
     support: ["Support", "Répondez aux acheteurs qui contactent l’équipe SunuShop."],
@@ -493,7 +439,7 @@ export function AdminWorkspace({ initialTab = "overview" }: { initialTab?: Admin
       <main className="admin-main">
         <header className="admin-topbar">
           <div><span className="admin-kicker">Espace administrateur</span><h1>{title[0]}</h1><p>{title[1]}</p></div>
-          <div className="admin-topbar__status"><span /><div><b>Données du CRM</b><small>{lastSyncedAt ? `Actualisées à ${lastSyncedAt.toLocaleTimeString("fr-SN", { hour: "2-digit", minute: "2-digit" })}` : "Synchronisation en cours"}</small></div><button type="button" onClick={() => { setAnalyticsRefreshKey((value) => value + 1); void Promise.allSettled([loadQueue(), loadCourierQueue(), loadPayments(), loadPlatformSettings(), loadLeads(), loadDisputes(), loadDeliveryDisputes(), loadGrants()]).then(() => markSynced()); }} disabled={busy} aria-label="Actualiser toutes les données"><RefreshCw /></button></div>
+          <div className="admin-topbar__status"><span /><div><b>Données du CRM</b><small>{lastSyncedAt ? `Actualisées à ${lastSyncedAt.toLocaleTimeString("fr-SN", { hour: "2-digit", minute: "2-digit" })}` : "Synchronisation en cours"}</small></div><button type="button" onClick={() => { setAnalyticsRefreshKey((value) => value + 1); void Promise.allSettled([loadQueue(), loadPayments(), loadPlatformSettings(), loadLeads(), loadDisputes(), loadDeliveryDisputes(), loadGrants()]).then(() => markSynced()); }} disabled={busy} aria-label="Actualiser toutes les données"><RefreshCw /></button></div>
         </header>
 
         {message && <p className="admin-feedback"><CheckCircle2 /> {message}</p>}
@@ -541,21 +487,6 @@ export function AdminWorkspace({ initialTab = "overview" }: { initialTab?: Admin
           </section>
         )}
 
-        {tab === "courier-verifications" && (
-          <section className="admin-panel">
-            {!courierCase && <div className="admin-record-list">{courierQueue.map((item) => { const courier = relationOne(item.courier_profiles); return <button key={item.id} onClick={() => void openCourierCase(item.id)} disabled={busy}><span className="admin-avatar"><Bike /></span><span><b>{courier?.display_name}</b><small>{courier?.phone} · {courier?.vehicle_type ?? "véhicule non renseigné"}{courier?.vehicle_registration ? ` · ${courier.vehicle_registration}` : ""}</small></span><i className="verification-status" data-status={item.status}>À vérifier</i><ArrowRight /></button>; })}{!courierQueue.length && <div className="admin-empty"><CheckCircle2 /><h3>Tout est à jour</h3><p>Aucun dossier livreur en attente de vérification.</p></div>}</div>}
-            {courierCase && (() => { const courier = relationOne(courierCase.case.courier_profiles); return <article className="admin-record-detail">
-              <header><div><b>{courier?.display_name}</b><small>{courier?.phone}{courier?.email ? ` · ${courier.email}` : ""} · {courier?.vehicle_type ?? "véhicule non renseigné"}{courier?.vehicle_registration ? ` · ${courier.vehicle_registration}` : ""}</small></div><button type="button" className="mvp-button mvp-button--secondary" onClick={() => setCourierCase(null)}>Fermer</button></header>
-              <div className="admin-document-list">{courierCase.documents.map((document) => <div className="mvp-row" key={document.id}><span><strong>{document.documentType.replaceAll("_", " ")}</strong><small>version {document.version} · {document.status}</small></span>{document.url && <a className="mvp-button mvp-button--secondary" href={document.url} target="_blank" rel="noopener noreferrer">Ouvrir</a>}</div>)}{!courierCase.documents.length && <p className="mvp-empty">Aucun document transmis.</p>}</div>
-              <form className="mvp-form" onSubmit={decideCourierCase}>
-                <label className="mvp-field">Décision<select name="outcome" defaultValue="verified" required><option value="verified">Valider le livreur</option><option value="rejected">Refuser le dossier</option><option value="suspended">Suspendre l’accès</option></select></label>
-                <label className="mvp-field">Message au livreur<textarea name="courierMessage" rows={2} /></label>
-                <label className="mvp-field">Note interne<textarea name="internalNote" rows={2} /></label>
-                <button className="mvp-button" disabled={busy}>Enregistrer la décision</button>
-              </form>
-            </article>; })()}
-          </section>
-        )}
         {tab === "subscriptions" && (
           <section className="admin-panel admin-operation-panel">
             <div className="admin-panel__heading"><div><span className="admin-kicker">Coordonnées bénéficiaire</span><h2>Numéros SunuShop</h2><p>Les abonnements restent indisponibles tant qu’aucun numéro actif n’est configuré.</p></div></div>

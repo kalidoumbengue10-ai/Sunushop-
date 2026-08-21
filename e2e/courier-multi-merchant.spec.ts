@@ -29,7 +29,7 @@ function invitationToken(invitationUrl: string) {
   return new URL(invitationUrl).searchParams.get("token") ?? "";
 }
 
-test("un profil unique active deux boutiques avec le même PIN et les e-mails sont réellement capturés", async ({ browser, request }, testInfo) => {
+test("un profil unique ouvre les missions de deux boutiques par lien et les e-mails sont réellement capturés", async ({ browser, request }, testInfo) => {
   test.skip(testInfo.project.name !== "chromium-desktop", "Le scénario API complet est exécuté une fois ; les tailles sont couvertes séparément.");
   test.setTimeout(120_000);
   const stamp = `${Date.now()}-${crypto.randomUUID().slice(0, 6)}`;
@@ -62,8 +62,8 @@ test("un profil unique active deux boutiques avec le même PIN et les e-mails so
     expect(firstData.emailSent, JSON.stringify({ firstData, firstCaptured })).toBe(true);
     const firstToken = invitationToken(firstData.invitationUrl);
     const preview = await courier.request.get(`/api/courier/access/invitation?token=${firstToken}`);
-    expect((await preview.json()).data.mode).toBe("set_pin");
-    const activation = await courier.request.post("/api/courier/access/activate", { data: { token: firstToken, pin: "246810", pinConfirmation: "246810" } });
+    expect((await preview.json()).data.shopName).toBe("Boutique A");
+    const activation = await courier.request.post("/api/courier/access/activate", { data: { token: firstToken } });
     expect(activation.status(), await activation.text()).toBe(200);
     expect((await courier.request.get(`/api/courier/access/invitation?token=${firstToken}`)).status()).toBe(410);
 
@@ -72,12 +72,12 @@ test("un profil unique active deux boutiques avec le même PIN et les e-mails so
     const secondData = (await second.json()).data as { membershipId: string; invitationUrl: string };
     const secondToken = invitationToken(secondData.invitationUrl);
     const secondPreview = await courier.request.get(`/api/courier/access/invitation?token=${secondToken}`);
-    expect((await secondPreview.json()).data.mode).toBe("enter_pin");
+    expect((await secondPreview.json()).data.shopName).toBe("Boutique B");
     const resent = await ownerB.request.post(`/api/merchant/couriers/${secondData.membershipId}/invitation`, { data: { merchantId: shopB.id } });
     expect(resent.status(), await resent.text()).toBe(200);
     const resentToken = invitationToken(((await resent.json()).data as { invitationUrl: string }).invitationUrl);
     expect((await courier.request.get(`/api/courier/access/invitation?token=${secondToken}`)).status()).toBe(410);
-    const secondActivation = await courier.request.post("/api/courier/access/activate", { data: { token: resentToken, pin: "246810" } });
+    const secondActivation = await courier.request.post("/api/courier/access/activate", { data: { token: resentToken } });
     expect(secondActivation.status(), await secondActivation.text()).toBe(200);
 
     const { data: profiles } = await admin.from("courier_profiles").select("id, user_id").eq("phone", phone);
@@ -86,8 +86,6 @@ test("un profil unique active deux boutiques avec le même PIN et les e-mails so
     const { data: memberships } = await admin.from("courier_memberships").select("merchant_id, status").eq("courier_profile_id", profiles![0].id);
     expect(memberships).toEqual(expect.arrayContaining([{ merchant_id: shopA.id, status: "active" }, { merchant_id: shopB.id, status: "active" }]));
 
-    const wrong = await (await browser.newContext()).request.post("/api/courier/access/sign-in", { data: { phone, pin: "000000" } });
-    expect(wrong.status()).toBe(401);
     const failurePhone = `+22175${String(Date.now()).slice(-7)}`;
     const failedEmail = `email-failure-${stamp}@example.test`;
     const failedInvite = await ownerA.request.post("/api/merchant/couriers", { data: { merchantId: shopA.id, displayName: "Échec Email", phone: failurePhone, email: failedEmail } });
@@ -100,7 +98,7 @@ test("un profil unique active deux boutiques avec le même PIN et les e-mails so
     userIds.push(failedProfile!.user_id);
     const messages = await (await request.get("http://127.0.0.1:3110/messages")).json() as { messages: Array<{ to: string[]; text: string }> };
     expect(messages.messages.filter((message) => message.to.includes(courierEmail))).toHaveLength(3);
-    expect(messages.messages[0].text).toContain("Activer mon espace livreur");
+    expect(messages.messages[0].text).toContain("Ouvrir mes missions");
     expect(messages.messages[0].text).toContain("/livreur/invitation?token=");
   } finally {
     await Promise.all(contexts.map((context) => context.close()));

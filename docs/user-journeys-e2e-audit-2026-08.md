@@ -23,7 +23,7 @@ données E2E historiques qui y ont été repérées n'ont pas été supprimées.
 | Marchand | Produits, variantes, médias et publication | `authenticated-marketplace` + tests de schémas | Quota, archive et historique |
 | Marchand | Commandes, paiements et remboursements | `payment-cartography`, API paginée testée unitairement | RBAC et erreurs locales |
 | Marchand | Zones, livreurs, offres et règlements | `merchant-location`, `courier-mission-flow` | Une seule livraison active |
-| Livreur | Invitation, activation et PIN | `courier-multi-merchant`, `courier-access-responsive` | Invitation obligatoire |
+| Livreur | Invitation et ouverture directe par lien | `courier-multi-merchant`, `courier-access-responsive` | Lien personnel à usage unique |
 | Livreur | Offre, retrait et remise par codes | `courier-mission-flow`, `authenticated-marketplace` | Confidentialité avant acceptation |
 | Livreur | Échec et reprogrammation | `courier-mission-flow`, `security-regressions` | Pas d'annulation automatique |
 | Livreur | Historique et rémunérations | `courier-mission-flow`, agrégats API | Pagination indépendante des totaux |
@@ -36,7 +36,7 @@ données E2E historiques qui y ont été repérées n'ont pas été supprimées.
   recherche, cohérence du panier et des adresses ;
 - actions de commande séparées par acteur, permissions marchandes, états
   d'erreur actionnables et catalogue administrable sans perdre l'historique ;
-- parcours livreur invitation-only, identité téléphonique globale, offres
+- parcours livreur sur invitation, accès direct sans compte ni PIN visible, identité téléphonique globale, offres
   expirables, réaffectation atomique, reprogrammation après échec, codes et
   statistiques paginées ;
 - fidélité masquée dans l'interface tant que ses règles commerciales ne sont pas
@@ -74,8 +74,7 @@ supprime.
 - avis vérifiés et workflow de retour produit/logistique inverse ;
 - export, suppression de compte et préférences de notification ;
 - gestion des collaborateurs et multi-boutique marchand ;
-- disponibilité volontaire, modification autonome de l'identité livreur et
-  récupération libre-service du PIN ;
+- disponibilité volontaire et modification autonome de l'identité livreur ;
 - GPS temps réel, preuve photo, signature et pièces jointes aux litiges.
 
 ## Critères de sortie

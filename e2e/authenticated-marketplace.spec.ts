@@ -525,7 +525,7 @@ test.describe.serial("flux authentifiés marketplace", () => {
 
           await responseData(
             await courierContext.request.post("/api/courier/access/activate", {
-              data: { token, pin: "135790", pinConfirmation: "135790" },
+              data: { token },
             }),
             200,
           );
@@ -636,10 +636,8 @@ test.describe.serial("flux authentifiés marketplace", () => {
 
           const courierPage = await courierContext.newPage();
           await courierPage.goto("/marchand");
-          await expect(courierPage.getByRole("heading", { name: "Ma mission actuelle" })).toBeVisible();
-          await courierPage.getByRole("tab", { name: "File" }).click();
-          await expect(courierPage.getByRole("heading", { name: "Ma file" })).toBeVisible();
-          await expect(courierPage.getByText("Livrée", { exact: true })).toBeVisible();
+          await expect(courierPage.getByRole("heading", { name: "Ma mission" })).toBeVisible();
+          await expect(courierPage.getByRole("tab", { name: "Mon argent" })).toBeVisible();
 
           const finalOrder = await responseData<{
             order: { status: string };

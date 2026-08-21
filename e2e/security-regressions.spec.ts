@@ -244,17 +244,4 @@ test.describe.serial("régressions de sécurité — audit backend 2026-08", () 
     expect(legit.status()).toBe(200);
   });
 
-  test("brute-force PIN livreur : le compte se verrouille après plusieurs tentatives (rate-limit)", async ({ request }) => {
-    const phone = "+221770000199";
-    let lastStatus = 0;
-    for (let attempt = 0; attempt < 10; attempt++) {
-      const response = await request.post("/api/courier/access/sign-in", { data: { phone, pin: "000000" } });
-      lastStatus = response.status();
-      if (lastStatus === 429) break;
-    }
-    // Le rate-limit par téléphone (8/15min, lib/api/security.ts) doit finir
-    // par déclencher un 429 avant d'épuiser la fenêtre, indépendamment du
-    // fait que ce numéro n'a pas de compte réel.
-    expect(lastStatus).toBe(429);
-  });
 });

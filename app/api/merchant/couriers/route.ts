@@ -64,9 +64,7 @@ export async function GET(request: Request) {
       const invitation = invitationByMembership.get(courier.id) ?? null;
       const notification = invitation ? outboxByKey.get(`courier-invitation:${invitation.id}`) : null;
       const notificationPayload = notification?.payload as Record<string, unknown> | null;
-      const invitationStatus = courier.status === "active"
-        ? "claimed"
-        : invitation?.status === "pending" && new Date(invitation.expires_at).getTime() <= Date.now()
+      const invitationStatus = invitation?.status === "pending" && new Date(invitation.expires_at).getTime() <= Date.now()
           ? "expired"
           : invitation?.status ?? null;
       const photoUrl = courier.photo_storage_path

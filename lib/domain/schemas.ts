@@ -657,20 +657,8 @@ export const invitationClaimSchema = z.object({
   token: z.string().min(32).max(200),
 });
 
-const courierPin = z.string().regex(/^\d{6}$/, "Le PIN doit contenir exactement six chiffres.");
-
 export const courierAccessActivateSchema = z.object({
   token: z.string().min(32).max(200),
-  pin: courierPin,
-  pinConfirmation: courierPin.optional(),
-}).refine((value) => value.pinConfirmation === undefined || value.pin === value.pinConfirmation, {
-  message: "Les deux PIN ne correspondent pas.",
-  path: ["pinConfirmation"],
-});
-
-export const courierPinSignInSchema = z.object({
-  phone: z.string().trim().min(8).max(24),
-  pin: courierPin,
 });
 
 export const addressInputSchema = z.object({

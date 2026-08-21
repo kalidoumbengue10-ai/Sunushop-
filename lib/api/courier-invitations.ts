@@ -48,8 +48,6 @@ export async function sendCourierInvitation(input: {
         phone: input.membership.phone,
         vehicleType: input.membership.vehicle_type,
         vehicleRegistration: input.membership.vehicle_registration,
-        // Une boutique ne peut jamais changer le PIN global du livreur.
-        resetPin: false,
       },
       expires_at: expiresAt,
       invited_by: input.invitedBy,

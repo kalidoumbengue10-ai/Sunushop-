@@ -64,7 +64,7 @@ test("offre privée, acceptation idempotente, codes renouvelés et paiement sép
 
     const invite = await data<{ membershipId: string; invitationUrl: string }>(await owner.request.post("/api/merchant/couriers", { data: { merchantId, displayName: "Ibrahima Sow", phone, email: courierEmail, vehicleType: "motorbike" } }), 201);
     const token = new URL(invite.invitationUrl).searchParams.get("token");
-    await data(await courier.request.post("/api/courier/access/activate", { data: { token, pin: "135790", pinConfirmation: "135790" } }));
+    await data(await courier.request.post("/api/courier/access/activate", { data: { token } }));
     const { data: profile } = await admin.from("courier_profiles").select("user_id").eq("phone", phone).single();
     userIds.push(profile!.user_id);
     await data(await courier.request.patch("/api/courier/payment-profile", { data: { wavePaymentNumber: phone, orangeMoneyPaymentNumber: null, preferredPaymentChannel: "wave" } }));

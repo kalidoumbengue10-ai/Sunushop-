@@ -42,7 +42,6 @@ export default defineConfig({
         NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ?? "",
         SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY ?? "",
         DELIVERY_CODE_SECRET: process.env.DELIVERY_CODE_SECRET ?? "e2e-local-delivery-code-secret-32-chars",
-        COURIER_PIN_SECRET: process.env.COURIER_PIN_SECRET ?? "e2e-local-courier-pin-secret-32-chars",
         RATE_LIMIT_HASH_SECRET: process.env.RATE_LIMIT_HASH_SECRET ?? "e2e-local-rate-limit-secret-32-chars",
         SUNUSHOP_E2E_LOCAL_RESET: process.env.SUNUSHOP_E2E_LOCAL_RESET ?? "",
         RESEND_API_KEY: "re_e2e_local",

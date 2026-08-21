@@ -40,19 +40,12 @@ async function preview(admin: ReturnType<typeof requireAdminClient>, invitation:
     .eq("id", invitation.courier_membership_id)
     .single();
   if (error) throw error;
-  const { data: profile } = await admin
-    .from("courier_profiles")
-    .select("pin_configured_at")
-    .eq("id", membership.courier_profile_id)
-    .maybeSingle();
   const shop = Array.isArray(membership.merchant_accounts) ? membership.merchant_accounts[0] : membership.merchant_accounts;
-  const payload = invitation.payload as { resetPin?: boolean } | null;
   return apiSuccess({
     displayName: membership.display_name,
     maskedPhone: membership.phone.replace(/(\d{2})\d+(\d{2})$/, "$1•••••$2"),
     shopName: shop?.public_name ?? "Boutique",
     location: [shop?.city, shop?.region].filter(Boolean).join(" · "),
     expiresAt: invitation.expires_at,
-    mode: !profile?.pin_configured_at || payload?.resetPin ? "set_pin" : "enter_pin",
   }, { requestId });
 }
