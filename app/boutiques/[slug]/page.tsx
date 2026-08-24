@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { MarketplaceClient } from "@/components/marketplace-client";
 import { MvpShell } from "@/components/mvp-shell";
 import { ShopContact } from "@/components/shop-contact";
-import { ShopFollowButton } from "@/components/shop-follow-button";
+import { ShopRelationshipActions } from "@/components/shop-follow-button";
 import { StartConversationButton } from "@/components/start-conversation-button";
 import { LocationMap, NavigationLinks } from "@/components/location-map";
 import { getAdminSupabase } from "@/lib/infrastructure/supabase/server";
@@ -45,21 +45,21 @@ export default async function BoutiquePage({
     <MvpShell>
       <main className="mvp-main">
         <div className="mvp-shell">
-          {coverUrl && (
+          {coverUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img className="mvp-shop-cover" src={coverUrl} alt={`Façade de ${shop.name}`} />
-          )}
-          {logoUrl && (
+          ) : <div className="mvp-shop-cover shop-directory-placeholder" role="img" aria-label={`Couverture indisponible pour ${shop.name}`}>{shop.name.slice(0, 1)}</div>}
+          {logoUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img className="mvp-shop-logo" src={logoUrl} alt={`Logo ${shop.name}`} />
-          )}
+          ) : <div className="mvp-shop-logo shop-directory-placeholder" role="img" aria-label={`Logo indisponible pour ${shop.name}`}>{shop.name.slice(0, 1)}</div>}
           <span className="mvp-eyebrow">Boutique vérifiée</span>
           <h1 className="mvp-title">{shop.name}</h1>
           <p className="mvp-lede">
             {shop.description || "Catalogue marchand SunuShop."}
           </p>
           <div className="mvp-actions">
-            <ShopFollowButton merchantId={shop.id} merchantSlug={shop.slug} />
+            <ShopRelationshipActions merchantId={shop.id} merchantSlug={shop.slug} />
             <StartConversationButton merchantId={shop.id} subject={`Question sur ${shop.name}`} />
           </div>
           <div className="mvp-list">

@@ -151,7 +151,7 @@ export function ProductCard({ product }: { product: CatalogItem }) {
   };
 
   return (
-    <article className="mvp-product">
+    <article className="mvp-product" id={`produit-${product.id}`}>
       <button type="button" className="mvp-product__image-trigger" onClick={() => setDetailOpen(true)} aria-label={`Voir les détails de ${product.title}`}>
         {product.imageUrl ? <>
           {/* eslint-disable-next-line @next/next/no-img-element */}

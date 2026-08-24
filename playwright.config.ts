@@ -3,8 +3,8 @@ import { assertDisposableLocalE2E } from "./e2e/local-environment";
 
 assertDisposableLocalE2E();
 
-const responsiveSuite = /(?:^|[\\/])(?:access-menu|auth-password-visibility|checkout-delivery-region|courier-access-responsive|marketplace|responsive-no-overflow)\.spec\.ts$/;
-const visualResponsiveSuite = /(?:^|[\\/])(?:access-menu|courier-access-responsive|marketplace|responsive-no-overflow)\.spec\.ts$/;
+const responsiveSuite = /(?:^|[\\/])(?:access-menu|auth-password-visibility|checkout-delivery-region|courier-access-responsive|marketplace|responsive-no-overflow|shop-relationships-branding)\.spec\.ts$/;
+const visualResponsiveSuite = /(?:^|[\\/])(?:access-menu|courier-access-responsive|marketplace|responsive-no-overflow|shop-relationships-branding)\.spec\.ts$/;
 
 export default defineConfig({
   testDir: "./e2e",
@@ -43,6 +43,7 @@ export default defineConfig({
         SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY ?? "",
         DELIVERY_CODE_SECRET: process.env.DELIVERY_CODE_SECRET ?? "e2e-local-delivery-code-secret-32-chars",
         RATE_LIMIT_HASH_SECRET: process.env.RATE_LIMIT_HASH_SECRET ?? "e2e-local-rate-limit-secret-32-chars",
+        CRON_SECRET: process.env.CRON_SECRET ?? "e2e-local-cron-secret-32-characters",
         SUNUSHOP_E2E_LOCAL_RESET: process.env.SUNUSHOP_E2E_LOCAL_RESET ?? "",
         RESEND_API_KEY: "re_e2e_local",
         SUNUSHOP_EMAIL_API_URL: "http://127.0.0.1:3110/emails",

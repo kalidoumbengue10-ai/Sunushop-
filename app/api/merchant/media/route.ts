@@ -66,7 +66,8 @@ export async function POST(request: Request) {
       request_id: requestId,
       metadata: { kind },
     });
-    return apiSuccess(data, { status: 201, requestId });
+    const publicUrl = admin.storage.from("merchant-branding").getPublicUrl(uploadedPath).data.publicUrl;
+    return apiSuccess({ ...data, publicUrl }, { status: 201, requestId });
   } catch (error) {
     if (uploadedPath) await requireAdminClient().storage.from("merchant-branding").remove([uploadedPath]);
     return apiFailure(error, requestId);

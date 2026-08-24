@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ShopFollowButton } from "@/components/shop-follow-button";
+import { ShopRelationshipActions } from "@/components/shop-follow-button";
 
 /* eslint-disable @next/next/no-img-element */
 
@@ -21,13 +21,15 @@ export function ShopCard({ shop }: { shop: ShopCardData }) {
       {shop.coverUrl ? (
         <img className="shop-directory-cover" src={shop.coverUrl} alt={`Façade de ${shop.name}`} />
       ) : (
-        <div className="shop-directory-cover shop-directory-placeholder" aria-hidden="true">
+        <div className="shop-directory-cover shop-directory-placeholder" role="img" aria-label={`Couverture indisponible pour ${shop.name}`}>
           <span>{shop.name.slice(0, 1)}</span>
         </div>
       )}
-      <ShopFollowButton merchantId={shop.id} merchantSlug={shop.slug} variant="icon" />
+      <ShopRelationshipActions merchantId={shop.id} merchantSlug={shop.slug} variant="icon" />
       <div className="shop-directory-body">
-        {shop.logoUrl && <img className="mvp-shop-directory-logo" src={shop.logoUrl} alt={`Logo ${shop.name}`} />}
+        {shop.logoUrl
+          ? <img className="mvp-shop-directory-logo" src={shop.logoUrl} alt={`Logo ${shop.name}`} />
+          : <div className="mvp-shop-directory-logo shop-directory-placeholder" role="img" aria-label={`Logo indisponible pour ${shop.name}`}>{shop.name.slice(0, 1)}</div>}
         <span className="shop-category-line">{shop.categories.join(" · ") || "Boutique SunuShop"}</span>
         <h3>{shop.name}</h3>
         <p>{shop.city || "Sénégal"}</p>

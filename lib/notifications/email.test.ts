@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
-import { sendNotificationEmail } from "./email";
+import { renderNotificationEmail, sendNotificationEmail } from "./email";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -10,6 +10,22 @@ afterEach(() => {
 });
 
 describe("sendNotificationEmail", () => {
+  it("regroupe les produits d’une boutique dans un digest unique avec leurs liens", () => {
+    vi.stubEnv("NEXT_PUBLIC_SITE_URL", "https://example.test");
+    const email = renderNotificationEmail("shop_product_digest", {
+      shopName: "Atelier Dakar",
+      shopSlug: "atelier-dakar",
+      products: [
+        { id: "produit-1", title: "Sac tissé" },
+        { id: "produit-2", title: "Panier local" },
+      ],
+    });
+
+    expect(email.subject).toContain("2 nouveautés");
+    expect(email.html).toContain("Sac tissé");
+    expect(email.text).toContain("Panier local");
+    expect(email.text).toContain("https://example.test/boutiques/atelier-dakar#produit-produit-1");
+  });
   it("transmet une clé d'idempotence stable à Resend", async () => {
     vi.stubEnv("RESEND_API_KEY", "re_test");
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(

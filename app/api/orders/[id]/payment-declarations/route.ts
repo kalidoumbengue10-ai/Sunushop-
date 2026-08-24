@@ -1,5 +1,6 @@
 import { requireAdminClient, requireUser } from "@/lib/api/auth";
 import { apiFailure, apiSuccess } from "@/lib/api/response";
+import { parseJsonBody } from "@/lib/api/json";
 import { directPaymentDecisionSchema, directPaymentDeclarationSchema } from "@/lib/domain/schemas";
 import { enqueueEmail } from "@/lib/notifications/outbox";
 
@@ -7,7 +8,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   const requestId = crypto.randomUUID();
   try {
     const { id } = await context.params;
-    const input = directPaymentDeclarationSchema.parse(await request.json());
+    const input = directPaymentDeclarationSchema.parse(await parseJsonBody(request));
     const { supabase } = await requireUser();
     const { data, error } = await supabase.rpc("declare_direct_payment", {
       p_order_id: id,
@@ -36,7 +37,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
   const requestId = crypto.randomUUID();
   try {
     const { id } = await context.params;
-    const input = directPaymentDecisionSchema.parse(await request.json());
+    const input = directPaymentDecisionSchema.parse(await parseJsonBody(request));
     const { supabase } = await requireUser();
     const { data, error } = await supabase.rpc("review_direct_payment", {
       p_declaration_id: input.declarationId,

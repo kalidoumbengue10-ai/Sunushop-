@@ -1,4 +1,4 @@
-﻿export type Json =
+export type Json =
   | string
   | number
   | boolean
@@ -7,11 +7,6 @@
   | Json[]
 
 export type Database = {
-  // Allows to automatically instantiate createClient with right options
-  // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
-  __InternalSupabase: {
-    PostgrestVersion: "14.15"
-  }
   public: {
     Tables: {
       addresses: {
@@ -2632,8 +2627,8 @@ export type Database = {
           id: string
           last_error: string | null
           payload: Json
-          processing_started_at: string | null
           processed_at: string | null
+          processing_started_at: string | null
           provider_message_id: string | null
           recipient_user_id: string | null
           status: Database["public"]["Enums"]["notification_status"]
@@ -2653,8 +2648,8 @@ export type Database = {
           id?: string
           last_error?: string | null
           payload: Json
-          processing_started_at?: string | null
           processed_at?: string | null
+          processing_started_at?: string | null
           provider_message_id?: string | null
           recipient_user_id?: string | null
           status?: Database["public"]["Enums"]["notification_status"]
@@ -2674,8 +2669,8 @@ export type Database = {
           id?: string
           last_error?: string | null
           payload?: Json
-          processing_started_at?: string | null
           processed_at?: string | null
+          processing_started_at?: string | null
           provider_message_id?: string | null
           recipient_user_id?: string | null
           status?: Database["public"]["Enums"]["notification_status"]
@@ -3583,6 +3578,75 @@ export type Database = {
         }
         Relationships: []
       }
+      shop_favorites: {
+        Row: {
+          buyer_id: string
+          created_at: string
+          id: string
+          merchant_id: string
+        }
+        Insert: {
+          buyer_id: string
+          created_at?: string
+          id?: string
+          merchant_id: string
+        }
+        Update: {
+          buyer_id?: string
+          created_at?: string
+          id?: string
+          merchant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "shop_favorites_buyer_id_fkey"
+            columns: ["buyer_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "shop_favorites_merchant_id_fkey"
+            columns: ["merchant_id"]
+            isOneToOne: false
+            referencedRelation: "merchant_accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      shop_follow_product_broadcasts: {
+        Row: {
+          broadcasted_at: string
+          merchant_id: string
+          product_id: string
+        }
+        Insert: {
+          broadcasted_at?: string
+          merchant_id: string
+          product_id: string
+        }
+        Update: {
+          broadcasted_at?: string
+          merchant_id?: string
+          product_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "shop_follow_product_broadcasts_merchant_id_fkey"
+            columns: ["merchant_id"]
+            isOneToOne: false
+            referencedRelation: "merchant_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "shop_follow_product_broadcasts_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: true
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       shop_follows: {
         Row: {
           buyer_id: string
@@ -4342,14 +4406,6 @@ export type Database = {
         }
         Returns: string
       }
-      cancel_delivery_offer: {
-        Args: { p_actor_id: string; p_offer_id: string }
-        Returns: Database["public"]["Tables"]["delivery_offers"]["Row"]
-      }
-      courier_delivery_dashboard_stats: {
-        Args: never
-        Returns: Json
-      }
       activate_subscription_from_payment: {
         Args: {
           p_amount_xof: number
@@ -4447,6 +4503,34 @@ export type Database = {
         }[]
       }
       award_order_loyalty: { Args: { p_order_id: string }; Returns: undefined }
+      cancel_delivery_offer: {
+        Args: { p_actor_id: string; p_offer_id: string }
+        Returns: {
+          cancelled_at: string | null
+          client_delivery_fee_xof: number
+          courier_fee_xof: number
+          courier_membership_id: string
+          created_at: string
+          created_by: string
+          distance_meters: number
+          duration_seconds: number
+          expires_at: string
+          id: string
+          idempotency_key: string | null
+          merchant_id: string
+          order_id: string
+          responded_at: string | null
+          route_snapshot: Json | null
+          status: string
+          updated_at: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "delivery_offers"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
       capture_order_payment: {
         Args: {
           p_amount_xof: number
@@ -4484,11 +4568,63 @@ export type Database = {
       claim_notification_outbox:
         | {
             Args: { p_limit?: number }
-            Returns: Database["public"]["Tables"]["notification_outbox"]["Row"][]
+            Returns: {
+              attempts: number
+              available_at: string
+              bounced_at: string | null
+              channel: string
+              created_at: string
+              dedupe_key: string | null
+              delivered_at: string | null
+              delivery_state: string
+              id: string
+              last_error: string | null
+              payload: Json
+              processed_at: string | null
+              processing_started_at: string | null
+              provider_message_id: string | null
+              recipient_user_id: string | null
+              status: Database["public"]["Enums"]["notification_status"]
+              suppressed_at: string | null
+              suppression_reason: string | null
+              template: string
+            }[]
+            SetofOptions: {
+              from: "*"
+              to: "notification_outbox"
+              isOneToOne: false
+              isSetofReturn: true
+            }
           }
         | {
             Args: { p_dedupe_prefix: string; p_limit: number }
-            Returns: Database["public"]["Tables"]["notification_outbox"]["Row"][]
+            Returns: {
+              attempts: number
+              available_at: string
+              bounced_at: string | null
+              channel: string
+              created_at: string
+              dedupe_key: string | null
+              delivered_at: string | null
+              delivery_state: string
+              id: string
+              last_error: string | null
+              payload: Json
+              processed_at: string | null
+              processing_started_at: string | null
+              provider_message_id: string | null
+              recipient_user_id: string | null
+              status: Database["public"]["Enums"]["notification_status"]
+              suppressed_at: string | null
+              suppression_reason: string | null
+              template: string
+            }[]
+            SetofOptions: {
+              from: "*"
+              to: "notification_outbox"
+              isOneToOne: false
+              isSetofReturn: true
+            }
           }
       complete_delivery_stage: {
         Args: { p_actor_id: string; p_delivery_id: string; p_stage: string }
@@ -4577,6 +4713,7 @@ export type Database = {
         }
         Returns: boolean
       }
+      courier_delivery_dashboard_stats: { Args: never; Returns: Json }
       courier_verification_case_is_complete: {
         Args: { p_case_id: string }
         Returns: boolean
@@ -4751,7 +4888,11 @@ export type Database = {
         }
       }
       document_retention_candidates: {
-        Args: { p_closed_days?: number; p_limit?: number; p_rejected_days?: number }
+        Args: {
+          p_closed_days?: number
+          p_limit?: number
+          p_rejected_days?: number
+        }
         Returns: {
           document_id: string
           storage_bucket: string
@@ -4819,7 +4960,11 @@ export type Database = {
             Returns: number
           }
         | {
-            Args: { p_cart_ids: string[]; p_inactivity_hours: number; p_limit: number }
+            Args: {
+              p_cart_ids: string[]
+              p_inactivity_hours: number
+              p_limit: number
+            }
             Returns: number
           }
       mark_escrow_refunded: {
@@ -5006,15 +5151,6 @@ export type Database = {
         Args: { p_limit?: number; p_retention_days?: number }
         Returns: number
       }
-      report_delivery_failure: {
-        Args: {
-          p_actor_id: string
-          p_delivery_id: string
-          p_details: string
-          p_reason: string
-        }
-        Returns: Database["public"]["Tables"]["deliveries"]["Row"]
-      }
       record_courier_payout: {
         Args: {
           p_actor_id: string
@@ -5098,6 +5234,54 @@ export type Database = {
       reorder_merchant_product_media: {
         Args: { p_media_ids: string[]; p_product_id: string }
         Returns: Json
+      }
+      report_delivery_failure: {
+        Args: {
+          p_actor_id: string
+          p_delivery_id: string
+          p_details: string
+          p_reason: string
+        }
+        Returns: {
+          assigned_at: string
+          assigned_by: string
+          code_attempt_limit: number
+          commission_status: string
+          courier_fee_xof: number | null
+          courier_membership_id: string
+          courier_payable_xof: number
+          courier_payment_status: string
+          courier_payout_id: string | null
+          created_at: string
+          delivered_at: string | null
+          delivery_offer_id: string | null
+          failure_reason: string | null
+          gross_delivery_fee_xof: number
+          id: string
+          merchant_id: string
+          order_id: string
+          pickup_code_attempts: number
+          pickup_code_hash: string
+          pickup_snapshot: Json
+          pickup_verified_at: string | null
+          platform_commission_rate_bps: number
+          platform_commission_xof: number
+          recipient_code_attempts: number
+          recipient_code_hash: string
+          recipient_code_version: number
+          route_distance_meters: number | null
+          route_duration_seconds: number | null
+          route_snapshot: Json | null
+          status: Database["public"]["Enums"]["delivery_status"]
+          terminal_at: string | null
+          updated_at: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "deliveries"
+          isOneToOne: true
+          isSetofReturn: false
+        }
       }
       resolve_delivery_dispute: {
         Args: {
@@ -5546,15 +5730,6 @@ export type Database = {
           total_count: number
         }[]
       }
-      verify_delivery_code_atomic: {
-        Args: {
-          p_actor_id: string
-          p_code: string
-          p_delivery_id: string
-          p_stage: string
-        }
-        Returns: Json
-      }
       submit_courier_verification_case: {
         Args: { p_case_id: string }
         Returns: {
@@ -5746,6 +5921,15 @@ export type Database = {
       verification_case_is_complete: {
         Args: { p_case_id: string }
         Returns: boolean
+      }
+      verify_delivery_code_atomic: {
+        Args: {
+          p_actor_id: string
+          p_code: string
+          p_delivery_id: string
+          p_stage: string
+        }
+        Returns: Json
       }
       void_courier_payout: {
         Args: { p_actor_id: string; p_payout_id: string; p_reason: string }

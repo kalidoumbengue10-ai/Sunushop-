@@ -105,6 +105,7 @@ type MerchantOrder = {
 type MerchantWorkspaceProps = {
   memberRole: MerchantWorkspaceRole;
   merchant: Merchant | null;
+  branding: { logoUrl: string | null; coverUrl: string | null };
   verificationCase: VerificationCase | null;
   documents: DocumentRow[];
   categories: Array<{ id: string; name: string; slug: string }>;
@@ -695,7 +696,7 @@ export function MerchantWorkspace(props: MerchantWorkspaceProps) {
           </div>
         )}
 
-        {tab === "boutique" && <MerchantMedia merchantId={props.merchant.id} />}
+        {tab === "boutique" && <MerchantMedia merchantId={props.merchant.id} initialMedia={props.branding} />}
 
         {tab === "dashboard" && <section className="merchant-content-surface merchant-content-surface--dashboard"><MerchantDashboard merchantId={props.merchant.id} /></section>}
 

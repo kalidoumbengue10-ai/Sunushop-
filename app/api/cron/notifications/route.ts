@@ -15,23 +15,6 @@ export async function GET(request: Request) {
   try {
     requireCron(request);
     const admin = requireAdminClient();
-    const staleBefore = new Date(Date.now() - 60 * 60 * 1000).toISOString();
-    const { data: stale } = await admin
-      .from("notification_outbox")
-      .select("id, template, created_at")
-      .eq("channel", "email")
-      .eq("status", "pending")
-      .eq("attempts", 0)
-      .is("suppressed_at", null)
-      .lt("created_at", staleBefore)
-      .limit(25);
-    if (stale?.length) {
-      Sentry.captureMessage("Notifications en attente sans tentative", {
-        level: "warning",
-        tags: { cron: "notifications" },
-        extra: { notifications: stale },
-      });
-    }
     // Claim atomique (select + update status='processing' dans la même
     // transaction, verrouillage `for update skip locked`) : deux exécutions
     // qui se chevauchent ne peuvent jamais traiter la même notification.
@@ -75,6 +58,27 @@ export async function GET(request: Request) {
       results.push(...await Promise.all(chunk.map(processItem)));
     }
     const sent = results.filter(Boolean).length;
+    // On contrôle le reliquat après traitement et seulement après plus d'un
+    // cycle quotidien complet, afin de ne pas signaler les digests planifiés.
+    const staleBefore = new Date(Date.now() - 26 * 60 * 60 * 1000).toISOString();
+    const { data: stale, error: staleError } = await admin
+      .from("notification_outbox")
+      .select("id, template, created_at, available_at")
+      .eq("channel", "email")
+      .eq("status", "pending")
+      .eq("attempts", 0)
+      .is("suppressed_at", null)
+      .lt("available_at", staleBefore)
+      .limit(25);
+    if (staleError) throw staleError;
+    if (stale?.length) {
+      Sentry.captureMessage("Notifications en attente après un cycle quotidien complet", {
+        level: "warning",
+        tags: { cron: "notifications", requestId },
+        fingerprint: ["notifications-stale-after-daily-cycle"],
+        extra: { notifications: stale },
+      });
+    }
     return apiSuccess({ processed: pending?.length ?? 0, sent }, { requestId });
   } catch (error) {
     return apiFailure(error, requestId);

@@ -20,7 +20,28 @@ function copyFor(template: string, payload: Record<string, unknown>): EmailCopy 
   const order = escapeHtml(payload.orderCode ?? "");
   const amount = formatXof(payload.totalXof ?? payload.amountXof);
   const url = String(payload.url ?? "");
+  const siteUrl = (process.env.NEXT_PUBLIC_SITE_URL ?? "https://sunushop.fr").replace(/\/$/, "");
+  const digestProducts = Array.isArray(payload.products)
+    ? payload.products.flatMap((item) => {
+        if (!item || typeof item !== "object") return [];
+        const product = item as Record<string, unknown>;
+        return [{ title: String(product.title ?? "Nouveau produit"), id: String(product.id ?? "") }];
+      })
+    : [];
   switch (template) {
+    case "shop_product_digest": {
+      const shopUrl = `${siteUrl}/boutiques/${encodeURIComponent(String(payload.shopSlug ?? ""))}`;
+      const count = digestProducts.length;
+      return {
+        subject: `${count > 1 ? `${count} nouveautés` : "Une nouveauté"} chez ${String(payload.shopName ?? "une boutique suivie")}`,
+        preheader: `Découvrez les dernières publications de ${shop}.`,
+        title: `Les nouveautés de ${String(payload.shopName ?? "votre boutique suivie")}`,
+        body: `<strong>${shop}</strong> vient de publier ${count > 1 ? `${count} nouveaux produits` : "un nouveau produit"}.`,
+        details: digestProducts.map((product) => `${escapeHtml(product.title)} — ${escapeHtml(`${shopUrl}#produit-${product.id}`)}`),
+        cta: "Voir la boutique",
+        url: shopUrl,
+      };
+    }
     case "merchant_application_received": return { subject: `Nouvelle candidature SunuShop — ${String(payload.shopName ?? "boutique")}`, preheader: "Une nouvelle candidature commerçant a été déposée.", title: "Nouvelle candidature commerçant", body: `<strong>${escapeHtml(payload.contactName)}</strong> souhaite référencer <strong>${shop}</strong>.`, details: [`E-mail : ${escapeHtml(payload.email)}`, `Téléphone : ${escapeHtml(payload.phone)}`] };
     case "prelaunch_lead_received": return { subject: `Nouveau contact SunuShop — ${String(payload.shopName ?? "boutique")}`, preheader: "Un nouveau contact souhaite rejoindre SunuShop.", title: "Nouveau contact de pré-lancement", body: `<strong>${escapeHtml(payload.contactName)}</strong> souhaite présenter <strong>${shop}</strong>.`, details: [`E-mail : ${escapeHtml(payload.email)}`, `Téléphone : ${escapeHtml(payload.phone)}`] };
     case "merchant_invitation": return { subject: `SunuShop — Votre lien sécurisé pour déposer vos documents`, preheader: `Accédez au dossier marchand de ${shop}.`, title: "Votre accès au dépôt de documents", body: `Votre candidature pour <strong>${shop}</strong> a bien été reçue. Cliquez sur le bouton ci-dessous pour créer votre mot de passe, ouvrir votre espace sécurisé et déposer les documents demandés. Ce lien personnel est valable sept jours.`, cta: "Accéder à mon dossier marchand", url };

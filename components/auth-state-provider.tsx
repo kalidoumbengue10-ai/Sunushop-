@@ -29,7 +29,7 @@ export function AuthStateProvider({ children }: { children: React.ReactNode }) {
         const [{ data: adminRoles }, { data: merchantMemberships }, { data: courierMemberships }] = await Promise.all([
           supabase.from("admin_roles").select("role").eq("user_id", user.id).eq("active", true).limit(1),
           supabase.from("merchant_members").select("merchant_id").eq("user_id", user.id).eq("active", true).limit(1),
-          supabase.from("courier_memberships").select("id").eq("courier_user_id", user.id).eq("active", true).limit(1),
+          supabase.from("courier_memberships").select("id").eq("courier_user_id", user.id).eq("status", "active").limit(1),
         ]);
         const area: AuthArea = adminRoles?.length
           ? "admin"

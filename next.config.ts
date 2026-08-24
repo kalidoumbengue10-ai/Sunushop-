@@ -3,6 +3,11 @@ import { withSentryConfig } from "@sentry/nextjs";
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  env: {
+    // Vercel ne rend pas ses variables système accessibles au navigateur par
+    // défaut. Cette copie permet de désactiver télémétrie et Sentry en preview.
+    NEXT_PUBLIC_VERCEL_ENV: process.env.VERCEL_ENV ?? "",
+  },
   allowedDevOrigins: ["127.0.0.1", "localhost"],
   outputFileTracingRoot: process.cwd(),
   async headers() {
@@ -32,7 +37,7 @@ const nextConfig: NextConfig = {
       // y compris en production — sans cela le widget ne s'active jamais.
       "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://challenges.cloudflare.com",
       "style-src 'self' 'unsafe-inline'",
-      "img-src 'self' data: blob: https:",
+      `img-src 'self' data: blob: https: ${localSupabaseSources.join(" ")}`,
       "font-src 'self' data:",
       `connect-src 'self' https://*.supabase.co wss://*.supabase.co ${localSupabaseSources.join(" ")} https://challenges.cloudflare.com https://tiles.openfreemap.org https://*.ingest.de.sentry.io https://*.i.posthog.com`,
       "worker-src 'self' blob:",

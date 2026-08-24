@@ -46,6 +46,8 @@ export default async function MerchantOrderPage({ params }: { params: Promise<{ 
 
   const recipient = snapshot(order.recipient_snapshot);
   const delivery = snapshot(order.delivery_snapshot);
+  const deliveries = order.deliveries ?? [];
+  const refunds = order.order_refunds ?? [];
 
   return <MvpShell>
     <main className="mvp-main"><div className="mvp-shell">
@@ -88,9 +90,9 @@ export default async function MerchantOrderPage({ params }: { params: Promise<{ 
         {!order.order_events.length && <p className="mvp-empty">Aucun événement enregistré.</p>}
       </section>
 
-      {(order.deliveries.length > 0 || order.order_refunds.length > 0) && <div className="mvp-grid mvp-grid--two">
-        <section className="mvp-card"><h2>Livraison</h2>{order.deliveries.map((item) => <div key={item.id}><span className="mvp-status" data-status={item.status}>{merchantStatusLabel(item.status)}</span>{item.failure_reason && <p className="mvp-alert mvp-alert--warning">Échec : {item.failure_reason}. Livraison à reprogrammer.</p>}</div>)}</section>
-        <section className="mvp-card"><h2>Remboursements</h2>{order.order_refunds.map((item) => <div className="mvp-row" key={item.id}><div><strong>{formatPrice(item.amount_xof)}</strong><small>{item.channel} · {item.external_reference}</small></div><span className="mvp-status" data-status={item.status}>{merchantStatusLabel(item.status)}</span></div>)}{!order.order_refunds.length && <p className="mvp-empty">Aucun remboursement.</p>}</section>
+      {(deliveries.length > 0 || refunds.length > 0) && <div className="mvp-grid mvp-grid--two">
+        <section className="mvp-card"><h2>Livraison</h2>{deliveries.map((item) => <div key={item.id}><span className="mvp-status" data-status={item.status}>{merchantStatusLabel(item.status)}</span>{item.failure_reason && <p className="mvp-alert mvp-alert--warning">Échec : {item.failure_reason}. Livraison à reprogrammer.</p>}</div>)}</section>
+        <section className="mvp-card"><h2>Remboursements</h2>{refunds.map((item) => <div className="mvp-row" key={item.id}><div><strong>{formatPrice(item.amount_xof)}</strong><small>{item.channel} · {item.external_reference}</small></div><span className="mvp-status" data-status={item.status}>{merchantStatusLabel(item.status)}</span></div>)}{!refunds.length && <p className="mvp-empty">Aucun remboursement.</p>}</section>
       </div>}
     </div></main>
   </MvpShell>;

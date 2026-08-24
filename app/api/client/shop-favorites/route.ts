@@ -10,7 +10,7 @@ export async function GET() {
     const { user } = await requireUser();
     const admin = requireAdminClient();
     const { data, error } = await admin
-      .from("shop_follows")
+      .from("shop_favorites")
       .select("id, merchant_id, created_at, merchant_accounts!inner(id, public_name, slug, city, region)")
       .eq("buyer_id", user.id)
       .eq("merchant_accounts.status", "active")
@@ -45,10 +45,10 @@ export async function POST(request: Request) {
     const admin = requireAdminClient();
     await requirePublicShop(admin, input.merchantId);
     const { error } = await admin
-      .from("shop_follows")
+      .from("shop_favorites")
       .upsert({ buyer_id: user.id, merchant_id: input.merchantId }, { onConflict: "buyer_id,merchant_id" });
     if (error) throw error;
-    return apiSuccess({ following: true }, { status: 201, requestId });
+    return apiSuccess({ favorite: true }, { status: 201, requestId });
   } catch (error) {
     return apiFailure(error, requestId);
   }
@@ -60,32 +60,13 @@ export async function DELETE(request: Request) {
     const input = shopFollowInputSchema.parse(await parseJsonBody(request));
     const { user } = await requireUser();
     const admin = requireAdminClient();
-    const { data: relation, error: relationError } = await admin
-      .from("shop_follows")
-      .select("id")
-      .eq("buyer_id", user.id)
-      .eq("merchant_id", input.merchantId)
-      .maybeSingle();
-    if (relationError) throw relationError;
-    if (relation) {
-      const { error: suppressionError } = await admin
-        .from("notification_outbox")
-        .update({
-          suppressed_at: new Date().toISOString(),
-          suppression_reason: "shop_unfollowed_before_digest",
-        })
-        .like("dedupe_key", `shop-follow-digest:${relation.id}:%`)
-        .in("status", ["pending", "failed"])
-        .is("suppressed_at", null);
-      if (suppressionError) throw suppressionError;
-    }
     const { error } = await admin
-      .from("shop_follows")
+      .from("shop_favorites")
       .delete()
       .eq("buyer_id", user.id)
       .eq("merchant_id", input.merchantId);
     if (error) throw error;
-    return apiSuccess({ following: false }, { requestId });
+    return apiSuccess({ favorite: false }, { requestId });
   } catch (error) {
     return apiFailure(error, requestId);
   }

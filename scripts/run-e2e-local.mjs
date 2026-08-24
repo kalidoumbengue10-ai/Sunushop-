@@ -103,6 +103,7 @@ try {
     NEXT_PUBLIC_SITE_URL: "http://127.0.0.1:3107",
     DELIVERY_CODE_SECRET: "e2e-local-delivery-code-secret-32-chars",
     RATE_LIMIT_HASH_SECRET: "e2e-local-rate-limit-secret-32-chars",
+    CRON_SECRET: "e2e-local-cron-secret-32-characters",
     SUNUSHOP_E2E_LOCAL_RESET: "1",
     SUNUSHOP_E2E_PRODUCTION_SERVER: "1",
     SUNUSHOP_E2E_RUN_ID: `run-${new Date().toISOString().replaceAll(":", "-").replaceAll(".", "-")}-${crypto.randomUUID().slice(0, 8)}`,

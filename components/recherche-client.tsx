@@ -7,7 +7,7 @@ import { ShopCard } from "@/components/shop-card";
 import type { CatalogItem } from "@/lib/domain/repositories";
 import { SENEGAL_REGIONS } from "@/lib/domain/merchant-ui";
 
-type ShopResult = { id: string; public_name: string; slug: string; city: string | null; region: string | null };
+type ShopResult = { id: string; name: string; slug: string; city: string | null; region: string | null; logoUrl: string | null; coverUrl: string | null };
 type CategoryOption = { id: string; name: string; slug: string };
 
 type ResultTab = "produits" | "boutiques";
@@ -128,7 +128,7 @@ export function RechercheClient() {
             shops.length
               ? <div className="shop-directory-grid">{shops.map((shop) => (
                   <ShopCard
-                    shop={{ id: shop.id, name: shop.public_name, slug: shop.slug, city: shop.city, categories: [], coverUrl: null, logoUrl: null }}
+                    shop={{ id: shop.id, name: shop.name, slug: shop.slug, city: shop.city, categories: [], coverUrl: shop.coverUrl, logoUrl: shop.logoUrl }}
                     key={shop.id}
                   />
                 ))}</div>

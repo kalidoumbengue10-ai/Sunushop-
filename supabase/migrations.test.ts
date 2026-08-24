@@ -67,6 +67,8 @@ describe("contrat statique des migrations", () => {
       "courier_verification_cases",
       "courier_verification_documents",
       "courier_verification_events",
+      "shop_favorites",
+      "shop_follow_product_broadcasts",
     ].forEach((table) => {
       expect(sql).toContain(
         `alter table public.${table} enable row level security;`,
@@ -108,6 +110,19 @@ describe("contrat statique des migrations", () => {
     expect(sql).toContain("PAYTECH_DISABLED");
     expect(sql).toContain("revoke insert, update, delete on public.payment_intents");
     expect(sql).toContain("LOYALTY_PROGRAM_FROZEN");
+  });
+
+  it("sépare les favoris et regroupe les nouveautés des boutiques suivies", () => {
+    expect(sql).toContain("create table public.shop_favorites");
+    expect(sql).toContain("unique (buyer_id, merchant_id)");
+    expect(sql).toContain("insert into public.shop_favorites (buyer_id, merchant_id, created_at)");
+    expect(sql).toContain("on conflict (buyer_id, merchant_id) do nothing");
+    expect(sql).toContain("create table public.shop_follow_product_broadcasts");
+    expect(sql).toContain("create function public.queue_shop_follow_product_digest");
+    expect(sql).toContain("'shop_product_digest'");
+    expect(sql).toContain("'shop-follow-digest:' || sf.id::text");
+    expect(sql).toContain("old.status = 'published'::public.product_status");
+    expect(sql).toContain("where public.notification_outbox.status in ('pending', 'failed')");
   });
 
   it("garde les correctifs de fiabilité post-audit", () => {

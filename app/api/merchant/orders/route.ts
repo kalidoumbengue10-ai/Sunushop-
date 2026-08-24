@@ -44,7 +44,11 @@ export async function GET(request: Request) {
 
     const total = count ?? 0;
     return apiSuccess({
-      items: data ?? [],
+      items: (data ?? []).map((order) => ({
+        ...order,
+        deliveries: order.deliveries ?? [],
+        direct_payment_declarations: order.direct_payment_declarations ?? [],
+      })),
       total,
       page: input.page,
       limit: input.limit,

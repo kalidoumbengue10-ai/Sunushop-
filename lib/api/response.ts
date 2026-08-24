@@ -28,8 +28,17 @@ export function apiFailure(error: unknown, requestId = crypto.randomUUID()) {
       causeMessage:
         typeof cause?.message === "string" ? cause.message : "Unknown error",
     });
-    Sentry.captureException(error, {
-      tags: { requestId, errorCode: normalized.code },
+    const sentryError = error instanceof Error
+      ? error
+      : Object.assign(new Error(typeof cause?.message === "string" ? cause.message : "Unknown API failure"), {
+          name: typeof cause?.name === "string" ? cause.name : "ApiFailure",
+        });
+    const causeCode = typeof cause?.code === "string" ? cause.code : "unknown";
+    const causeName = typeof cause?.name === "string" ? cause.name : sentryError.name;
+    Sentry.captureException(sentryError, {
+      tags: { requestId, errorCode: normalized.code, causeCode, causeName },
+      fingerprint: ["api-route-failure", normalized.code, causeCode, causeName],
+      extra: { requestId, originalCause: error },
     });
   }
   return NextResponse.json(

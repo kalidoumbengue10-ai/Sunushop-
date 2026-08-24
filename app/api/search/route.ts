@@ -2,6 +2,7 @@ import { requireAdminClient } from "@/lib/api/auth";
 import { apiFailure, apiSuccess } from "@/lib/api/response";
 import { SupabaseCatalogRepository } from "@/lib/infrastructure/supabase/repositories";
 import { searchQuerySchema } from "@/lib/domain/schemas";
+import { attachShopBranding } from "@/lib/marketplace/shop-summaries";
 
 export async function GET(request: Request) {
   const requestId = crypto.randomUUID();
@@ -42,11 +43,12 @@ export async function GET(request: Request) {
     ]);
     if (shopsError) throw shopsError;
     if (categoriesError) throw categoriesError;
+    const brandedShops = await attachShopBranding(admin, shops ?? []);
 
     return apiSuccess(
       {
         products: productPage.products,
-        shops: shops ?? [],
+        shops: brandedShops,
         filters: { categories: categories ?? [] },
         pagination: {
           page: productPage.page,

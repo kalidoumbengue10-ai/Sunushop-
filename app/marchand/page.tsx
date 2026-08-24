@@ -134,6 +134,7 @@ export default async function MarchandPage({ searchParams }: { searchParams: Pro
     { data: orders, count: ordersCount },
     { data: notifications },
     { data: platformPaymentSettings },
+    { data: merchantMedia },
   ] = await Promise.all([
     admin!
       .from("verification_cases")
@@ -194,6 +195,10 @@ export default async function MarchandPage({ searchParams }: { searchParams: Pro
       .order("created_at", { ascending: false })
       .limit(20),
     platformPaymentSettingsPromise,
+    admin!
+      .from("merchant_media")
+      .select("kind, storage_bucket, storage_path")
+      .eq("merchant_id", merchant.id),
   ]);
 
   const productsWithMediaUrls = (products ?? []).map((product) => ({
@@ -203,6 +208,15 @@ export default async function MarchandPage({ searchParams }: { searchParams: Pro
       url: admin!.storage.from("product-media").getPublicUrl(media.storage_path).data.publicUrl,
     })),
   }));
+  const branding = (merchantMedia ?? []).reduce(
+    (current, item) => {
+      const publicUrl = admin!.storage.from(item.storage_bucket).getPublicUrl(item.storage_path).data.publicUrl;
+      if (item.kind === "logo") current.logoUrl = publicUrl;
+      if (item.kind === "cover") current.coverUrl = publicUrl;
+      return current;
+    },
+    { logoUrl: null, coverUrl: null } as { logoUrl: string | null; coverUrl: string | null },
+  );
 
   return (
     <MvpShell>
@@ -212,6 +226,7 @@ export default async function MarchandPage({ searchParams }: { searchParams: Pro
           <MerchantWorkspace
             memberRole={membership!.role}
             merchant={merchant}
+            branding={branding}
             verificationCase={verificationCase}
             documents={documents ?? []}
             categories={categories ?? []}
@@ -220,7 +235,11 @@ export default async function MarchandPage({ searchParams }: { searchParams: Pro
             zones={zones ?? []}
             subscription={subscription}
             payments={payments ?? []}
-            orders={orders ?? []}
+            orders={(orders ?? []).map((order) => ({
+              ...order,
+              deliveries: order.deliveries ?? [],
+              direct_payment_declarations: order.direct_payment_declarations ?? [],
+            }))}
             ordersTotal={ordersCount ?? 0}
             notifications={notifications ?? []}
             subscriptionPaymentNumbers={{

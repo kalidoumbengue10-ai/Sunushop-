@@ -5,8 +5,11 @@ import { usePathname, useSearchParams } from "next/navigation";
 import posthog from "posthog-js";
 import { PostHogProvider as PHProvider } from "posthog-js/react";
 
-if (typeof window !== "undefined" && process.env.NEXT_PUBLIC_POSTHOG_KEY) {
-  posthog.init(process.env.NEXT_PUBLIC_POSTHOG_KEY, {
+const posthogKey = process.env.NEXT_PUBLIC_POSTHOG_KEY ?? "";
+const analyticsEnabled = process.env.NEXT_PUBLIC_VERCEL_ENV === "production" && Boolean(posthogKey);
+
+if (typeof window !== "undefined" && analyticsEnabled) {
+  posthog.init(posthogKey, {
     api_host: process.env.NEXT_PUBLIC_POSTHOG_HOST ?? "https://us.i.posthog.com",
     person_profiles: "identified_only",
     capture_pageview: false,
@@ -29,7 +32,7 @@ function PageviewTracker() {
 }
 
 export function PostHogProvider({ children }: { children: React.ReactNode }) {
-  if (!process.env.NEXT_PUBLIC_POSTHOG_KEY) {
+  if (!analyticsEnabled) {
     return <>{children}</>;
   }
 

@@ -262,7 +262,7 @@ export function AuthFlow({ turnstileSiteKey }: { turnstileSiteKey?: string }) {
           )}
           {profile === "vendeur" && !invitationNext && mode !== "recover" && (
             <p className="auth-admin-note">
-              Les commerçants se connectent ici. Les livreurs ouvrent directement le lien personnel envoyé par leur boutique sur WhatsApp.
+              Les commerçants se connectent ici après une invitation ou la création de leur boutique. Les livreurs ouvrent directement le lien personnel envoyé par leur boutique sur WhatsApp.
               <br /><Link href="/creer-ma-boutique">Vous souhaitez vendre ? Créer ma boutique</Link>
             </p>
           )}

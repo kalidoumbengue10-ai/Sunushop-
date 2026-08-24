@@ -9,10 +9,12 @@ import { AbandonedCarts } from "@/components/abandoned-carts";
 import { LocationPicker } from "@/components/location-map";
 import type { Coordinates } from "@/lib/domain/geo";
 import { SenegalPhoneInput } from "@/components/senegal-phone-input";
+import { ShopCard, type ShopCardData } from "@/components/shop-card";
+import { useShopRelationships } from "@/components/favorites-provider";
 
 type Address = { id: string; label: string; recipient_name: string; phone: string; region: string; city: string; address_hint: string; latitude: number | null; longitude: number | null; is_default: boolean };
 type Order = { id: string; public_code: string; status: string; total_xof: number; created_at: string; merchant_accounts: { public_name: string } | Array<{ public_name: string }> };
-type ShopFollow = { merchant_id: string; created_at: string; merchant_accounts: { public_name: string; slug: string; city: string | null; region: string | null } | Array<{ public_name: string; slug: string; city: string | null; region: string | null }> };
+type ShopRelation = { relationId: string; merchantId: string; createdAt: string; shop: ShopCardData & { region: string | null } };
 
 const ORDER_TABS = ["en_cours", "terminees", "annulees"] as const;
 type OrderTab = (typeof ORDER_TABS)[number];
@@ -27,9 +29,11 @@ function orderTab(status: string): OrderTab {
 }
 
 export function ClientWorkspace() {
+  const { toggleFollow, toggleFavorite } = useShopRelationships();
   const [addresses, setAddresses] = useState<Address[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
-  const [shopFollows, setShopFollows] = useState<ShopFollow[]>([]);
+  const [shopFollows, setShopFollows] = useState<ShopRelation[]>([]);
+  const [shopFavorites, setShopFavorites] = useState<ShopRelation[]>([]);
   const [activeTab, setActiveTab] = useState<OrderTab>("en_cours");
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
@@ -38,20 +42,23 @@ export function ClientWorkspace() {
   const [editingAddress, setEditingAddress] = useState<Address | null>(null);
   const [addressBusy, setAddressBusy] = useState(false);
   const load = useCallback(async () => {
-    const [addressResponse, orderResponse, shopFollowResponse] = await Promise.all([
+    const [addressResponse, orderResponse, shopFollowResponse, shopFavoriteResponse] = await Promise.all([
       fetch("/api/client/addresses"),
       fetch("/api/client/orders"),
       fetch("/api/client/shop-follows"),
+      fetch("/api/client/shop-favorites"),
     ]);
-    const [addressPayload, orderPayload, shopFollowPayload] = await Promise.all([
+    const [addressPayload, orderPayload, shopFollowPayload, shopFavoritePayload] = await Promise.all([
       addressResponse.json(),
       orderResponse.json(),
       shopFollowResponse.json(),
+      shopFavoriteResponse.json(),
     ]);
     if (!addressResponse.ok) throw new Error(addressPayload.error?.message);
     if (!orderResponse.ok) throw new Error(orderPayload.error?.message);
     if (!shopFollowResponse.ok) throw new Error(shopFollowPayload.error?.message);
-    setAddresses(addressPayload.data.items); setOrders(orderPayload.data.items); setShopFollows(shopFollowPayload.data.items);
+    if (!shopFavoriteResponse.ok) throw new Error(shopFavoritePayload.error?.message);
+    setAddresses(addressPayload.data.items); setOrders(orderPayload.data.items); setShopFollows(shopFollowPayload.data.items); setShopFavorites(shopFavoritePayload.data.items);
   }, []);
   useEffect(() => {
     // Chargement réseau initial, puis abonnement aux mises à jour.
@@ -115,9 +122,14 @@ export function ClientWorkspace() {
     } catch { setError("Impossible de joindre SunuShop pour archiver cette adresse."); }
     finally { setAddressBusy(false); }
   };
-  const unfollow = async (merchantId: string) => {
-    const response = await fetch("/api/client/shop-follows", { method: "DELETE", headers: { "content-type": "application/json" }, body: JSON.stringify({ merchantId }) });
-    if (!response.ok) return setError("Boutique non retirée des favoris."); await load();
+  const removeRelationship = async (kind: "follow" | "favorite", merchantId: string) => {
+    setError("");
+    try {
+      await (kind === "follow" ? toggleFollow(merchantId) : toggleFavorite(merchantId));
+      await load();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "La boutique n’a pas pu être retirée.");
+    }
   };
   const one = <T,>(value: T | T[]) => Array.isArray(value) ? value[0] : value;
   return <div className="mvp-grid">
@@ -144,6 +156,7 @@ export function ClientWorkspace() {
       <div className="mvp-list">{orders.filter((order) => orderTab(order.status) === activeTab).map((order) => <div className="mvp-row" key={order.id}><div><Link href={`/commandes/${order.id}`}><strong>{order.public_code}</strong></Link><small>{one(order.merchant_accounts)?.public_name} · {formatPrice(order.total_xof)} · {new Date(order.created_at).toLocaleDateString("fr-SN")}</small></div><span className="mvp-status" data-status={order.status}>{order.status.replaceAll("_", " ")}</span></div>)}</div>
       {!orders.filter((order) => orderTab(order.status) === activeTab).length && <p className="mvp-empty">Aucune commande dans cette catégorie.</p>}
     </section>
-    <section className="mvp-card"><h2>Mes boutiques suivies</h2><div className="mvp-list">{shopFollows.map((follow) => { const merchant = one(follow.merchant_accounts); return <div className="mvp-row" key={follow.merchant_id}><div>{merchant && <Link href={`/boutiques/${merchant.slug}`}><strong>{merchant.public_name}</strong></Link>}<small>{merchant?.city ?? merchant?.region}</small></div><button className="mvp-button mvp-button--secondary" onClick={() => unfollow(follow.merchant_id)}>Ne plus suivre</button></div>; })}</div>{!shopFollows.length && <p className="mvp-empty">Vous ne suivez aucune boutique pour le moment.</p>}</section>
+    <section className="mvp-card mvp-card--full"><h2>Mes favoris</h2><p>Vos boutiques enregistrées, sans notification.</p><div className="shop-directory-grid">{shopFavorites.map((relation) => <ShopCard shop={relation.shop} key={relation.relationId} />)}</div>{!shopFavorites.length && <p className="mvp-empty">Vous n’avez aucune boutique favorite pour le moment.</p>}<div className="mvp-actions">{shopFavorites.map((relation) => <button className="mvp-button mvp-button--secondary" key={`remove-${relation.relationId}`} onClick={() => void removeRelationship("favorite", relation.merchantId)}>Retirer {relation.shop.name} des favoris</button>)}</div></section>
+    <section className="mvp-card mvp-card--full"><h2>Boutiques suivies</h2><p>Vous recevrez leurs nouveautés dans un digest quotidien.</p><div className="shop-directory-grid">{shopFollows.map((relation) => <ShopCard shop={relation.shop} key={relation.relationId} />)}</div>{!shopFollows.length && <p className="mvp-empty">Vous ne suivez aucune boutique pour le moment.</p>}<div className="mvp-actions">{shopFollows.map((relation) => <button className="mvp-button mvp-button--secondary" key={`remove-${relation.relationId}`} onClick={() => void removeRelationship("follow", relation.merchantId)}>Ne plus suivre {relation.shop.name}</button>)}</div></section>
   </div>;
 }
