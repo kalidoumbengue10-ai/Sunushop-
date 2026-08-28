@@ -1216,7 +1216,7 @@ export function MerchantWorkspace(props: MerchantWorkspaceProps) {
                         }
                       </button>
                     )}
-                    {order.delivery_snapshot?.methodKind === "merchant_delivery" && ["ready_for_handoff", "in_transit"].includes(order.status) && order.deliveries.length === 0 && (
+                    {order.delivery_snapshot?.methodKind === "merchant_delivery" && ["ready_for_handoff", "in_transit"].includes(order.status) && (order.deliveries?.length ?? 0) === 0 && (
                       <button type="button" className="mvp-button" onClick={() => setTab("livreurs")}>Affecter un livreur</button>
                     )}
                   </div>
