@@ -244,4 +244,33 @@ test.describe.serial("régressions de sécurité — audit backend 2026-08", () 
     expect(legit.status()).toBe(200);
   });
 
+  test("open redirect : aucune redirection ne quitte l'origine via un `next` hostile", async ({ request }) => {
+    // `/\evil.test` passe un simple startsWith("/") && !startsWith("//") mais
+    // les navigateurs le normalisent en `//evil.test`, soit une URL
+    // protocol-relative : la connexion deviendrait un tremplin de phishing
+    // (redirection post-login vers un faux SunuShop).
+    const hostiles = ["/\\evil.test", "//evil.test", "/\\/evil.test", "/\t/evil.test"];
+
+    for (const hostile of hostiles) {
+      // Le callback auth redirige : l'en-tête Location ne doit jamais sortir.
+      const callback = await request.get(
+        `/auth/callback?next=${encodeURIComponent(hostile)}`,
+        { maxRedirects: 0 },
+      );
+      const location = callback.headers()["location"] ?? "";
+      expect(location, `callback a redirigé vers ${location}`).not.toContain("evil.test");
+
+      // Les routes d'authentification rejettent le `next` au niveau du schéma,
+      // sans jamais renvoyer une erreur serveur.
+      const signUp = await request.post("/api/auth/password/sign-up", {
+        data: {
+          email: `e2e-redirect-${runId}@example.test`,
+          password,
+          next: hostile,
+        },
+      });
+      expect(signUp.status(), JSON.stringify(await responseJson(signUp))).toBe(400);
+    }
+  });
+
 });

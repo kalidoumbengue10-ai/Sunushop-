@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
+import { isSafeRedirectPath } from "@/lib/domain/safe-redirect";
 import { getBrowserSupabase } from "@/lib/infrastructure/supabase/browser";
 
 export function AdminMfa({ next = "/admin/crm" }: { next?: string }) {
@@ -90,7 +91,11 @@ export function AdminMfa({ next = "/admin/crm" }: { next?: string }) {
     setStatus("Accès sécurisé. Ouverture de votre espace de pilotage…");
     setQrCode("");
     setCode("");
-    window.location.replace(next.startsWith("/admin") ? next : "/admin/crm");
+    window.location.replace(
+      isSafeRedirectPath(next) && next.startsWith("/admin")
+        ? next
+        : "/admin/crm",
+    );
   };
 
   return (

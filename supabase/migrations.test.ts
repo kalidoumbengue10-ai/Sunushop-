@@ -69,11 +69,32 @@ describe("contrat statique des migrations", () => {
       "courier_verification_events",
       "shop_favorites",
       "shop_follow_product_broadcasts",
+      "merchant_order_counters",
     ].forEach((table) => {
       expect(sql).toContain(
         `alter table public.${table} enable row level security;`,
       );
     });
+  });
+
+  // La liste ci-dessus doit être complétée à chaque nouvelle table ; on la
+  // double d'un contrôle automatique, car une table de `public` oubliée est
+  // exposée par PostgREST dès qu'un grant l'atteint (cas rencontré avec
+  // `merchant_order_counters`).
+  it("n'oublie aucune table de public sans RLS", () => {
+    const created = new Set(
+      [...sql.matchAll(/create table (?:if not exists )?public\.([a-z0-9_]+)/g)].map(
+        (match) => match[1],
+      ),
+    );
+    const secured = new Set(
+      [
+        ...sql.matchAll(
+          /alter table public\.([a-z0-9_]+) enable row level security/g,
+        ),
+      ].map((match) => match[1]),
+    );
+    expect([...created].filter((table) => !secured.has(table))).toEqual([]);
   });
 
   it("garde les fonctions atomiques et les buckets privés attendus", () => {

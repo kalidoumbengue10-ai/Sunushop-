@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { isInSenegalBounds } from "@/lib/domain/geo";
+import { isSafeRedirectPath } from "@/lib/domain/safe-redirect";
 
 const uuid = z.uuid();
 const e164Phone = z
@@ -31,10 +32,7 @@ const authPassword = z
 const safeNextPath = z
   .string()
   .max(300)
-  .refine(
-    (value) => value.startsWith("/") && !value.startsWith("//"),
-    "Redirection invalide",
-  )
+  .refine(isSafeRedirectPath, "Redirection invalide")
   .optional();
 
 export const signUpWithPasswordSchema = z.object({

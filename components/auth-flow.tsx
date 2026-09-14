@@ -5,6 +5,10 @@ import Script from "next/script";
 import { useSearchParams } from "next/navigation";
 import { FormEvent, useEffect, useState } from "react";
 import { PasswordInput } from "@/components/password-input";
+import {
+  isSafeRedirectPath,
+  safeRedirectPath,
+} from "@/lib/domain/safe-redirect";
 
 type AuthMode = "sign_in" | "sign_up" | "recover";
 
@@ -53,12 +57,10 @@ export function AuthFlow({ turnstileSiteKey }: { turnstileSiteKey?: string }) {
   const canSignUp = profile === "client" || (profile === "vendeur" && invitationNext);
   const next =
     profile === "admin"
-      ? requestedNext?.startsWith("/admin") && !requestedNext.startsWith("//")
+      ? isSafeRedirectPath(requestedNext) && requestedNext.startsWith("/admin")
         ? requestedNext
         : profileConfig.next
-      : requestedNext?.startsWith("/") && !requestedNext.startsWith("//")
-      ? requestedNext
-      : profileConfig.next;
+      : safeRedirectPath(requestedNext, profileConfig.next);
   const requestedMode = searchParams.get("mode");
   const [selectedMode, setMode] = useState<AuthMode>(
     requestedMode === "inscription"

@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
+import { safeRedirectPath } from "@/lib/domain/safe-redirect";
 import { getServerSupabase } from "@/lib/infrastructure/supabase/server";
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
   const code = url.searchParams.get("code");
   const authError = url.searchParams.get("error");
-  const next = url.searchParams.get("next") || "/";
-  const safeNext = next.startsWith("/") && !next.startsWith("//") ? next : "/";
+  const safeNext = safeRedirectPath(url.searchParams.get("next"), "/");
   const supabase = await getServerSupabase();
 
   if (authError || !code || !supabase) {

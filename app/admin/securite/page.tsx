@@ -3,6 +3,7 @@ import { AdminMfa } from "@/components/admin-mfa";
 import { MvpShell } from "@/components/mvp-shell";
 import { SetupRequired } from "@/components/setup-required";
 import { isSupabaseConfigured } from "@/lib/config/env";
+import { isSafeRedirectPath } from "@/lib/domain/safe-redirect";
 import { getServerSupabase } from "@/lib/infrastructure/supabase/server";
 
 export default async function AdminSecurityPage({
@@ -11,7 +12,10 @@ export default async function AdminSecurityPage({
   searchParams: Promise<{ next?: string }>;
 }) {
   const requestedNext = (await searchParams).next;
-  const next = requestedNext?.startsWith("/admin") ? requestedNext : "/admin/crm";
+  const next =
+    isSafeRedirectPath(requestedNext) && requestedNext.startsWith("/admin")
+      ? requestedNext
+      : "/admin/crm";
   const configured = isSupabaseConfigured();
   if (configured) {
     const supabase = await getServerSupabase();

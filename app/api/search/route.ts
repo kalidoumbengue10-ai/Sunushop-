@@ -1,4 +1,5 @@
 import { requireAdminClient } from "@/lib/api/auth";
+import { containsPattern } from "@/lib/api/pattern-filter";
 import { apiFailure, apiSuccess } from "@/lib/api/response";
 import { SupabaseCatalogRepository } from "@/lib/infrastructure/supabase/repositories";
 import { searchQuerySchema } from "@/lib/domain/schemas";
@@ -34,7 +35,7 @@ export async function GET(request: Request) {
       .in("subscription_status", ["active", "grace"])
       .order("public_name")
       .limit(input.limit);
-    if (input.query) shopRequest = shopRequest.ilike("public_name", `%${input.query.replaceAll("%", "\\%")}%`);
+    if (input.query) shopRequest = shopRequest.ilike("public_name", containsPattern(input.query));
     if (input.region) shopRequest = shopRequest.eq("region", input.region);
     if (input.city) shopRequest = shopRequest.ilike("city", input.city);
     const [{ data: shops, error: shopsError }, { data: categories, error: categoriesError }] = await Promise.all([

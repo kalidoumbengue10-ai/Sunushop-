@@ -2,6 +2,7 @@ import { requireAdminClient } from "@/lib/api/auth";
 import { requireFulfillment as requireManager } from "@/lib/api/merchant-guards";
 import { normalizeMerchantPhone } from "@/lib/api/merchant-onboarding";
 import { apiFailure, apiSuccess } from "@/lib/api/response";
+import { enforceRateLimit } from "@/lib/api/security";
 import { courierLookupSchema } from "@/lib/domain/schemas";
 
 // Recherche par correspondance exacte du téléphone : le vivier ne doit jamais
@@ -15,7 +16,26 @@ export async function GET(request: Request) {
       merchantId: url.searchParams.get("merchantId") ?? "",
       phone: url.searchParams.get("phone") ?? "",
     });
-    await requireManager(input.merchantId);
+    const user = await requireManager(input.merchantId);
+    // La recherche exacte empêche de parcourir le vivier, mais pas de le
+    // balayer : l'espace des numéros sénégalais est petit (préfixes mobiles
+    // connus + 7 chiffres) et chaque réponse révèle si une personne est
+    // livreur et si son dossier est vérifié. On plafonne donc le débit par
+    // compte et par boutique.
+    await Promise.all([
+      enforceRateLimit({
+        key: `user:${user.id}`,
+        action: "courier.lookup.user",
+        windowSeconds: 3_600,
+        maxRequests: 60,
+      }),
+      enforceRateLimit({
+        key: `merchant:${input.merchantId}`,
+        action: "courier.lookup.merchant",
+        windowSeconds: 86_400,
+        maxRequests: 300,
+      }),
+    ]);
     const admin = requireAdminClient();
 
     const { data: courier, error } = await admin

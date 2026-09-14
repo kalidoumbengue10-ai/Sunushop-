@@ -1,4 +1,5 @@
 import { requireAdminRole } from "@/lib/api/auth";
+import { containsPattern } from "@/lib/api/pattern-filter";
 import { apiFailure, apiSuccess } from "@/lib/api/response";
 
 export async function GET(request: Request) {
@@ -12,7 +13,7 @@ export async function GET(request: Request) {
       .order("public_name")
       .limit(20);
     if (query) {
-      request_ = request_.ilike("public_name", `%${query}%`);
+      request_ = request_.ilike("public_name", containsPattern(query));
     }
     const { data, error } = await request_;
     if (error) throw error;

@@ -1,8 +1,15 @@
 import { requireAdminRole } from "@/lib/api/auth";
+import { containsPattern } from "@/lib/api/pattern-filter";
 import { apiFailure, apiSuccess } from "@/lib/api/response";
 
 function csvCell(value: unknown) {
-  return `"${String(value ?? "").replaceAll('"', '""')}"`;
+  const text = String(value ?? "");
+  // Injection de formule : un nom de boutique commençant par =, +, - ou @ est
+  // interprété comme une formule par Excel/LibreOffice à l'ouverture du CSV.
+  // Le contenu vient de champs saisis par les marchands, donc non fiable ; on
+  // préfixe d'une apostrophe pour forcer l'interprétation en texte.
+  const safe = /^[=+\-@\t\r]/.test(text) ? `'${text}` : text;
+  return `"${safe.replaceAll('"', '""')}"`;
 }
 
 export async function GET(request: Request) {
@@ -31,7 +38,7 @@ export async function GET(request: Request) {
     if (cycle) paymentsQuery = paymentsQuery.eq("billing_cycle", cycle);
     if (merchant) paymentsQuery = /^[0-9a-f-]{36}$/i.test(merchant)
       ? paymentsQuery.eq("merchant_id", merchant)
-      : paymentsQuery.ilike("merchant_accounts.public_name", `%${merchant}%`);
+      : paymentsQuery.ilike("merchant_accounts.public_name", containsPattern(merchant));
 
     // Le cast reste compatible avec une base pas encore migrée localement.
     let billingQuery = (supabase as any)
@@ -45,7 +52,7 @@ export async function GET(request: Request) {
     if (cycle) billingQuery = billingQuery.eq("billing_cycle", cycle);
     if (merchant) billingQuery = /^[0-9a-f-]{36}$/i.test(merchant)
       ? billingQuery.eq("merchant_id", merchant)
-      : billingQuery.ilike("merchant_accounts.public_name", `%${merchant}%`);
+      : billingQuery.ilike("merchant_accounts.public_name", containsPattern(merchant));
 
     const [{ data: payments, error: paymentError }, { data: billingRows, error: billingError }] = await Promise.all([
       paymentsQuery,

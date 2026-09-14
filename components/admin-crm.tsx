@@ -173,7 +173,12 @@ function relationOne<T>(value: T | T[] | null | undefined) {
 }
 
 function csvCell(value: unknown) {
-  return `"${String(value ?? "").replaceAll('"', '""')}"`;
+  const text = String(value ?? "");
+  // Injection de formule : les prospects proviennent de formulaires publics,
+  // donc un champ commençant par =, +, - ou @ serait exécuté comme formule à
+  // l'ouverture du CSV dans Excel/LibreOffice. L'apostrophe force le texte.
+  const safe = /^[=+\-@\t\r]/.test(text) ? `'${text}` : text;
+  return `"${safe.replaceAll('"', '""')}"`;
 }
 
 export function AdminCrm({

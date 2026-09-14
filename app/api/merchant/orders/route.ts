@@ -1,4 +1,5 @@
 import { requireActiveMerchantAccess } from "@/lib/api/merchant-access";
+import { containsPattern } from "@/lib/api/pattern-filter";
 import { apiFailure, apiSuccess } from "@/lib/api/response";
 import { merchantOrderSearchFilter, merchantOrderStatusFilter } from "@/lib/domain/merchant-order-query";
 import { merchantOrdersQuerySchema } from "@/lib/domain/schemas";
@@ -32,7 +33,7 @@ export async function GET(request: Request) {
     if (searchFilter?.kind === "merchant_sequence") {
       query = query.eq("merchant_sequence", searchFilter.value);
     } else if (searchFilter) {
-      query = query.ilike("public_code", `%${searchFilter.value}%`);
+      query = query.ilike("public_code", containsPattern(searchFilter.value));
     }
 
     const from = (input.page - 1) * input.limit;

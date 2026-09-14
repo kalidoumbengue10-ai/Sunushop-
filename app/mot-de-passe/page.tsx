@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { MvpShell } from "@/components/mvp-shell";
 import { PasswordUpdateForm } from "@/components/password-update-form";
 import { SetupRequired } from "@/components/setup-required";
+import { isSafeRedirectPath } from "@/lib/domain/safe-redirect";
 import { getServerSupabase } from "@/lib/infrastructure/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -12,9 +13,7 @@ export default async function MotDePassePage({
   searchParams: Promise<{ next?: string }>;
 }) {
   const requestedNext = (await searchParams).next;
-  const next = requestedNext?.startsWith("/") && !requestedNext.startsWith("//")
-    ? requestedNext
-    : undefined;
+  const next = isSafeRedirectPath(requestedNext) ? requestedNext : undefined;
   const supabase = await getServerSupabase();
 
   if (!supabase) {

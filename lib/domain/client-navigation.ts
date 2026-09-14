@@ -1,3 +1,5 @@
+import { safeRedirectPath } from "@/lib/domain/safe-redirect";
+
 export type ConversationIntent = {
   merchantId: string;
   orderId?: string;
@@ -6,8 +8,7 @@ export type ConversationIntent = {
 };
 
 export function clientLoginHref(next: string) {
-  const safeNext = next.startsWith("/") && !next.startsWith("//") ? next : "/client";
-  return `/connexion?profil=client&next=${encodeURIComponent(safeNext)}`;
+  return `/connexion?profil=client&next=${encodeURIComponent(safeRedirectPath(next, "/client"))}`;
 }
 
 export function conversationIntentPath(intent: ConversationIntent) {
